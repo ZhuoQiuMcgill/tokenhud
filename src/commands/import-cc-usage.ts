@@ -4,6 +4,9 @@
 // - Price overrides: only the rows of cc-usage's pricing.json that differ from cc-usage
 //   v2.6.1's bundled table, added to tokenhud's overrides file for models it doesn't
 //   override yet. An existing tokenhud override always wins, so a second run adds nothing.
+//   An edit to a model that tokenhud prices with dated periods or a fast card is skipped
+//   with a warning: an override replaces the whole entry, so cc-usage's one flat card would
+//   reprice all of that model's history and drop its fast price.
 // - Config (labels, roots, theme) needs tokenhud's config file, which a later task adds.
 //
 // cc-usage's files are only read: the ledger through a private snapshot copy, pricing.json
@@ -15,9 +18,10 @@ import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { ccUsageDir, pricingOverridesPath, storePath } from "../paths.ts";
 import ccUsageBundled from "../pricing/cc-usage-v2.6.1-pricing.json";
-import { normalizeModel } from "../pricing/normalize.ts";
+import { normalizeModel, OFFICIAL_ALIASES } from "../pricing/normalize.ts";
 import { overridesFromCcUsage } from "../pricing/overrides.ts";
-import { isRecord } from "../pricing/schema.ts";
+import { isDated, isRecord, type ModelPricing } from "../pricing/schema.ts";
+import { bundledPricing } from "../pricing/table.ts";
 import { StoreError } from "../store/errors.ts";
 import { ImportSourceError, importCcUsage } from "../store/import-cc-usage.ts";
 import { openStore } from "../store/store.ts";
@@ -28,7 +32,8 @@ export const IMPORT_HELP = `Usage:
   tokenhud import-cc-usage [--from DIR]
 
 Imports cc-usage's usage history and price edits into tokenhud. Safe to run again: rows
-already imported are skipped, and existing tokenhud price overrides are kept.
+already imported are skipped, and existing tokenhud price overrides are kept. An edit to a
+model tokenhud prices with dated or fast prices is skipped, with a warning.
 
 Options:
   --from DIR   cc-usage's config directory (default: $XDG_CONFIG_HOME/cc-usage or
@@ -47,6 +52,8 @@ export interface PricingImport {
   added: string[];
   /** Model ids cc-usage overrides that tokenhud's overrides file already has. */
   kept: string[];
+  /** Edits not imported because tokenhud prices the model with more than one flat card. */
+  skipped: Array<{ model: string; because: string }>;
   /** Why nothing could be imported, if so. */
   problem: string | null;
 }
@@ -59,7 +66,24 @@ function readJson(path: string): { value: unknown } | "missing" {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
     throw error;
   }
-  return { value: JSON.parse(text.startsWith("﻿") ? text.slice(1) : text) };
+  return { value: JSON.parse(text.startsWith("\uFEFF") ? text.slice(1) : text) };
+}
+
+/**
+ * Why a flat card can't stand in for `id`'s bundled pricing (dated periods, a fast card),
+ * or null when it can. An alias counts as the model it names: the table resolves it so.
+ */
+function notFlat(id: string): string | null {
+  const models: Readonly<Record<string, ModelPricing>> = bundledPricing().models;
+  const pricing = models[id] ?? models[OFFICIAL_ALIASES.get(id) ?? ""];
+  if (pricing === undefined) return null;
+  const dated = isDated(pricing) && pricing.periods.length > 1;
+  const cards = isDated(pricing) ? pricing.periods.map((p) => p.card) : [pricing];
+  const fast = cards.some((card) => card.fast !== undefined);
+  if (dated && fast) return "dated prices and a fast price";
+  if (dated) return "dated prices";
+  if (fast) return "a fast price";
+  return null;
 }
 
 /**
@@ -70,17 +94,24 @@ export function importPricing(ccPricingPath: string, overridesPath: string): Pri
   let user: unknown;
   try {
     const read = readJson(ccPricingPath);
-    if (read === "missing") return { added: [], kept: [], problem: null };
+    if (read === "missing") return { added: [], kept: [], skipped: [], problem: null };
     user = read.value;
   } catch (error) {
     return {
       added: [],
       kept: [],
+      skipped: [],
       problem: `cc-usage's pricing.json is unreadable (${(error as Error).message})`,
     };
   }
-  const { models: edits } = overridesFromCcUsage(user, ccUsageBundled);
-  if (Object.keys(edits).length === 0) return { added: [], kept: [], problem: null };
+  const { models: found } = overridesFromCcUsage(user, ccUsageBundled);
+  const skipped: PricingImport["skipped"] = [];
+  const edits = Object.entries(found).filter(([id]) => {
+    const because = notFlat(id);
+    if (because !== null) skipped.push({ model: id, because });
+    return because === null;
+  });
+  if (edits.length === 0) return { added: [], kept: [], skipped, problem: null };
 
   let existing: Record<string, unknown>;
   try {
@@ -98,6 +129,7 @@ export function importPricing(ccPricingPath: string, overridesPath: string): Pri
       return {
         added: [],
         kept: [],
+        skipped,
         problem: `${overridesPath} has no "models" object; left as it is`,
       };
     }
@@ -105,6 +137,7 @@ export function importPricing(ccPricingPath: string, overridesPath: string): Pri
     return {
       added: [],
       kept: [],
+      skipped,
       problem: `${overridesPath} is unreadable (${(error as Error).message}); left as it is`,
     };
   }
@@ -112,7 +145,7 @@ export function importPricing(ccPricingPath: string, overridesPath: string): Pri
   const present = new Set(Object.keys(models).map(normalizeModel));
   const added: string[] = [];
   const kept: string[] = [];
-  for (const [id, card] of Object.entries(edits)) {
+  for (const [id, card] of edits) {
     if (present.has(id)) {
       kept.push(id);
     } else {
@@ -131,7 +164,7 @@ export function importPricing(ccPricingPath: string, overridesPath: string): Pri
       throw error;
     }
   }
-  return { added, kept, problem: null };
+  return { added, kept, skipped, problem: null };
 }
 
 export function runImportCcUsage(args: readonly string[], env: Env = process.env): number {
@@ -191,12 +224,24 @@ export function runImportCcUsage(args: readonly string[], env: Env = process.env
   }
 
   try {
-    const pricing = importPricing(join(dir, "pricing.json"), pricingOverridesPath(env));
+    const overridesPath = pricingOverridesPath(env);
+    const pricing = importPricing(join(dir, "pricing.json"), overridesPath);
+    for (const { model, because } of pricing.skipped) {
+      say(`  pricing     warning: skipped your cc-usage price for ${model}`);
+      say(`              tokenhud prices it with ${because}; one flat price would replace`);
+      say("              them for all of its history");
+    }
+    if (pricing.skipped.length > 0) {
+      say("              to use your price anyway, add a dated entry by hand to");
+      say(`              ${shortPath(overridesPath)}`);
+    }
     if (pricing.problem !== null) {
       say(`  pricing     not imported: ${pricing.problem}`);
       code = 1;
     } else if (pricing.added.length === 0 && pricing.kept.length === 0) {
-      say("  pricing     no edited prices in cc-usage; nothing to import");
+      if (pricing.skipped.length === 0) {
+        say("  pricing     no edited prices in cc-usage; nothing to import");
+      }
     } else {
       if (pricing.added.length > 0)
         say(`  pricing     added overrides for ${pricing.added.join(", ")}`);

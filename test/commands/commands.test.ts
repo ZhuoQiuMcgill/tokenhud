@@ -9,6 +9,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -20,6 +21,7 @@ import type {
   JsonModelsDocument,
   JsonUsageDocument,
 } from "../../src/query/types.ts";
+import { openStore } from "../../src/store/store.ts";
 import expectedLedger from "../fixtures/store/cc-usage-ledger.expected.json";
 import { cleanup, tempDir } from "../store/helpers.ts";
 
@@ -107,12 +109,12 @@ describe("import-cc-usage", () => {
     const first = run(env, "import-cc-usage");
     expect(first.code).toBe(0);
     expect(first.stdout).toContain("16 rows read: 16 new, 0 updated, 0 already here, 0 skipped");
-    expect(first.stdout).toContain(
-      "added overrides for claude-opus-4-8, claude-opus-4-7, my-local-model",
-    );
+    expect(first.stdout).toContain("added overrides for claude-opus-4-7, my-local-model");
+    // Opus 4.8 has a fast price in tokenhud, which a flat cc-usage card would drop.
+    expect(first.stdout).toContain("warning: skipped your cc-usage price for claude-opus-4-8");
+    expect(first.stdout).toContain("tokenhud prices it with a fast price");
     const overrides = JSON.parse(readFileSync(env.overrides, "utf8"));
     expect(overrides.models).toEqual({
-      "claude-opus-4-8": { input: 4.5, output: 22.5 },
       "claude-opus-4-7": { input: 5, output: 25, cache_read: 0.5 },
       "my-local-model": { input: 0.5, output: 1.5 },
     });
@@ -130,14 +132,90 @@ describe("import-cc-usage", () => {
     mkdirSync(join(env.xdg, "tokenhud"));
     writeFileSync(
       env.overrides,
-      JSON.stringify({ models: { "Claude-Opus-4-8": { input: 1, output: 2 } }, note: "mine" }),
+      JSON.stringify({ models: { "Claude-Opus-4-7": { input: 1, output: 2 } }, note: "mine" }),
     );
-    expect(run(env, "import-cc-usage").code).toBe(0);
+    const out = run(env, "import-cc-usage");
+    expect(out.code).toBe(0);
+    expect(out.stdout).toContain("already overridden in tokenhud: claude-opus-4-7");
     const overrides = JSON.parse(readFileSync(env.overrides, "utf8"));
     expect(overrides.note).toBe("mine");
-    expect(overrides.models["Claude-Opus-4-8"]).toEqual({ input: 1, output: 2 });
-    expect(overrides.models["claude-opus-4-8"]).toBeUndefined();
+    expect(overrides.models["Claude-Opus-4-7"]).toEqual({ input: 1, output: 2 });
+    expect(overrides.models["claude-opus-4-7"]).toBeUndefined();
     expect(overrides.models["my-local-model"]).toEqual({ input: 0.5, output: 1.5 });
+  });
+
+  test("skips an edit to a dated or fast-priced model, with a warning, and reprices nothing", () => {
+    const env = home();
+    // A hand-set GPT-5.6 Sol promo, and an edit to gpt-5.5, which has a fast price.
+    writeFileSync(
+      join(env.cc, "pricing.json"),
+      JSON.stringify({
+        models: {
+          "gpt-5.6-sol": {
+            input: 4,
+            output: 20,
+            cache_read: 0.4,
+            cache_write: 5,
+            long_context_threshold: 272000,
+            long_context_input_multiplier: 2,
+            long_context_output_multiplier: 1.5,
+          },
+          "gpt-5.5": { input: 4, output: 24, cache_read: 0.4 },
+          "my-local-model": { input: 0.5, output: 1.5 },
+        },
+      }),
+    );
+    const out = run(env, "import-cc-usage");
+    expect(out.code).toBe(0);
+    expect(out.stdout).toContain("warning: skipped your cc-usage price for gpt-5.6-sol");
+    expect(out.stdout).toContain("tokenhud prices it with dated prices and a fast price");
+    expect(out.stdout).toContain("warning: skipped your cc-usage price for gpt-5.5");
+    expect(out.stdout).toContain("add a dated entry by hand to");
+    expect(out.stdout).toContain("added overrides for my-local-model");
+    const overrides = JSON.parse(readFileSync(env.overrides, "utf8"));
+    expect(Object.keys(overrides.models)).toEqual(["my-local-model"]);
+
+    // Sol usage either side of its 2026-08-21T07:00Z cut, beside the fixture's gpt-5.5 rows.
+    const store = openStore(env.store);
+    const sol = (key: bigint, iso: string) => ({
+      key,
+      provider: "codex",
+      identity: "fake-codex-identity",
+      label: "codex-test",
+      ts: Date.parse(iso),
+      model: "gpt-5.6-sol",
+      inp: 200_000,
+      outp: 10_000,
+      cr: 50_000,
+      cc: 0,
+      e5: null,
+      e1: null,
+      tier: 0,
+    });
+    store.upsert([sol(-77n, "2026-08-20T12:00:00Z"), sol(-78n, "2026-08-22T12:00:00Z")]);
+    store.close();
+    const withImport = json<JsonUsageDocument>(env, "usage", "--provider", "codex");
+    rmSync(env.overrides);
+    const bundledOnly = json<JsonUsageDocument>(env, "usage", "--provider", "codex");
+    expect(withImport.totals.cost_usd).toBe(bundledOnly.totals.cost_usd);
+    // Sol at its dated rates: $5/$30 then $4/$20, cache reads $0.50 then $0.40.
+    const solCost =
+      200_000 * 5e-6 +
+      10_000 * 30e-6 +
+      50_000 * 0.5e-6 +
+      (200_000 * 4e-6 + 10_000 * 20e-6 + 50_000 * 0.4e-6);
+    // The fixture's own Codex rows, all in May 2026.
+    const fixtureCodex = json<JsonUsageDocument>(
+      env,
+      "usage",
+      "--provider",
+      "codex",
+      "--since",
+      "2026-05-01",
+      "--until",
+      "2026-06-01",
+    );
+    expect(withImport.totals.cost_usd).toBeCloseTo(fixtureCodex.totals.cost_usd + solCost, 6);
   });
 
   test("leaves a malformed overrides file alone and says so", () => {
@@ -235,10 +313,10 @@ describe("json", () => {
     expect(models.models.every((m) => m.model.startsWith("claude-"))).toBe(true);
     const opus = models.models.find((m) => m.model === "claude-opus-4-8");
     expect(opus?.rates).toEqual({
-      input: 4.5,
-      output: 22.5,
-      cache_read: 0.45,
-      cache_write: 5.625,
+      input: 5,
+      output: 25,
+      cache_read: 0.5,
+      cache_write: 6.25,
       long_context: null,
     });
     expect(models.models.find((m) => m.model === "claude-mystery-1")?.status).toBe("unpriced");
@@ -364,7 +442,7 @@ describe("doctor", () => {
     expect(report.store).toMatchObject({ exists: true, rows: 16, models: 5, schema_version: 2 });
     expect(report.store.rollups).toEqual({ triggers_intact: true, counts_agree: true });
     expect(report.store.imports).toHaveLength(1);
-    expect(report.pricing.overrides.models).toBe(3);
+    expect(report.pricing.overrides.models).toBe(2);
     expect(report.pricing.unpriced.map((u: { model: string }) => u.model)).toContain(
       "claude-mystery-1",
     );
