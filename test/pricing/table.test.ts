@@ -1,0 +1,288 @@
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { computeCost, type Rates, type TokenCounts } from "../../src/pricing/cost.ts";
+import { normalizeModel } from "../../src/pricing/normalize.ts";
+import bundledJson from "../../src/pricing/pricing.json";
+import { isDated, parsePriceTableFile, type Tier } from "../../src/pricing/schema.ts";
+import { bundledPricing, PriceTable, type UsageRecord } from "../../src/pricing/table.ts";
+import { at, bundledTable, CC_USAGE_MODELS, isClose, NO_CACHE } from "./helpers.ts";
+
+const table = bundledTable();
+
+// [input, output, cached input, cache writes] from a resolved card, for compact asserts.
+function card(model: string, tier: Tier, iso: string): number[] | string {
+  const r = table.rates(model, tier, at(iso));
+  if (typeof r === "string") return r;
+  return [r.input, r.output, r.cache_read ?? Number.NaN, r.cache_write ?? Number.NaN];
+}
+
+describe("dated OpenAI periods", () => {
+  // The changelog dates this cut Aug 21 ("GPT-5.6 Sol now costs $4 ... and $20 ..."). The
+  // first capture showing it is 2026-08-22T10:30:53Z; the 2026-08-21T10:30:49Z capture
+  // still showed $5/$30. The announcement wins (task §3), at 00:00 UTC. See SOURCES.md.
+  test("gpt-5.6-sol: $5/$30 (fast $10/$60) until the 2026-08-21 cut", () => {
+    for (const iso of ["2026-07-09T00:00:00Z", "2026-08-20T23:59:59.999Z"]) {
+      expect(card("gpt-5.6-sol", "standard", iso)).toEqual([5, 30, 0.5, 6.25]);
+      expect(card("gpt-5.6-sol", "fast", iso)).toEqual([10, 60, 1, 12.5]);
+    }
+  });
+
+  test("gpt-5.6-sol: $4/$20 (fast $8/$40) from 2026-08-21T00:00Z", () => {
+    for (const iso of ["2026-08-21T00:00:00Z", "2026-08-21T23:59:00Z", "2026-08-23T00:00:00Z"]) {
+      expect(card("gpt-5.6-sol", "standard", iso)).toEqual([4, 20, 0.4, 5]);
+      expect(card("gpt-5.6-sol", "fast", iso)).toEqual([8, 40, 0.8, 10]);
+    }
+    expect(card("gpt-5.6", "standard", "2026-10-01T00:00:00Z")).toEqual([4, 20, 0.4, 5]);
+  });
+
+  // "Starting July 30, GPT-5.6 Luna costs 80% less, while GPT-5.6 Terra costs 20% less."
+  // Captures: old price 2026-07-28T10:30:58Z, new 2026-07-30T19:51:07Z.
+  test("gpt-5.6-terra: $2.50/$15 (fast $5/$30) -> $2/$12 (fast $4/$24) on 2026-07-30", () => {
+    expect(card("gpt-5.6-terra", "standard", "2026-07-29T23:59:59.999Z")).toEqual([
+      2.5, 15, 0.25, 3.125,
+    ]);
+    expect(card("gpt-5.6-terra", "fast", "2026-07-29T23:59:59.999Z")).toEqual([5, 30, 0.5, 6.25]);
+    expect(card("gpt-5.6-terra", "standard", "2026-07-30T00:00:00Z")).toEqual([2, 12, 0.2, 2.5]);
+    expect(card("gpt-5.6-terra", "fast", "2026-07-30T00:00:00Z")).toEqual([4, 24, 0.4, 5]);
+  });
+
+  test("gpt-5.6-luna: $1/$6 (fast $2/$12) -> $0.20/$1.20 (fast $0.40/$2.40) on 2026-07-30", () => {
+    expect(card("gpt-5.6-luna", "standard", "2026-07-29T23:59:59.999Z")).toEqual([1, 6, 0.1, 1.25]);
+    expect(card("gpt-5.6-luna", "fast", "2026-07-29T23:59:59.999Z")).toEqual([2, 12, 0.2, 2.5]);
+    expect(card("gpt-5.6-luna", "standard", "2026-07-30T00:00:00Z")).toEqual([
+      0.2, 1.2, 0.02, 0.25,
+    ]);
+    expect(card("gpt-5.6-luna", "fast", "2026-07-30T00:00:00Z")).toEqual([0.4, 2.4, 0.04, 0.5]);
+  });
+
+  test("the first known card applies before the first capture (2026-07-16)", () => {
+    expect(card("gpt-5.6-terra", "standard", "2020-01-01T00:00:00Z")).toEqual([
+      2.5, 15, 0.25, 3.125,
+    ]);
+    // GPT-6 Astra first appears in the 2026-09-04 capture, with one card ever since.
+    expect(card("gpt-6-astra", "standard", "2026-01-01T00:00:00Z")).toEqual([10, 50, 1, 12.5]);
+    expect(card("gpt-6-astra", "fast", "2026-01-01T00:00:00Z")).toEqual([20, 100, 2, 25]);
+  });
+
+  test("a fast long-context request scales the fast card by the standard multipliers", () => {
+    const fast = table.rates("gpt-5.6-sol", "fast", at("2026-09-01T00:00:00Z"));
+    const tokens = { ...NO_CACHE, input: 300_000, output: 1_000_000 };
+    // Fast $8 in / $40 out; above 272K that is $16 / $60, as the live page lists.
+    expect(computeCost(tokens, fast)).toBe((300_000 * 16) / 1e6 + (1_000_000 * 60) / 1e6);
+  });
+});
+
+describe("Claude fast cards", () => {
+  const t = at("2026-10-01T00:00:00Z");
+  const fastCost = (model: string, tokens: Partial<TokenCounts>) =>
+    computeCost({ input: 0, output: 0, ...NO_CACHE, ...tokens }, table.rates(model, "fast", t));
+
+  test("Opus 5.5 fast: 1M cache-read tokens cost $0.40 (0.05x of $8)", () => {
+    expect(fastCost("claude-opus-5-5", { cacheRead: 1_000_000 })).toBe(0.4);
+  });
+
+  test("Opus 5 and Opus 4.8 fast: 1M cache-read tokens cost $1.00 (0.1x of $10)", () => {
+    expect(fastCost("claude-opus-5", { cacheRead: 1_000_000 })).toBe(1);
+    expect(fastCost("claude-opus-4-8", { cacheRead: 1_000_000 })).toBe(1);
+  });
+
+  test("Opus 5.5 fast: a 5m write costs 1.25 x $8, a 1h write 2 x $8", () => {
+    const fiveMinute = fastCost("claude-opus-5-5", {
+      cacheCreation: 1_000_000,
+      ephemeral5m: 1_000_000,
+    });
+    const oneHour = fastCost("claude-opus-5-5", {
+      cacheCreation: 1_000_000,
+      ephemeral1h: 1_000_000,
+    });
+    expect(isClose(fiveMinute as number, 1.25 * 8, 1e-12)).toBe(true);
+    expect(isClose(oneHour as number, 2 * 8, 1e-12)).toBe(true);
+  });
+
+  test("fast cards state only input and output", () => {
+    expect(table.rates("claude-opus-5-5", "fast", t)).toEqual({
+      input: 8,
+      output: 40,
+      cache_read: 0.4,
+    });
+    expect(table.rates("claude-opus-5", "fast", t)).toEqual({ input: 10, output: 50 });
+    expect(table.rates("claude-opus-4-8[1m]", "fast", t)).toEqual({ input: 10, output: 50 });
+  });
+});
+
+describe("tier fallback", () => {
+  const t = at("2026-10-01T00:00:00Z");
+
+  test("fast without a fast card is unpriced-tier, never the standard price", () => {
+    for (const model of [
+      "claude-opus-4-7",
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+    ]) {
+      expect(table.rates(model, "fast", t)).toBe("unpriced-tier");
+      expect(table.rates(model, "standard", t)).not.toBeString();
+    }
+  });
+
+  test("unknown and missing models are unpriced at either tier", () => {
+    for (const tier of ["standard", "fast"] as const) {
+      expect(table.rates("claude-mystery-9", tier, t)).toBe("unpriced");
+      expect(table.rates("", tier, t)).toBe("unpriced");
+      expect(table.rates(undefined, tier, t)).toBe("unpriced");
+    }
+  });
+
+  test("cost() passes the reason through, distinct from $0", () => {
+    const record = (model: string, tier: Tier): UsageRecord => ({
+      ...NO_CACHE,
+      input: 1000,
+      output: 1000,
+      model,
+      tier,
+      atMs: t,
+    });
+    expect(table.cost(record("claude-opus-4-7", "fast"))).toBe("unpriced-tier");
+    expect(table.cost(record("claude-mystery-9", "standard"))).toBe("unpriced");
+    expect(isClose(table.cost(record("claude-opus-4-7", "standard")) as number, 0.03, 1e-12)).toBe(
+      true,
+    );
+    expect(table.cost({ ...record("claude-opus-4-7", "standard"), input: 0, output: 0 })).toBe(0);
+  });
+
+  test("a time before a model's first dated period is unpriced", () => {
+    const dated = new PriceTable({
+      "gpt-new": { periods: [{ from: "2026-09-01T00:00:00Z", card: { input: 1, output: 2 } }] },
+    });
+    expect(dated.rates("gpt-new", "standard", at("2026-08-31T23:59:59.999Z"))).toBe("unpriced");
+    expect(dated.rates("gpt-new", "standard", at("2026-09-01T00:00:00Z"))).toEqual({
+      input: 1,
+      output: 2,
+    });
+  });
+
+  test("an explicit row for an alias wins over the official alias", () => {
+    const own = new PriceTable({
+      "gpt-5.6": { input: 1, output: 1 },
+      "gpt-5.6-sol": { input: 5, output: 30 },
+    });
+    expect(own.rates("gpt-5.6", "standard", 0)).toEqual({ input: 1, output: 1 });
+    expect(
+      new PriceTable({ "gpt-5.6-sol": { input: 5, output: 30 } }).rates("GPT-5.6", "standard", 0),
+    ).toEqual({ input: 5, output: 30 });
+  });
+});
+
+describe("displayRates", () => {
+  test("is the standard card in effect now", () => {
+    expect(table.displayRates("gpt-5.6-sol", at("2026-08-01T00:00:00Z"))).toMatchObject({
+      input: 5,
+      output: 30,
+    });
+    expect(table.displayRates("gpt-5.6-sol", at("2026-10-01T00:00:00Z"))).toMatchObject({
+      input: 4,
+      output: 20,
+    });
+    expect(table.displayRates("claude-opus-5-5")).toEqual({
+      input: 4,
+      output: 20,
+      cache_read: 0.2,
+    });
+    expect(table.displayRates("claude-mystery-9")).toBe("unpriced");
+  });
+});
+
+describe("coverage", () => {
+  test("counts priced and unpriced tokens, and lists what is unpriced", () => {
+    const t = at("2026-10-01T00:00:00Z");
+    const usage = (
+      model: string | null,
+      tier: Tier,
+      input: number,
+      cacheRead = 0,
+    ): UsageRecord => ({
+      input,
+      output: 10,
+      cacheRead,
+      cacheCreation: 5,
+      ephemeral5m: null,
+      ephemeral1h: null,
+      model,
+      tier,
+      atMs: t,
+    });
+    const result = table.coverage([
+      usage("claude-opus-4-8", "standard", 100),
+      usage("claude-opus-4-8", "fast", 100, 1000),
+      usage("claude-opus-4-7", "fast", 200),
+      usage("Claude-Mystery-9[1m]", "standard", 300),
+      usage("claude-mystery-9", "standard", 0),
+      usage(null, "standard", 1),
+    ]);
+    expect(result.pricedTokens).toBe(115 + 1115);
+    expect(result.unpricedTokens).toBe(215 + 315 + 15 + 16);
+    expect(result.unpriced).toEqual([
+      { model: "claude-mystery-9", tier: "standard", reason: "unpriced", tokens: 330 },
+      { model: "claude-opus-4-7", tier: "fast", reason: "unpriced-tier", tokens: 215 },
+      { model: "", tier: "standard", reason: "unpriced", tokens: 16 },
+    ]);
+  });
+
+  test("is all zero for no records", () => {
+    expect(table.coverage([])).toEqual({ pricedTokens: 0, unpricedTokens: 0, unpriced: [] });
+  });
+});
+
+describe("bundled pricing.json", () => {
+  test("passes the schema, with normalised keys", () => {
+    expect(() => parsePriceTableFile(bundledJson)).not.toThrow();
+    for (const id of Object.keys(bundledPricing().models)) expect(normalizeModel(id)).toBe(id);
+  });
+
+  test("covers every model in cc-usage v2.6.1's table", () => {
+    for (const id of Object.keys(CC_USAGE_MODELS))
+      expect(bundledPricing().models[id]).toBeDefined();
+  });
+
+  test("Anthropic cards are valid for all time; dated OpenAI entries start with null", () => {
+    for (const [id, pricing] of Object.entries(bundledPricing().models)) {
+      if (id.startsWith("claude-")) expect(isDated(pricing)).toBe(false);
+      if (isDated(pricing)) expect(pricing.periods[0]?.from).toBeNull();
+    }
+  });
+
+  test("names both providers' sources with the date checked", () => {
+    const { sources } = bundledPricing();
+    expect(sources.anthropic?.url).toBe(
+      "https://platform.claude.com/docs/en/about-claude/pricing.md",
+    );
+    expect(sources.openai?.url).toBe("https://developers.openai.com/api/docs/pricing.md");
+    for (const source of Object.values(sources))
+      expect(source.checked).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test("SOURCES.md records every dated boundary", () => {
+    const sources = readFileSync(join(import.meta.dir, "../../src/pricing/SOURCES.md"), "utf8");
+    const lines = sources.split("\n");
+    let boundaries = 0;
+    for (const [id, pricing] of Object.entries(bundledPricing().models)) {
+      if (!isDated(pricing)) continue;
+      for (const { from } of pricing.periods) {
+        if (from === null) continue;
+        boundaries++;
+        const line = lines.find((l) => l.includes(`| ${id} |`) && l.includes(from));
+        expect({ id, from, line }).toEqual({ id, from, line: expect.any(String) });
+      }
+    }
+    expect(boundaries).toBe(3);
+  });
+});
+
+describe("Rates objects", () => {
+  test("are shared and frozen, so a caller can't corrupt the table", () => {
+    const r = table.rates("claude-opus-4-8", "standard", 0) as Rates;
+    expect(Object.isFrozen(r)).toBe(true);
+    expect(table.rates("claude-opus-4-8", "standard", 0)).toBe(r);
+  });
+});
