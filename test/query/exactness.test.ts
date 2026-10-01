@@ -27,13 +27,15 @@ const DAY = 86_400_000;
 let rows: UsageRow[];
 let path: string;
 
+// Writing 200k rows through the rollup triggers takes about 1 s here and over 5 s (Bun's
+// default hook timeout) on CI's Windows runners.
 beforeAll(() => {
   rows = syntheticRows({ rows: 200_000, from: FROM, to: TO, seed: 6 }).sort((a, b) => a.ts - b.ts);
   path = join(tempDir(), "tokenhud.db");
   const store = openStore(path);
   for (let i = 0; i < rows.length; i += 50_000) store.upsert(rows.slice(i, i + 50_000));
   store.close();
-});
+}, 120_000);
 
 afterAll(cleanup);
 
