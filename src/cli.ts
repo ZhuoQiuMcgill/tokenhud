@@ -85,4 +85,11 @@ function main(args: readonly string[]): number {
   return EXIT_USAGE;
 }
 
-process.exitCode = main(process.argv.slice(2));
+const argv = process.argv.slice(2);
+// `ingest` is a developer command, kept out of --help and parsed by its own module.
+if (argv[0] === "ingest") {
+  const { runIngest } = await import("./commands/ingest.ts");
+  process.exitCode = await runIngest(argv.slice(1));
+} else {
+  process.exitCode = main(argv);
+}

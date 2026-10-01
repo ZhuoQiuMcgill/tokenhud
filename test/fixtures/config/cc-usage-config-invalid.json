@@ -1,0 +1,9 @@
+{
+  "refresh_interval": 999,
+  "default_window": "weird",
+  "show_cost": "yes",
+  "theme": "neon",
+  "claude_roots": "not a list",
+  "codex_roots": null,
+  "disabled_roots": "nope"
+}

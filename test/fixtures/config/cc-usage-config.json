@@ -1,0 +1,16 @@
+{
+  "refresh_interval": 10,
+  "default_window": "7d",
+  "show_cost": false,
+  "theme": "light",
+  "account_scope": "work",
+  "claude_roots": [
+    { "path": "/home/example/.claude-work", "label": "work", "enabled": true },
+    { "path": "/mnt/c/Users/Example/.claude", "label": "win", "enabled": false },
+    { "path": "/srv/claude", "label": "", "enabled": "yes" },
+    { "label": "no path" },
+    "junk"
+  ],
+  "codex_roots": [{ "path": "/mnt/c/Users/Example/.codex", "label": "codex-win", "enabled": true }],
+  "disabled_roots": ["/home/example/.claude-old", 5]
+}
