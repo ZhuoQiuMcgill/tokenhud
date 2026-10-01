@@ -380,3 +380,37 @@ describe("Rates objects", () => {
     expect(table.rates("claude-opus-4-8", "standard", 0)).toBe(r);
   });
 });
+
+describe("what the query layer asks of a table", () => {
+  test("boundaries are every dated period's start, once, ascending", () => {
+    expect(table.boundaries()).toEqual([
+      at("2026-07-30T07:00:00Z"),
+      at("2026-08-05T07:00:00Z"),
+      at("2026-08-21T07:00:00Z"),
+    ]);
+    expect(new PriceTable({ "m-1": { input: 1, output: 2 } }).boundaries()).toEqual([]);
+  });
+
+  test("the lowest long-context threshold, and which models have one", () => {
+    expect(table.minLongContextThreshold()).toBe(272_000);
+    expect(new PriceTable({ "m-1": { input: 1, output: 2 } }).minLongContextThreshold()).toBe(
+      undefined,
+    );
+    const low = new PriceTable({
+      ...bundledPricing().models,
+      "m-1": {
+        input: 1,
+        output: 2,
+        long_context_threshold: 100_000,
+        long_context_input_multiplier: 2,
+        long_context_output_multiplier: 2,
+      },
+    });
+    expect(low.minLongContextThreshold()).toBe(100_000);
+    expect(table.hasLongContext("gpt-5.5")).toBe(true);
+    expect(table.hasLongContext("GPT-5.6")).toBe(true); // the alias of gpt-5.6-sol
+    expect(table.hasLongContext("claude-opus-4-8")).toBe(false);
+    expect(table.hasLongContext("not-a-model")).toBe(false);
+    expect(table.hasLongContext(null)).toBe(false);
+  });
+});

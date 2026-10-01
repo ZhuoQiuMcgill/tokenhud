@@ -15,7 +15,8 @@
     "format": "biome format --write",
     "test": "bun test",
     "build": "bun scripts/build.ts",
-    "bench:store": "bun test/store/bench.ts"
+    "bench:store": "bun test/store/bench.ts",
+    "bench:query": "bun test/query/bench.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
