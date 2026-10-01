@@ -1,0 +1,110 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Lines left flush left, right flush right, cut with … where they meet 1`] = `
+" LIMITS     pace = spend rate 
+5h   62% 1h48m                
+a long left part that m… right
+selected row                  
+[head/bg/b] LIMITS[-/bg]     [dim/bg]pace = spend rate 
+[mute/bg]5h   [cost|mid/bg/b]62%[dim/bg] 1h48m[-/bg]                
+[fg/bg]a long left part that m…[-/bg] [cost|mid/bg]right
+[head/sel/b]selected row[-/sel]                  "
+`;
+
+exports[`Card rounded border, bold title, content inset two cells (gen.py card) 1`] = `
+"╭─ personal · Claude Max 20x ────────╮  
+│ 5h   62%                           │  
+│ week 27%                           │  
+│ pace $41/h                         │  
+╰────────────────────────────────────╯  
+[border/bg]╭─ [head/bg/b]personal · Claude Max 20x[border/bg] ────────╮[-/bg]  
+[border/bg]│[-/bg] [mute/bg]5h   [cost|mid/bg/b]62%[-/bg]                           [border/bg]│[-/bg]  
+[border/bg]│[-/bg] [mute/bg]week [low/bg/b]27%[-/bg]                           [border/bg]│[-/bg]  
+[border/bg]│[-/bg] [mute/bg]pace [cost|mid/bg]$41/h[-/bg]                         [border/bg]│[-/bg]  
+[border/bg]╰────────────────────────────────────╯[-/bg]  "
+`;
+
+exports[`Card a title too long for the width is cut, keeping one rule cell before the corner 1`] = `
+"╭─ a-very-long-a… ─╮
+│                  │
+╰──────────────────╯
+[border/bg]╭─ [head/bg/b]a-very-long-a…[border/bg] ─╮
+[border/bg]│[-/bg]                  [border/bg]│
+[border/bg]╰──────────────────╯"
+`;
+
+exports[`Meter filled cells: none at 0, full above 100 %, an override role 1`] = `
+"━━━━━━━━━━
+[cost|mid/bg]━━━━━[empty/bg]━━━━━"
+`;
+
+exports[`HBar a nonzero share shows at least one cell; the track is optional 1`] = `
+"━━━━━━━━    
+━           
+━━━━━━━━━━━━
+[cost|mid/bg]━━━━━━━━[-/bg]    
+[cost|mid/bg]━[-/bg]           
+[tokens|heat4/bg]━━━[empty/bg]━━━━━━━━━"
+`;
+
+exports[`Spark the latest values show when there are more than cells 1`] = `
+"▁▁▂▃ ▅▆▇█
+[cost|mid/bg]▁▁▂▃ ▅▆▇█"
+`;
+
+exports[`VChart y labels (top, middle, 0), bars and x tick labels 1`] = `
+" $18.4           ▁▁            ██   
+                 ██            ██   
+                 ██▄▄          ██   
+  $9.2         ▁▁████          ██▃▃ 
+               ██████▂▂        ████ 
+             ▄▄████████▁▁    ▇▇████ 
+     0   ▃▃▆▆████████████    ██████ 
+       -24h          -12h       now 
+[-/bg] [dim/bg]$18.4[-/bg] [cost|mid/bg]          ▁▁            ██  [-/bg] 
+[-/bg]       [cost|mid/bg]          ██            ██  [-/bg] 
+[-/bg]       [cost|mid/bg]          ██▄▄          ██  [-/bg] 
+[-/bg]  [dim/bg]$9.2[-/bg] [cost|mid/bg]        ▁▁████          ██▃▃[-/bg] 
+[-/bg]       [cost|mid/bg]        ██████▂▂        ████[-/bg] 
+[-/bg]       [cost|mid/bg]      ▄▄████████▁▁    ▇▇████[-/bg] 
+[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]  ▃▃▆▆████████████    ██████[-/bg] 
+[-/bg]       [dim/bg]-24h[-/bg]          [dim/bg]-12h[-/bg]       [dim/bg]now[-/bg] "
+`;
+
+exports[`HeatGrid weeks × days of ■, five levels, the selected day in head, blanks after today 1`] = `
+"     Aug   Sep   
+ Mon ■ ■ ■ ■ ■ ■ 
+     ■ ■ ■ ■ ■ ■ 
+ Wed ■ ■ ■ ■ ■ ■ 
+     ■ ■ ■ ■ ■ ■ 
+ Fri ■ ■ ■ ■ ■   
+     ■ ■ ■ ■ ■   
+ Sun ■ ■ ■ ■ ■   
+[-/bg]     [dim/bg]Aug[-/bg]   [dim/bg]Sep[-/bg]   
+[dim/bg] Mon[-/bg] [heat0/bg]■[-/bg] [heat3/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg] 
+[-/bg] [-/bg]    [heat3/bg]■[-/bg] [heat1/bg]■[-/bg] [heat3/bg]■[-/bg] [heat0/bg]■[-/bg] [heat3/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] 
+[dim/bg] Wed[-/bg] [heat2/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat1/bg]■[-/bg] [heat3/bg]■[-/bg] [heat1/bg]■[-/bg] [head/bg/b]■[-/bg] 
+[-/bg] [-/bg]    [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat1/bg]■[-/bg] 
+[dim/bg] Fri[-/bg] [heat3/bg]■[-/bg] [heat0/bg]■[-/bg] [heat3/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg]   
+[-/bg] [-/bg]    [heat1/bg]■[-/bg] [heat3/bg]■[-/bg] [heat1/bg]■[-/bg] [heat3/bg]■[-/bg] [heat0/bg]■[-/bg]   
+[dim/bg] Sun[-/bg] [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat1/bg]■[-/bg] [heat3/bg]■[-/bg]   "
+`;
+
+exports[`Table header, the rows on screen with the selection on sel, a totals row under a rule 1`] = `
+"model                        cost share 
+model-c                   $333.33 ━━━━━━
+model-d-with-a-long-na…   $250.00 ━━━━━━
+model-e                   $200.00 ━━━━━━
+model-f                   $166.67 ━━━━━━
+model-g                   $142.86 ━━━━━━
+────────────────────────────────────────
+Total                    $3103.17       
+[dim/bg]model                  [-/bg] [dim/bg]     cost[-/bg] [dim/bg]share 
+[fg/bg]model-c                [-/bg] [cost|mid/bg/b]  $333.33[-/bg] [cost|mid/bg]━━[empty/bg]━━━━
+[fg/bg]model-d-with-a-long-na…[-/bg] [cost|mid/bg/b]  $250.00[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[fg/bg]model-e                [-/bg] [cost|mid/bg/b]  $200.00[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[fg/bg]model-f                [-/bg] [cost|mid/bg/b]  $166.67[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[fg/sel]model-g                [-/sel] [cost|mid/sel/b]  $142.86[-/sel] [cost|mid/sel]━[empty/sel]━━━━━
+[rule/bg]────────────────────────────────────────
+[head/bg]Total                  [-/bg] [cost|mid/bg/b] $3103.17[-/bg]       "
+`;

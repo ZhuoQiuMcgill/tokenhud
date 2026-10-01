@@ -16,14 +16,19 @@
     "test": "bun test",
     "build": "bun scripts/build.ts",
     "bench:store": "bun test/store/bench.ts",
-    "bench:query": "bun test/query/bench.ts"
+    "bench:query": "bun test/query/bench.ts",
+    "bench:tui": "bun test/tui/bench.tsx"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@types/bun": "1.4.2",
+    "@types/react": "19.3.0",
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.2.0"
+    "@modelcontextprotocol/server": "2.2.0",
+    "@opentui/core": "0.5.14",
+    "@opentui/react": "0.5.14",
+    "react": "19.3.0"
   }
 }

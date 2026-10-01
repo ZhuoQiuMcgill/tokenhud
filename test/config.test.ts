@@ -28,6 +28,7 @@ test("config_roundtrip", () => {
     default_window: "5h",
     show_cost: false,
     theme: "light",
+    time_zone: "Asia/Kolkata",
   };
   saveConfig(config, path);
   expect(loadConfig(path)).toEqual(config);
@@ -88,6 +89,14 @@ describe("validation never throws", () => {
     });
   });
 
+  test("time_zone is 'system' or a zone Intl knows; anything else is 'system'", () => {
+    expect(validateConfig({}).time_zone).toBe("system");
+    expect(validateConfig({ time_zone: "America/Toronto" }).time_zone).toBe("America/Toronto");
+    expect(validateConfig({ time_zone: "UTC" }).time_zone).toBe("UTC");
+    for (const bad of ["Mars/Olympus", "", 5, null, "system "])
+      expect(validateConfig({ time_zone: bad }).time_zone).toBe("system");
+  });
+
   test("the windows are today, this_week, this_month, all and the rolling 1h/5h/24h", () => {
     expect([...WINDOW_CHOICES].sort()).toEqual([
       "1h",
@@ -132,6 +141,7 @@ describe("configFromCcUsage", () => {
       show_cost: false,
       theme: "light",
       account_scope: "all",
+      time_zone: "system",
       claude_roots: [
         { path: "/home/example/.claude-work", label: "work", enabled: true },
         { path: "/mnt/c/Users/Example/.claude", label: "win", enabled: false },

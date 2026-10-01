@@ -22,6 +22,8 @@ export const WINDOW_CHOICES = [
   "24h",
 ] as const;
 export const THEME_CHOICES = ["dark", "light", "high-contrast"] as const;
+/** `time_zone` value meaning the system's zone (which honours TZ). */
+export const SYSTEM_TIME_ZONE = "system";
 
 export type Window = (typeof WINDOW_CHOICES)[number];
 export type Theme = (typeof THEME_CHOICES)[number];
@@ -40,6 +42,8 @@ export interface Config {
   theme: Theme;
   /** The last-selected scope: "all" or an account label (checked against live accounts at runtime). */
   account_scope: string;
+  /** "system", or an IANA zone name for calendar periods (today, this week, ...). */
+  time_zone: string;
   claude_roots: RootEntry[];
   codex_roots: RootEntry[];
   /** Root paths (either provider) the user switched off. */
@@ -58,6 +62,7 @@ export function defaultConfig(): Config {
     show_cost: true,
     theme: "dark",
     account_scope: "all",
+    time_zone: SYSTEM_TIME_ZONE,
     claude_roots: [],
     codex_roots: [],
     disabled_roots: [],
@@ -99,6 +104,17 @@ function sanitizeRoots(value: unknown): RootEntry[] {
   return out;
 }
 
+/** Whether `name` is a time zone Intl knows (an IANA id or alias). */
+export function isIanaZone(name: string): boolean {
+  if (name === "") return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
@@ -113,6 +129,12 @@ export function validateConfig(raw: unknown): Config {
   config.theme = oneOf(THEME_CHOICES, raw.theme, "dark");
   if (typeof raw.account_scope === "string" && raw.account_scope !== "") {
     config.account_scope = raw.account_scope;
+  }
+  if (
+    typeof raw.time_zone === "string" &&
+    (raw.time_zone === SYSTEM_TIME_ZONE || isIanaZone(raw.time_zone))
+  ) {
+    config.time_zone = raw.time_zone;
   }
   config.claude_roots = sanitizeRoots(raw.claude_roots);
   config.codex_roots = sanitizeRoots(raw.codex_roots);
