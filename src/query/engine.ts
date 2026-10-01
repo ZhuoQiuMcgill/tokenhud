@@ -16,6 +16,11 @@
 // time. A view's queries then cost a few loops over typed arrays instead of scans of the
 // store. The caches are dropped when another connection commits (PRAGMA data_version), or,
 // with `autoInvalidate: false`, only for the ranges passed to `invalidate()`.
+//
+// The first use of a range reads and prices it (about 20-80 ms for a year of 1M rows);
+// later queries over it take well under a millisecond. A long-lived caller (the TUI) warms
+// the engine at startup with `warm()` and, on each ingest, calls `invalidate(range)` and
+// recomputes its view models off the input path.
 
 import type { Database } from "bun:sqlite";
 import { cacheReadRate, computeCost, EPHEMERAL_5M_MULT, type Rates } from "../pricing/cost.ts";
@@ -53,8 +58,10 @@ import { Zone } from "./tz.ts";
 
 const HOUR = 3_600_000;
 const DAY_HOURS = 24;
-// The row cache holds at most this many hours; past it, it starts over.
-const MAX_ROW_HOURS = 4096;
+// Between queries the row cache keeps at most this many rows (an empty hour counts as
+// one), dropping the least recently used hours first. A single query may hold more while
+// it runs.
+const DEFAULT_MAX_CACHED_ROWS = 200_000;
 
 export interface QueryArgs {
   /** Default "all". Ignored when `range` is given. */
@@ -77,6 +84,8 @@ export interface QueryOptions {
    * turns it off and calls `invalidate(range)` for what its ingest worker reports.
    */
   readonly autoInvalidate?: boolean;
+  /** The row cache's bound between queries; default 200,000 rows (about 20 MB). */
+  readonly maxCachedRows?: number;
 }
 
 // ── measures ─────────────────────────────────────────────────────────────────────
@@ -176,7 +185,10 @@ export class UsageQueries {
 
   #dataVersion: bigint | undefined;
   readonly #chunks = new Map<number, Chunk>();
+  /** Hour -> rows, least recently used first (a use moves an hour to the end). */
   readonly #rowHours = new Map<number, RowHour>();
+  #cachedRows = 0;
+  readonly #maxCachedRows: number;
 
   // Store ids -> names and dense indexes; refreshed with the cache.
   #accounts: AccountRef[] = [];
@@ -185,8 +197,6 @@ export class UsageQueries {
   #modelKeyOfId = new Int32Array(0);
   readonly #modelKeys = new Map<string, number>();
   readonly #modelKeyNames: string[] = [];
-  /** Store model ids whose cards have a long-context tier. */
-  #longModelIds: number[] = [];
   #mapsLoaded = false;
 
   constructor(db: Database, prices: PriceTable, options: QueryOptions = {}) {
@@ -195,11 +205,15 @@ export class UsageQueries {
     this.#zone = options.tz === undefined ? Zone.system() : Zone.of(options.tz);
     this.#now = options.now ?? Date.now;
     this.#autoInvalidate = options.autoInvalidate ?? true;
-    this.#splitHours = prices
-      .boundaries()
-      .filter((t) => t % HOUR !== 0)
-      .map((t) => Math.floor(t / HOUR));
-    this.#splitHourSet = new Set(this.#splitHours);
+    this.#maxCachedRows = options.maxCachedRows ?? DEFAULT_MAX_CACHED_ROWS;
+    // Several boundaries can fall in one hour; it is still one hour, read once.
+    this.#splitHourSet = new Set(
+      prices
+        .boundaries()
+        .filter((t) => t % HOUR !== 0)
+        .map((t) => Math.floor(t / HOUR)),
+    );
+    this.#splitHours = [...this.#splitHourSet].sort((a, b) => a - b);
     this.#longThreshold = prices.minLongContextThreshold();
   }
 
@@ -216,11 +230,12 @@ export class UsageQueries {
     if (range === undefined) {
       this.#chunks.clear();
       this.#rowHours.clear();
+      this.#cachedRows = 0;
     } else if (range.to > range.from) {
       const firstHour = Math.floor(range.from / HOUR);
       const lastHour = Math.floor((range.to - 1) / HOUR);
       for (const hour of [...this.#rowHours.keys()]) {
-        if (hour >= firstHour && hour <= lastHour) this.#rowHours.delete(hour);
+        if (hour >= firstHour && hour <= lastHour) this.#dropRowHour(hour);
       }
       const firstDay = Math.floor(firstHour / DAY_HOURS);
       const lastDay = Math.floor(lastHour / DAY_HOURS);
@@ -229,6 +244,23 @@ export class UsageQueries {
       }
     }
     this.#mapsLoaded = false;
+  }
+
+  /**
+   * Reads and prices everything a query over the range would (default: all of the store),
+   * so the next queries over it are cached. The TUI calls it at startup, within its
+   * first-frame budget.
+   */
+  warm(args: QueryArgs = {}): void {
+    this.#read(() => {
+      const r = this.#resolve(args);
+      this.#collect([r.range.from, r.range.to], null, {
+        slots: 1,
+        byAccount: false,
+        byModel: false,
+        byTier: false,
+      });
+    });
   }
 
   // ── queries ────────────────────────────────────────────────────────────────────
@@ -515,12 +547,10 @@ export class UsageQueries {
     this.#modelNames = new Array<string>(maxModel + 1).fill("");
     this.#modelKeyOfId = new Int32Array(maxModel + 1);
     this.#modelKeyOfId.fill(this.#modelKey(""));
-    this.#longModelIds = [];
     for (const { id, name } of models) {
       const i = Number(id);
       this.#modelNames[i] = name;
       this.#modelKeyOfId[i] = this.#modelKey(normalizeModel(name));
-      if (this.#prices.hasLongContext(name)) this.#longModelIds.push(i);
     }
     this.#mapsLoaded = true;
   }
@@ -578,7 +608,8 @@ export class UsageQueries {
       const firstDay = Math.floor(span.lo / DAY_HOURS);
       const lastDay = Math.floor((span.hi - 1) / DAY_HOURS);
       for (let day = firstDay; day <= lastDay; day++) {
-        const chunk = this.#chunks.get(day) ?? EMPTY_CHUNK;
+        const chunk = this.#chunks.get(day);
+        if (chunk === undefined) throw new Error(`internal: UTC day ${day} was not loaded`);
         const { hour, acct, model, tier, values: v } = chunk;
         for (let i = 0; i < chunk.length; i++) {
           const h = hour[i] as number;
@@ -596,7 +627,7 @@ export class UsageQueries {
       const lastHour = Math.floor((piece.hi - 1) / HOUR);
       for (let h = firstHour; h <= lastHour; h++) {
         const rows = this.#rowHours.get(h);
-        if (rows === undefined) continue;
+        if (rows === undefined) throw new Error(`internal: UTC hour ${h} was not loaded`);
         const { ts, acct, model, tier, values: v } = rows;
         for (let i = 0; i < rows.length; i++) {
           const t = ts[i] as number;
@@ -609,6 +640,8 @@ export class UsageQueries {
         }
       }
     }
+    // Only now, with every row summed, may the row cache shrink.
+    this.#trimRowCache();
     return { accounts, models, tiers, values };
   }
 
@@ -645,20 +678,27 @@ export class UsageQueries {
 
   /**
    * Rows that may be above a long-context threshold, in [from, to), through the partial
-   * index. Only models with a long-context tier are read. If some card's threshold is
-   * below the index's, the range is scanned instead.
+   * index. Only models with a long-context tier are read, and which those are is read from
+   * this snapshot's models table, so a model written after the names were cached still
+   * counts. If some card's threshold is below the index's, the range is scanned instead.
    */
   #candidates(
     from: number,
     to: number,
   ): Array<CandidateRow & { acct: number; model: number; tier: number }> {
     const threshold = this.#longThreshold;
-    if (threshold === undefined || this.#longModelIds.length === 0) return [];
+    if (threshold === undefined) return [];
+    const longModels = this.#db
+      .query<{ id: bigint; name: string }, []>("SELECT id, name FROM models")
+      .all()
+      .filter((m) => this.#prices.hasLongContext(m.name))
+      .map((m) => m.id);
+    if (longModels.length === 0) return [];
     const predicate =
       threshold >= LONG_CONTEXT_INDEX_MIN ? LONG_CONTEXT_PREDICATE : `inp + cr > ${threshold}`;
     const stmt = this.#db.prepare<Row, [number, number]>(
       `SELECT ts, acct, model, tier, inp, outp, cr, cc, e5, e1 FROM usage
-       WHERE ${predicate} AND model IN (${this.#longModelIds.join(", ")}) AND ts >= ?1 AND ts < ?2`,
+       WHERE ${predicate} AND model IN (${longModels.join(", ")}) AND ts >= ?1 AND ts < ?2`,
     );
     try {
       return (stmt.values(from, to) as Row[]).map((r) => ({
@@ -723,6 +763,7 @@ export class UsageQueries {
          WHERE hour >= ?1 AND hour < ?2`,
       )
       .values(hourLo, hourHi) as Row[];
+    this.#ensureIds(rows, 1, 2);
     const candidates = new Map<string, CandidateRow[]>();
     for (const row of this.#candidates(hourLo * HOUR, hourHi * HOUR)) {
       const key = `${Math.floor(row.ts / HOUR)},${row.acct},${row.model},${row.tier}`;
@@ -730,7 +771,6 @@ export class UsageQueries {
       if (list === undefined) candidates.set(key, [row]);
       else list.push(row);
     }
-    this.#ensureIds(rows, 1, 2);
 
     // Rows come in primary-key order, so each day is a contiguous run.
     let i = 0;
@@ -811,17 +851,26 @@ export class UsageQueries {
 
   // ── the row cache ──────────────────────────────────────────────────────────────
 
-  /** Loads and prices every UTC hour the raw pieces touch that isn't cached yet. */
+  /**
+   * Makes every UTC hour the raw pieces touch present in the row cache: cached ones move to
+   * the most recently used end, missing ones are read and priced. Nothing is evicted here,
+   * so every hour the query needs stays until it has been summed.
+   */
   #ensureRowHours(pieces: readonly RawPiece[]): void {
     const wanted = new Set<number>();
     for (const piece of pieces) {
       const last = Math.floor((piece.hi - 1) / HOUR);
       for (let h = Math.floor(piece.lo / HOUR); h <= last; h++) {
-        if (!this.#rowHours.has(h)) wanted.add(h);
+        const cached = this.#rowHours.get(h);
+        if (cached === undefined) {
+          wanted.add(h);
+        } else {
+          this.#rowHours.delete(h);
+          this.#rowHours.set(h, cached);
+        }
       }
     }
     if (wanted.size === 0) return;
-    if (this.#rowHours.size + wanted.size > MAX_ROW_HOURS) this.#rowHours.clear();
     // Consecutive hours load in one range read.
     const hours = [...wanted].sort((a, b) => a - b);
     let runStart = hours[0] as number;
@@ -847,7 +896,24 @@ export class UsageQueries {
       const end = (hour + 1) * HOUR;
       const start = i;
       while (i < rows.length && num((rows[i] as Row)[0]) < end) i++;
-      this.#rowHours.set(hour, this.#rowHour(rows, start, i));
+      const loaded = this.#rowHour(rows, start, i);
+      this.#rowHours.set(hour, loaded);
+      this.#cachedRows += Math.max(1, loaded.length);
+    }
+  }
+
+  #dropRowHour(hour: number): void {
+    const cached = this.#rowHours.get(hour);
+    if (cached === undefined) return;
+    this.#rowHours.delete(hour);
+    this.#cachedRows -= Math.max(1, cached.length);
+  }
+
+  /** Drops the least recently used hours until the cache is within its bound. */
+  #trimRowCache(): void {
+    for (const hour of this.#rowHours.keys()) {
+      if (this.#cachedRows <= this.#maxCachedRows) return;
+      this.#dropRowHour(hour);
     }
   }
 

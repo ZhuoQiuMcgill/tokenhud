@@ -40,8 +40,8 @@ beforeAll(() => {
 afterAll(cleanup);
 
 /**
- * Overrides: Terra's second card starts at 07:30, mid-hour, and Luna gets a 100k
- * long-context threshold, below the partial index's 272k.
+ * Overrides: Terra's second card starts at 07:30, mid-hour, and Luna's at 07:45 in the same
+ * hour; Luna's cards have a 100k long-context threshold, below the partial index's 272k.
  */
 function oddTable(): PriceTable {
   const bundled = bundledPricing().models;
@@ -67,13 +67,19 @@ function oddTable(): PriceTable {
     "terra",
     { coerce: false },
   );
+  const lunaCard = (input: number) => ({
+    input,
+    output: input * 6,
+    long_context_threshold: 100_000,
+    long_context_input_multiplier: 3,
+    long_context_output_multiplier: 1.25,
+  });
   const luna = parseModelPricing(
     {
-      input: 0.2,
-      output: 1.2,
-      long_context_threshold: 100_000,
-      long_context_input_multiplier: 3,
-      long_context_output_multiplier: 1.25,
+      periods: [
+        { from: null, card: lunaCard(1) },
+        { from: "2026-08-05T07:45:00Z", card: lunaCard(0.2) },
+      ],
     },
     "luna",
     { coerce: false },

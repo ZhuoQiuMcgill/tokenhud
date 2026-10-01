@@ -395,3 +395,172 @@ describe("an empty store", () => {
     db.close();
   });
 });
+
+/** The bundled table with `periods` (model -> [from, input, output][]) replacing models. */
+function withPeriods(periods: Record<string, Array<[string | null, number, number]>>): PriceTable {
+  const overrides = Object.fromEntries(
+    Object.entries(periods).map(([model, list]) => [
+      model,
+      parseModelPricing(
+        { periods: list.map(([from, input, output]) => ({ from, card: { input, output } })) },
+        model,
+        { coerce: false },
+      ),
+    ]),
+  );
+  return new PriceTable(mergePricing(bundledPricing().models, overrides));
+}
+
+describe("critique regressions", () => {
+  const sumCost = (buckets: readonly { cost: number }[]) => buckets.reduce((s, b) => s + b.cost, 0);
+  const sumTokens = (buckets: readonly { tokens: number }[]) =>
+    buckets.reduce((s, b) => s + b.tokens, 0);
+
+  // B1: the row cache's bound evicted hours the running query needed, and dropped their rows.
+  test("a query over more raw hours than the row cache holds counts every row", () => {
+    const start = at("2026-01-01T00:00:00Z");
+    const hours = 6000;
+    // One row per hour, 6,000 input tokens of Opus 4.8 at $5/M: $0.03 each.
+    const rows = Array.from({ length: hours }, (_, h) =>
+      row({ inp: 6000, ts: start + h * HOUR + 10 * 60_000 }),
+    );
+    const { q, db } = engine(rows, { maxCachedRows: 100, autoInvalidate: false });
+    const last24 = { from: start + (hours - 24) * HOUR, to: start + hours * HOUR };
+    const all = { from: start, to: start + hours * HOUR };
+    for (let round = 0; round < 2; round++) {
+      // 20-minute buckets: every hour is read from raw rows.
+      const day = q.activity({ range: last24, buckets: 72 }).buckets;
+      expect(sumCost(day)).toBeCloseTo(0.72, 9);
+      expect(sumTokens(day)).toBe(24 * 6000);
+      const wide = q.activity({ range: all, buckets: hours * 2 }).buckets;
+      expect(sumCost(wide)).toBeCloseTo(180, 9);
+      expect(sumTokens(wide)).toBe(hours * 6000);
+      expect(wide.filter((b) => b.tokens > 0)).toHaveLength(hours);
+    }
+    db.close();
+  });
+
+  // B2: two price changes inside one UTC hour read that hour twice.
+  test("two price changes in one hour count that hour once", () => {
+    const prices = withPeriods({
+      "claude-opus-4-8": [
+        [null, 5, 25],
+        ["2026-08-12T10:30:00Z", 3, 15],
+      ],
+      "claude-sonnet-4-6": [
+        [null, 3, 15],
+        ["2026-08-12T10:45:00Z", 2, 10],
+      ],
+    });
+    const rows = [
+      row({ inp: 1_000_000, ts: at("2026-08-12T10:10:00Z") }), // $5
+      row({ inp: 1_000_000, ts: at("2026-08-12T10:40:00Z") }), // $3
+      row({ model: "claude-sonnet-4-6", inp: 1_000_000, ts: at("2026-08-12T10:44:59.999Z") }), // $3
+      row({ model: "claude-sonnet-4-6", inp: 1_000_000, ts: at("2026-08-12T10:45:00Z") }), // $2
+    ];
+    const { q, db } = engine(rows, {}, prices);
+    const day = { from: at("2026-08-12T00:00:00Z"), to: at("2026-08-13T00:00:00Z") };
+    const totals = q.totals({ range: day });
+    expect(totals.usage.records).toBe(4);
+    expect(totals.usage.cost).toBeCloseTo(13, 12);
+    expect(q.byModel({ range: day }).map((m) => [m.model, m.usage.records, m.usage.cost])).toEqual([
+      ["claude-opus-4-8", 2, 8],
+      ["claude-sonnet-4-6", 2, 5],
+    ]);
+    expect(
+      q.byDay({ range: day, tz: "Asia/Kolkata" }).reduce((s, d) => s + d.usage.records, 0),
+    ).toBe(4);
+    db.close();
+  });
+
+  test("three price changes in one hour count that hour once", () => {
+    const prices = withPeriods({
+      "claude-opus-4-8": [
+        [null, 5, 25],
+        ["2026-08-12T10:30:00Z", 3, 15],
+      ],
+      "claude-sonnet-4-6": [
+        [null, 3, 15],
+        ["2026-08-12T10:45:00Z", 2, 10],
+      ],
+      "claude-haiku-4-5": [
+        [null, 1, 5],
+        ["2026-08-12T10:50:00.500Z", 0.5, 2.5],
+      ],
+    });
+    const rows = [
+      row({ inp: 1_000_000, ts: at("2026-08-12T10:29:59.999Z") }), // $5
+      row({ inp: 1_000_000, ts: at("2026-08-12T10:30:00Z") }), // $3
+      row({ model: "claude-sonnet-4-6", inp: 1_000_000, ts: at("2026-08-12T10:46:00Z") }), // $2
+      row({ model: "claude-haiku-4-5", inp: 1_000_000, ts: at("2026-08-12T10:50:00.499Z") }), // $1
+      row({ model: "claude-haiku-4-5", inp: 1_000_000, ts: at("2026-08-12T10:50:00.500Z") }), // $0.50
+    ];
+    const { q, db } = engine(rows, {}, prices);
+    for (const range of [
+      { from: at("2026-08-12T00:00:00Z"), to: at("2026-08-13T00:00:00Z") },
+      { from: at("2026-08-12T10:00:00Z"), to: at("2026-08-12T11:00:00Z") },
+      { from: at("2026-08-12T10:20:00Z"), to: at("2026-08-12T10:55:00Z") },
+    ]) {
+      const totals = q.totals({ range });
+      expect(totals.usage.records).toBe(5);
+      expect(totals.usage.cost).toBeCloseTo(11.5, 12);
+    }
+    db.close();
+  });
+
+  // M1: with autoInvalidate off, a model first seen in an uncached day lost its
+  // long-context price, because the list of such models was read before the new names.
+  test("a model written after the names were read keeps its long-context price", () => {
+    const { q, db, path } = engine(
+      [row({ ...codex, model: "gpt-5.4-mini", inp: 1000, ts: at("2026-09-30T00:10:00Z") })],
+      { autoInvalidate: false },
+    );
+    q.totals({ range: { from: at("2026-09-30T00:00:00Z"), to: at("2026-09-30T01:00:00Z") } });
+    const late = row({
+      ...codex,
+      model: "gpt-5.5",
+      inp: 100_000,
+      outp: 1000,
+      cr: 400_000,
+      ts: at("2026-10-02T05:10:00Z"),
+    });
+    const store = openStore(path);
+    store.upsert([late]);
+    store.close();
+    // 100k * $10 + 1000 * $45 + 400k * $1 per M: the 2x/1.5x long-context rates.
+    const expected = bundled().cost({
+      model: "gpt-5.5",
+      tier: "standard",
+      atMs: late.ts,
+      input: late.inp,
+      output: late.outp,
+      cacheRead: late.cr,
+      cacheCreation: 0,
+      ephemeral5m: null,
+      ephemeral1h: null,
+    });
+    expect(expected).toBeCloseTo(1.445, 12);
+    const day = { from: at("2026-10-02T00:00:00Z"), to: at("2026-10-03T00:00:00Z") };
+    expect(q.totals({ range: day }).usage.cost).toBeCloseTo(1.445, 12);
+    db.close();
+  });
+
+  test("warm() prices a range ahead of the queries over it", () => {
+    const { q, db } = engine(
+      [row({ inp: 1_000_000 }), row({ inp: 1_000_000, ts: at("2026-09-30T14:20:30.500Z") })],
+      { autoInvalidate: false },
+    );
+    q.warm();
+    q.warm({ period: "24h" });
+    expect(q.totals().usage.cost).toBe(10);
+    expect(
+      q
+        .activity({
+          range: { from: at("2026-09-30T14:00:00Z"), to: at("2026-09-30T15:00:00Z") },
+          buckets: 6,
+        })
+        .buckets.map((b) => b.cost),
+    ).toEqual([0, 5, 5, 0, 0, 0]);
+    db.close();
+  });
+});
