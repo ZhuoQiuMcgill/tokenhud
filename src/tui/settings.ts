@@ -344,14 +344,6 @@ export function settingsKey(
         };
       }
       if (key.name === "l") {
-        if (!root.renamable) {
-          return {
-            state: {
-              ...state,
-              message: `${root.source === "env" ? "an env-var" : "the default"} account's label is fixed`,
-            },
-          };
-        }
         return {
           state: {
             screen: "rename",

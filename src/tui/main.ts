@@ -37,7 +37,10 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
     return 2;
   }
   const paths = tuiPaths(env, home);
-  const { config } = ensureConfig(paths.config, join(ccUsageDir(env, home), "config.json"));
+  const { config } = ensureConfig(paths.config, join(ccUsageDir(env, home), "config.json"), {
+    home,
+    env,
+  });
   let lock: WriterLock | null = null;
   let lockError: string | null = null;
   try {

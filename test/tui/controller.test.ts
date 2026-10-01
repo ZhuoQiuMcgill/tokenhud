@@ -153,7 +153,6 @@ describe("settings", () => {
     enabled: true,
     historyOnly: false,
     identity: "fixture-identity-work",
-    renamable: true,
     disabledBy: [],
     configIndex: null,
   };

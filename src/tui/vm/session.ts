@@ -14,6 +14,7 @@ import {
   discoverCodexRoots,
   expandPath,
   type Root,
+  rootIdentity,
 } from "../../sources/roots.ts";
 import { emptyStoreDatabase, openStoreReader } from "../../store/store.ts";
 import {
@@ -141,7 +142,8 @@ export function createQueries(db: Database, prices: PriceTable, tz: string, now:
 export function rootInfos(roots: readonly Root[], config: Config, home: string): RootInfo[] {
   return roots.map((root) => {
     const entries = root.provider === "claude" ? config.claude_roots : config.codex_roots;
-    const index = entries.findIndex((e) => expandPath(e.path, home) === root.path);
+    // By identity, as discovery applies entries: `~/.claude` and its absolute path match.
+    const index = entries.findIndex((e) => rootIdentity(e.path, home) === root.identity);
     return {
       provider: root.provider,
       label: root.label,
@@ -150,7 +152,6 @@ export function rootInfos(roots: readonly Root[], config: Config, home: string):
       enabled: root.enabled,
       historyOnly: root.historyOnly,
       identity: root.identity,
-      renamable: root.source !== "auto" && root.source !== "env",
       disabledBy: config.disabled_roots.filter(
         (raw) => raw !== "" && expandPath(raw, home) === root.path,
       ),

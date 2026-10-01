@@ -24,7 +24,6 @@ const root = (over: Partial<RootInfo>): RootInfo => ({
   enabled: true,
   historyOnly: false,
   identity: "id-personal",
-  renamable: false,
   disabledBy: [],
   configIndex: null,
   ...over,
@@ -37,7 +36,12 @@ const ROOTS: RootInfo[] = [
     path: "/home/someone/.claude-work",
     source: "home",
     identity: "id-work",
-    renamable: true,
+  }),
+  root({
+    label: "company",
+    path: "/elsewhere/.claude-company",
+    source: "env",
+    identity: "id-env",
   }),
   root({
     provider: "codex",
@@ -45,7 +49,6 @@ const ROOTS: RootInfo[] = [
     path: "/mnt/c/Users/someone/.codex",
     source: "config",
     identity: "id-codex-win",
-    renamable: true,
     enabled: false,
     disabledBy: ["/mnt/c/Users/someone/.codex"],
     configIndex: 0,
@@ -82,7 +85,7 @@ describe("the main list", () => {
     const values = (["refresh", "window", "cost", "theme", "tz", "accounts"] as const).map((r) =>
       rowValue(r, input(config)),
     );
-    expect(values).toEqual(["5 s", "all-time", "off", "dark", "Asia/Kolkata", "2 of 3 enabled"]);
+    expect(values).toEqual(["5 s", "all-time", "off", "dark", "Asia/Kolkata", "3 of 4 enabled"]);
     expect(rowValue("tz", input())).toBe("system (America/Toronto)");
   });
 
@@ -181,16 +184,32 @@ describe("accounts", () => {
       ...defaultConfig(),
       codex_roots: [{ path: "/mnt/c/Users/someone/.codex", label: "codex-win" }],
     };
-    expect(renameRoot(config, ROOTS[2] as RootInfo, "laptop").codex_roots).toEqual([
+    expect(renameRoot(config, ROOTS[3] as RootInfo, "laptop").codex_roots).toEqual([
       { path: "/mnt/c/Users/someone/.codex", label: "laptop" },
     ]);
   });
 
-  test("the default and env roots' labels are fixed (discovery puts them before config)", () => {
-    expect(drive([...open, "l"]).state).toMatchObject({
-      screen: "accounts",
-      message: "the default account's label is fixed",
-    });
+  test("the default root is renamed through a config entry for its path", () => {
+    const renamed = drive([
+      ...open,
+      "l",
+      ...Array(8).fill("backspace"),
+      "m",
+      "a",
+      "i",
+      "n",
+      "return",
+    ]);
+    expect(renamed.config.claude_roots).toEqual([{ path: "/home/someone/.claude", label: "main" }]);
+    expect(renamed.accountsChanged).toBe(true);
+    expect(renamed.state).toMatchObject({ screen: "accounts", pick: 0, message: null });
+  });
+
+  test("the env root is renamed the same way", () => {
+    const keys = [...open, "down", "down", "l", ...Array(7).fill("backspace"), "x", "return"];
+    expect(drive(keys).config.claude_roots).toEqual([
+      { path: "/elsewhere/.claude-company", label: "x" },
+    ]);
   });
 
   test("bad labels are refused with a reason, and Esc leaves the label as it was", () => {

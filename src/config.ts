@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { configDir } from "./paths.ts";
 
 /**
@@ -192,12 +192,50 @@ export function ccUsageDir(
 /** cc-usage's window choices that tokenhud renamed. */
 const CC_USAGE_WINDOWS: Readonly<Record<string, Window>> = { "7d": "this_week" };
 
+/** Each provider's default root (under home) and the env var that adds one, as cc-usage. */
+const FIXED_ROOTS = {
+  claude_roots: [".claude", "CLAUDE_CONFIG_DIR"],
+  codex_roots: [".codex", "CODEX_HOME"],
+} as const;
+
+/** Where the cc-usage config being imported was used: its user's home and environment. */
+export interface CcUsagePlace {
+  home: string;
+  env: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * cc-usage listed the default root and the env-var root before its config entries and
+ * ignored any entry that resolved to one of them, label and `enabled` included. tokenhud
+ * applies such entries (they relabel the account), so importing them would rename
+ * accounts cc-usage showed, and stored, under their default label. They are dropped.
+ * Paths are compared after `~` expansion and normalisation; symlinks are not followed.
+ */
+function withoutFixedRoots(
+  value: unknown,
+  key: keyof typeof FIXED_ROOTS,
+  place: CcUsagePlace,
+): unknown {
+  if (!Array.isArray(value)) return value;
+  const expand = (raw: string) =>
+    resolve(raw === "~" ? place.home : raw.startsWith("~/") ? join(place.home, raw.slice(2)) : raw);
+  const [dir, envVar] = FIXED_ROOTS[key];
+  const fixed = new Set([resolve(place.home, dir)]);
+  const envDir = place.env[envVar];
+  if (envDir) fixed.add(expand(envDir));
+  return value.filter(
+    (entry) =>
+      !(isRecord(entry) && typeof entry.path === "string" && fixed.has(expand(entry.path))),
+  );
+}
+
 /**
  * tokenhud's config from cc-usage's parsed `config.json`: root labels and paths, disabled
  * roots, theme, show-cost, refresh interval and default window (`7d` becomes
  * `this_week`). The account scope is left at "all": labels can differ between the apps.
+ * With `place`, root entries cc-usage ignored there are left out (see withoutFixedRoots).
  */
-export function configFromCcUsage(json: unknown): Config {
+export function configFromCcUsage(json: unknown, place?: CcUsagePlace): Config {
   if (!isRecord(json)) return defaultConfig();
   const window =
     typeof json.default_window === "string"
@@ -208,8 +246,12 @@ export function configFromCcUsage(json: unknown): Config {
     default_window: window,
     show_cost: json.show_cost,
     theme: json.theme,
-    claude_roots: json.claude_roots,
-    codex_roots: json.codex_roots,
+    claude_roots: place
+      ? withoutFixedRoots(json.claude_roots, "claude_roots", place)
+      : json.claude_roots,
+    codex_roots: place
+      ? withoutFixedRoots(json.codex_roots, "codex_roots", place)
+      : json.codex_roots,
     disabled_roots: json.disabled_roots,
   });
 }
@@ -234,6 +276,7 @@ export interface StartupConfig {
 export function ensureConfig(
   path: string = configPath(),
   ccUsageConfig: string = join(ccUsageDir(), "config.json"),
+  place: CcUsagePlace = { home: homedir(), env: process.env },
 ): StartupConfig {
   if (existsSync(path)) return { config: loadConfig(path), imported: false, saveError: null };
   let text: string;
@@ -244,7 +287,7 @@ export function ensureConfig(
   }
   let config: Config;
   try {
-    config = configFromCcUsage(JSON.parse(text));
+    config = configFromCcUsage(JSON.parse(text), place);
   } catch {
     // cc-usage itself runs on its defaults when its file does not parse.
     config = defaultConfig();

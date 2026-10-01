@@ -150,7 +150,6 @@ describe("states", () => {
           enabled: true,
           historyOnly: false,
           identity: "fixture-identity-personal",
-          renamable: false,
           disabledBy: [],
           configIndex: null,
         },

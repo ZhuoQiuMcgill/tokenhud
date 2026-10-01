@@ -62,6 +62,47 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
     }
   }, 60_000);
 
+  test("the default account renamed in settings keeps its new label after a restart", async () => {
+    const home = makeHome();
+    try {
+      const first = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+      try {
+        await first.waitFor((s) => LIVE(s) && s.includes("personal · claude"), "the card");
+        first.send("s");
+        await first.waitFor((s) => s.includes("╭─ Settings"), "settings");
+        first.send("\x1b[F"); // End: the Accounts row
+        await Bun.sleep(100);
+        first.send("\r");
+        await first.waitFor((s) => s.includes("Settings › Accounts"), "the account list");
+        first.send("l");
+        await first.waitFor((s) => s.includes("new label"), "the rename prompt");
+        first.send(`${"\x7f".repeat(8)}main\r`);
+        await first.waitFor((s) => s.includes("● main"), "the renamed root");
+        first.send("\x1b");
+        await Bun.sleep(300);
+        first.send("\x1b");
+        await first.waitFor((s) => s.includes("main · claude"), "the renamed card");
+        first.send("q");
+        await first.exited;
+        expect(exitCode(first)).toBe(0);
+      } finally {
+        first.kill();
+      }
+      const second = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+      try {
+        await second.waitFor((s) => s.includes("main · claude"), "the label after a restart");
+        expect(second.vt.text()).not.toContain("personal · claude");
+        second.send("q");
+        await second.exited;
+        expect(exitCode(second)).toBe(0);
+      } finally {
+        second.kill();
+      }
+    } finally {
+      home.remove();
+    }
+  }, 60_000);
+
   test("a crash in a view: the error is printed, the exit code is 1, the terminal is restored", async () => {
     const home = makeHome();
     const run = runInPty(`${BUN} ${join(import.meta.dir, "pty", "crash.ts")}; ${AFTER}`, home.env);

@@ -153,6 +153,46 @@ describe("configFromCcUsage", () => {
     });
   });
 
+  test("entries cc-usage ignored (resolving to the default or env root) are not imported", () => {
+    // cc-usage listed ~/.claude and $CLAUDE_CONFIG_DIR before config entries and dropped
+    // entries resolving to them; tokenhud would apply them, renaming accounts cc-usage
+    // showed (and stored) as `personal`. So their labels and flags don't come across.
+    const place = {
+      home: "/home/example",
+      env: { CLAUDE_CONFIG_DIR: "/srv/company", CODEX_HOME: "~/codex-home" },
+    };
+    const config = configFromCcUsage(
+      {
+        claude_roots: [
+          { path: "~/.claude", label: "main" },
+          { path: "/home/example/.claude/", label: "main", enabled: false },
+          { path: "/srv/company", label: "client" },
+          { path: "/home/example/.claude-work", label: "work" },
+        ],
+        codex_roots: [
+          { path: "/home/example/.codex", label: "openai" },
+          { path: "/home/example/codex-home", label: "x" },
+          { path: "/mnt/c/Users/Example/.codex", label: "codex-win" },
+        ],
+      },
+      place,
+    );
+    expect(config.claude_roots).toEqual([{ path: "/home/example/.claude-work", label: "work" }]);
+    expect(config.codex_roots).toEqual([
+      { path: "/mnt/c/Users/Example/.codex", label: "codex-win" },
+    ]);
+  });
+
+  test("ensureConfig imports with the place it runs in", () => {
+    const dir = tempDir();
+    const theirs = join(dir, "cc-usage.json");
+    writeFileSync(theirs, JSON.stringify({ claude_roots: [{ path: "~/.claude", label: "main" }] }));
+    const own = join(dir, "tokenhud", "config.json");
+    const out = ensureConfig(own, theirs, { home: "/home/example", env: {} });
+    expect(out.imported).toBe(true);
+    expect(out.config.claude_roots).toEqual([]);
+  });
+
   test("the other cc-usage windows carry over unchanged", () => {
     for (const w of ["all", "1h", "5h", "24h"] as const)
       expect(configFromCcUsage({ default_window: w }).default_window).toBe(w);

@@ -135,14 +135,12 @@ export interface RootInfo {
   readonly enabled: boolean;
   readonly historyOnly: boolean;
   readonly identity: string;
-  /**
-   * Whether a config label can rename it. The default root (`~/.claude`, `~/.codex`) and
-   * the env root come before config entries in discovery, so their labels are fixed.
-   */
-  readonly renamable: boolean;
   /** Entries of `disabled_roots` that disable this root. */
   readonly disabledBy: readonly string[];
-  /** Index of this root's entry in `claude_roots` / `codex_roots`, if it has one. */
+  /**
+   * Index of the entry in `claude_roots` / `codex_roots` that resolves to this root, if
+   * any. It may name the default or env root too: its label then relabels that root.
+   */
   readonly configIndex: number | null;
 }
 
