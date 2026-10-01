@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tokenhud": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "if command -v tokenhud >/dev/null 2>&1; then exec tokenhud mcp; else exec npx -y tokenhud@0 mcp; fi"
+      ]
+    }
+  }
+}

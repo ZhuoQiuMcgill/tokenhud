@@ -1,0 +1,12 @@
+{
+  "name": "tokenhud",
+  "owner": { "name": "Zhuo Qiu" },
+  "description": "tokenhud's Claude Code plugin",
+  "plugins": [
+    {
+      "name": "tokenhud",
+      "source": "./plugin",
+      "description": "Usage limits, a should-I-wait check and a safe wait for a reset, for Claude Code agents"
+    }
+  ]
+}

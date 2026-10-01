@@ -21,6 +21,20 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check
 
+  # `claude plugin validate` is local and needs no account: the CLI installs from npm and
+  # runs on the runner's empty home. Pinned to the version the plugin was checked with.
+  plugin:
+    name: plugin
+    runs-on: ubuntu-latest
+    env:
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: npm install --global @anthropic-ai/claude-code@2.1.287
+      - run: claude plugin validate --strict plugin
+      - run: claude plugin validate --strict .
+
   test:
     name: test (${{ matrix.os }})
     strategy:
