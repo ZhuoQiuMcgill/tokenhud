@@ -52,9 +52,10 @@ describe("--help", () => {
     expect(line).toEndWith("(not yet available)");
   });
 
-  test("documents --help and --version", () => {
-    expect(help.stdout).toContain("--help");
-    expect(help.stdout).toContain("--version");
+  test.each(["-h, --help", "-v, --version"])("lists the option '%s' with a summary", (option) => {
+    const line = lines.find((l) => l.trimStart().startsWith(`${option}  `));
+    expect(line).toBeDefined();
+    expect(line?.trimStart().slice(option.length).trim()).not.toBe("");
   });
 
   test("fits an 80-column terminal", () => {
