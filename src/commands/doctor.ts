@@ -13,9 +13,11 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { configPath, loadConfig } from "../config.ts";
+import { detectInstall } from "../mcp/install.ts";
 import { ccUsageDir, pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable, readOverrides } from "../pricing/overrides.ts";
 import type { Tier } from "../pricing/schema.ts";
@@ -23,6 +25,7 @@ import { bundledPricing } from "../pricing/table.ts";
 import { UsageQueries } from "../query/engine.ts";
 import { JSON_SCHEMA, type Totals } from "../query/types.ts";
 import { Zone } from "../query/tz.ts";
+import { discoverClaudeRoots } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
 import { ImportSourceError, readCcUsageKeys } from "../store/import-cc-usage.ts";
 import { rollupCountsAgree, rollupSchemaIntact } from "../store/schema.ts";
@@ -35,7 +38,8 @@ export const DOCTOR_HELP = `Usage:
   tokenhud doctor [--json]
 
 Reports on the store (rows, accounts, imports, rollup health), pricing (overrides,
-unpriced models, priced coverage) and cc-usage (rows not imported yet). Read-only.`;
+unpriced models, priced coverage), cc-usage (rows not imported yet) and, per Claude
+account, whether the tokenhud plugin or MCP server is installed. Read-only.`;
 
 export interface DoctorAccount {
   id: number;
@@ -93,6 +97,14 @@ export interface DoctorReport {
     /** Ledger rows the store doesn't have; null when it couldn't be counted (see note). */
     rows_only_in_cc_usage: number | null;
     note: string | null;
+  };
+  /**
+   * Per enabled Claude account (by label; paths stay out of the report): the tokenhud
+   * plugin ("enabled", "installed" but switched off, or null) and a user-scope MCP server
+   * running `tokenhud mcp`, read from that config dir's settings files.
+   */
+  claude_code: {
+    accounts: Array<{ label: string; plugin: "enabled" | "installed" | null; mcp: boolean }>;
   };
 }
 
@@ -274,8 +286,22 @@ function gather(q: UsageQueries, db: Database | null, path: string, zone: Zone):
   };
 }
 
+/** Each enabled Claude account's tokenhud install. Reads settings files only. */
+function claudeCodeSection(env: Env, home: string): DoctorReport["claude_code"] {
+  const roots = discoverClaudeRoots(loadConfig(configPath(env, home)), { home, env });
+  return {
+    accounts: roots
+      .filter((root) => root.enabled)
+      .map((root) => ({ label: root.label, ...detectInstall(root) })),
+  };
+}
+
 /** Gathers the report. Never throws for a missing or unreadable store: that is reported. */
-export function doctorReport(env: Env = process.env, now: number = Date.now()): DoctorReport {
+export function doctorReport(
+  env: Env = process.env,
+  now: number = Date.now(),
+  home: string = homedir(),
+): DoctorReport {
   const path = storePath(env);
   const zone = Zone.system();
   const overridesPath = pricingOverridesPath(env);
@@ -346,6 +372,7 @@ export function doctorReport(env: Env = process.env, now: number = Date.now()): 
         unpriced_tier: pick("unpriced-tier"),
       },
       cc_usage: ccUsageSection(env, db, imports),
+      claude_code: claudeCodeSection(env, home),
     };
   } finally {
     db?.close();
@@ -479,6 +506,20 @@ export function renderDoctor(r: DoctorReport): string {
           ? "0 rows: everything in cc-usage's ledger is in tokenhud"
           : `${n(c.rows_only_in_cc_usage)} rows: run tokenhud import-cc-usage`,
     );
+  }
+
+  out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");
+  const missing = r.claude_code.accounts.filter((a) => a.plugin !== "enabled" && !a.mcp);
+  for (const a of r.claude_code.accounts) {
+    const parts: string[] = [];
+    if (a.plugin === "enabled") parts.push("plugin");
+    if (a.plugin === "installed") parts.push("plugin installed but disabled");
+    if (a.mcp) parts.push("MCP server");
+    line(a.label, parts.length === 0 ? "not installed" : parts.join(" + "));
+  }
+  if (missing.length > 0) {
+    more("install once per account (each CLAUDE_CONFIG_DIR); see the README,");
+    more('"Use with Claude Code"');
   }
   return out.join("\n");
 }
