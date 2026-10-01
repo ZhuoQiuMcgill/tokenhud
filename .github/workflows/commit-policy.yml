@@ -20,7 +20,7 @@ jobs:
     name: no AI-attribution notes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           # Need full history so base..HEAD ranges resolve to real commits.
           fetch-depth: 0
