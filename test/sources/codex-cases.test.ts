@@ -2,7 +2,7 @@
 // against tokenhud's scheme-1 reading of the same bytes, then tokenhud's scheme-2 ingest of
 // them: the replayed usage of child rollouts gone, every other record identical.
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { walk } from "../../src/ingest/files.ts";
 import type { FileEntry } from "../../src/sources/claude.ts";
@@ -214,25 +214,31 @@ describe("scheme 2 (the ingest)", () => {
       key(20, T(18, 6, 0), "2000,150,360", "100,0,10"),
     ].map((k) => rows.get(k)?.tier);
 
-  test("tiers: events, inheritance, unknown values and the config.toml fallback", async () => {
-    const home = materialize();
-    writeFileSync(
-      join(home, "config.toml"),
-      'model = "x"\nservice_tier = "priority"\n[profiles.a]\nservice_tier = "default"\n',
-    );
-    const engine = openCodexEngine([home]);
+  test("tiers come from the rollout's settings events only: inherit, unknown, standard", async () => {
+    const engine = openCodexEngine([materialize()]);
     const report = await engine.fullPass();
-    // before any settings: config (1); priority (1); no key: kept (1); "turbo": config (1); standard (0)
-    expect(parentTiers(storedRows(engine.store))).toEqual([1, 1, 1, 1, 1, 0]);
-    const stats = report?.roots[0];
-    expect(stats?.fast).toBe((stats?.records ?? 0) - 1);
-    expect(stats?.tierFromConfig).toBe((stats?.records ?? 0) - 3);
+    // before any settings: 0; priority: 1; no key: kept (1); "turbo": 0; standard: 0
+    expect(parentTiers(storedRows(engine.store))).toEqual([0, 0, 1, 1, 0, 0]);
+    expect(report?.roots[0]?.fast).toBe(2);
   });
 
-  test("without config.toml (or its key) the fallback tier is 0", async () => {
-    const engine = openCodexEngine([materialize()]);
-    await engine.fullPass();
-    expect(parentTiers(storedRows(engine.store))).toEqual([0, 0, 1, 1, 0, 0]);
+  test("config.toml never decides a tier: changing it and rebuilding cache.db changes nothing", async () => {
+    const home = materialize();
+    const dir = tempDir();
+    const options = { storePath: join(dir, "tokenhud.db"), cachePath: join(dir, "cache.db") };
+    const tiers = async (serviceTier: string) => {
+      writeFileSync(join(home, "config.toml"), `service_tier = "${serviceTier}"\n`);
+      rmSync(options.cachePath, { force: true });
+      const engine = openCodexEngine([home], options);
+      await engine.fullPass();
+      const out = [...storedRows(engine.store)].map(([k, r]) => [k, r.tier] as const);
+      await engine.stop();
+      return out;
+    };
+    const first = await tiers("default");
+    expect(await tiers("priority")).toEqual(first);
+    expect(await tiers("fast")).toEqual(first);
+    expect(first.filter(([, tier]) => tier === 1)).toHaveLength(2);
   });
 
   test("growing each rollout one line per pass stores what one pass stores", async () => {

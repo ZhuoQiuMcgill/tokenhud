@@ -163,16 +163,26 @@ export interface StoreMeta {
   migrationReport: unknown;
 }
 
+/** Keys to remove as not being usage, and why (stored with their tombstones). */
+export interface Drop {
+  keys: readonly bigint[];
+  reason: string;
+}
+
 /**
- * One write transaction. Rows in `remove` are deleted first; `replace` rows then take the
- * given counts and tier outright (a value may go down), keeping a stored row's account and
- * timestamp and never trading a model for codex-unattributed; `upsert` rows merge by the
- * usual rules.
+ * One write transaction, applied in this order:
+ * 1. `restore`: tombstones lifted (a rollout counts these keys as usage after all);
+ * 2. `drop`: rows deleted and their keys tombstoned (see `dropped_keys`);
+ * 3. `replace` rows take the given counts and tier outright (a value may go down), keeping
+ *    a stored row's account and timestamp and never trading a model for codex-unattributed;
+ * 4. `upsert` rows merge by the usual rules.
+ * A replace or upsert row whose key is tombstoned is skipped, and counted.
  */
 export interface WriteBatch {
   upsert?: readonly UsageRow[];
   replace?: readonly UsageRow[];
-  remove?: readonly bigint[];
+  drop?: Drop;
+  restore?: readonly bigint[];
   /** Codex account identities whose re-key this write completes. */
   rekeyed?: readonly string[];
   /** Stored as `meta.migration_report` when given. */
@@ -362,9 +372,7 @@ export class Store {
    * before touching the database, and `StoreError` for everything else.
    */
   upsert(rows: readonly UsageRow[]): number {
-    if (rows.length === 0) return 0;
-    validate(rows);
-    return writeTransaction(this.#db, () => merge(this.#db, rows, [], [])).changed;
+    return this.write({ upsert: rows }).changed;
   }
 
   /**
@@ -378,52 +386,81 @@ export class Store {
     models: readonly string[],
     record: ImportRecord,
     rekey: readonly string[] = [],
-  ): { inserted: number; changed: number } {
+  ): { inserted: number; changed: number; tombstoned: number } {
     validate(rows);
     const db = this.#db;
     return writeTransaction(db, () => {
+      const live = untombstoned(db, rows);
       // Exact under the write lock: no other writer can insert in between.
       const before = countUsage(db);
-      const { changed } = merge(db, rows, accounts, models);
+      const { changed } = merge(db, live, accounts, models);
       const inserted = countUsage(db) - before;
       const imports = parseImports(getMeta(db, "imports"));
       imports.push(record);
       setMeta(db, "imports", JSON.stringify(imports));
       addRekeyPending(db, rekey);
-      return { inserted, changed };
+      return { inserted, changed, tombstoned: rows.length - live.length };
     });
   }
 
   /**
-   * Applies `batch` in one transaction (see `WriteBatch`). Returns how many rows were
-   * removed, and how many distinct keys `replace` and `upsert` inserted or changed.
+   * Applies `batch` in one transaction (see `WriteBatch`). Returns how many stored rows the
+   * drop removed, how many distinct keys `replace` and `upsert` inserted or changed, and how
+   * many of their rows were skipped as tombstoned.
    */
-  write(batch: WriteBatch): { removed: number; changed: number } {
+  write(batch: WriteBatch): { removed: number; changed: number; skipped: number } {
     const replace = batch.replace ?? [];
     const upsert = batch.upsert ?? [];
-    const remove = batch.remove ?? [];
+    const drop = batch.drop?.keys ?? [];
+    const restore = batch.restore ?? [];
     const rekeyed = batch.rekeyed ?? [];
     const report = batch.migrationReport;
     if (
-      replace.length + upsert.length + remove.length + rekeyed.length === 0 &&
+      replace.length + upsert.length + drop.length + restore.length + rekeyed.length === 0 &&
       report === undefined
     ) {
-      return { removed: 0, changed: 0 };
+      return { removed: 0, changed: 0, skipped: 0 };
     }
     validate(replace);
     validate(upsert);
     const db = this.#db;
     return writeTransaction(db, () => {
-      const removed = removeKeys(db, remove);
-      let changed = replaceRows(db, replace);
-      if (upsert.length > 0) changed += merge(db, upsert, [], []).changed;
+      liftTombstones(db, restore);
+      const removed = batch.drop === undefined ? 0 : dropKeys(db, batch.drop);
+      const liveReplace = untombstoned(db, replace);
+      const liveUpsert = untombstoned(db, upsert);
+      const skipped = replace.length - liveReplace.length + upsert.length - liveUpsert.length;
+      let changed = replaceRows(db, liveReplace);
+      if (liveUpsert.length > 0) changed += merge(db, liveUpsert, [], []).changed;
       if (rekeyed.length > 0) {
         const done = new Set(rekeyed);
         setMeta(db, CODEX_REKEY, JSON.stringify(rekeyPending(db).filter((id) => !done.has(id))));
       }
       if (report !== undefined) setMeta(db, MIGRATION_REPORT, JSON.stringify(report));
-      return { removed, changed };
+      return { removed, changed, skipped };
     });
+  }
+
+  /** Every tombstoned key (see `dropped_keys`): few, and read once per ingest pass. */
+  droppedKeys(): Set<bigint> {
+    return guard(
+      () =>
+        new Set(
+          this.#db
+            .query<{ key: bigint }, []>("SELECT key FROM dropped_keys")
+            .all()
+            .map((r) => r.key),
+        ),
+    );
+  }
+
+  /** How many keys are tombstoned (see `dropped_keys`). */
+  tombstones(): number {
+    return guard(() =>
+      Number(
+        this.#db.query<{ n: bigint }, []>("SELECT count(*) AS n FROM dropped_keys").get()?.n ?? 0n,
+      ),
+    );
   }
 
   // ── reads ──────────────────────────────────────────────────────────────────────
@@ -975,11 +1012,16 @@ function replaceRows(db: Database, rows: readonly UsageRow[]): number {
   return changed.size;
 }
 
-/** Deletes the rows of `keys`; returns how many existed. */
-function removeKeys(db: Database, keys: readonly bigint[]): number {
+/** Deletes the rows of `drop.keys` and tombstones the keys; returns how many rows existed. */
+function dropKeys(db: Database, drop: Drop): number {
+  const tombstone = db.query(
+    "INSERT INTO dropped_keys (key, reason, at) VALUES (?1, ?2, ?3) ON CONFLICT (key) DO NOTHING",
+  );
+  const at = Date.now();
   let removed = 0;
-  for (let start = 0; start < keys.length; start += IN_BATCH) {
-    const batch = keys.slice(start, start + IN_BATCH);
+  for (let start = 0; start < drop.keys.length; start += IN_BATCH) {
+    const batch = drop.keys.slice(start, start + IN_BATCH);
+    for (const key of batch) tombstone.run(key, drop.reason, at);
     const stmt = db.prepare<{ hit: bigint }, bigint[]>(
       `DELETE FROM usage WHERE key IN (${batch.map(() => "?").join(", ")}) RETURNING 1 AS hit`,
     );
@@ -990,6 +1032,23 @@ function removeKeys(db: Database, keys: readonly bigint[]): number {
     }
   }
   return removed;
+}
+
+function liftTombstones(db: Database, keys: readonly bigint[]): void {
+  const lift = db.query("DELETE FROM dropped_keys WHERE key = ?1");
+  for (const key of keys) lift.run(key);
+}
+
+/** `rows` without those whose key is tombstoned. */
+function untombstoned(db: Database, rows: readonly UsageRow[]): readonly UsageRow[] {
+  if (rows.length === 0) return rows;
+  const dead = new Set(
+    db
+      .query<{ key: bigint }, []>("SELECT key FROM dropped_keys")
+      .all()
+      .map((r) => r.key),
+  );
+  return dead.size === 0 ? rows : rows.filter((row) => !dead.has(row.key));
 }
 
 /** One string per (provider, identity), as stored. */

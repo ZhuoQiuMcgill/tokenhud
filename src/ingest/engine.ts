@@ -1,7 +1,6 @@
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "../config.ts";
-import { configFallbackTier, type SpeedTier } from "../sources/codex-config.ts";
 import {
   type DiscoverOptions,
   discoverClaudeRoots,
@@ -39,9 +38,8 @@ import { defaultPoolSize } from "./pool.ts";
  *   which catches whatever a watch missed and old sessions that are resumed.
  * Passes run one at a time. An error in one is logged and the next runs as usual.
  *
- * A full pass also refreshes what Codex reads need: each session's rollouts (to find a
- * child rollout's parent) and each Codex home's fallback tier (`config.toml`), and it
- * re-keys the Codex accounts the store marks as pending (scheme 1 -> 2).
+ * A full pass also refreshes each Codex session's rollouts (to find a child rollout's
+ * parent), and it re-keys the Codex accounts the store marks as pending (scheme 1 -> 2).
  */
 
 export interface LiveTiming {
@@ -116,8 +114,6 @@ export class IngestEngine {
   readonly #hot = new Map<string, Hot>();
   /** Codex session id -> its rollouts, as of the last full pass. */
   #codexSessions: Record<string, string[]> = {};
-  /** Codex root identity -> its config.toml fallback tier, as of the last full pass. */
-  readonly #codexTiers = new Map<string, SpeedTier>();
 
   private constructor(options: EngineOptions, store: Store, cursors: CursorCache) {
     this.#options = options;
@@ -174,7 +170,11 @@ export class IngestEngine {
     try {
       const outcome = importCcUsage(this.store, ledger);
       if (outcome.status === "deferred") this.#log("warn", outcome.warning);
-      else this.#log("info", `imported ${outcome.inserted} rows of cc-usage history`);
+      else {
+        const left =
+          outcome.tombstoned > 0 ? ` (${outcome.tombstoned} replayed Codex rows left out)` : "";
+        this.#log("info", `imported ${outcome.inserted} rows of cc-usage history${left}`);
+      }
       return outcome;
     } catch (error) {
       const reason = error instanceof ImportSourceError ? ` (${error.reason})` : "";
@@ -201,14 +201,6 @@ export class IngestEngine {
       poolSize: this.#options.poolSize ?? defaultPoolSize(),
       log: this.#log,
       codexSessions: this.#codexSessions,
-      codexTier: (root: Root) => {
-        let tier = this.#codexTiers.get(root.identity);
-        if (tier === undefined) {
-          tier = configFallbackTier(root.path);
-          this.#codexTiers.set(root.identity, tier);
-        }
-        return tier;
-      },
       ...(rekey === undefined ? {} : { rekey }),
     };
   }
@@ -281,10 +273,9 @@ export class IngestEngine {
     });
   }
 
-  /** Indexes Codex rollouts by session and forgets each Codex home's fallback tier. */
+  /** Indexes Codex rollouts by session, to find a child rollout's parent. */
   #refreshCodex(files: readonly PassFile[]): void {
     this.#codexSessions = codexSessionIndex(files);
-    this.#codexTiers.clear();
   }
 
   // ── live ─────────────────────────────────────────────────────────────────────

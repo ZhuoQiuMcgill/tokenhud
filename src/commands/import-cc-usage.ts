@@ -207,6 +207,8 @@ export function runImportCcUsage(args: readonly string[], env: Env = process.env
         `${n(outcome.unchanged)} already here`,
         `${n(outcome.skipped)} skipped`,
       ];
+      // Replayed Codex history tokenhud removed: cc-usage still counts it.
+      if (outcome.tombstoned > 0) counts.push(`${n(outcome.tombstoned)} left out as replayed`);
       say(`  usage       ${n(outcome.read)} rows read: ${counts.join(", ")}`);
       say(`              ${n(outcome.accounts)} accounts, ${n(outcome.models)} models`);
     }

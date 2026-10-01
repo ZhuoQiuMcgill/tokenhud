@@ -154,7 +154,8 @@ gpt-5.6-luna) is used by the alias too.
 
 | Alias | Period | Priced as | Evidence |
 | --- | --- | --- | --- |
-| codex-auto-review | until 2026-07-30T07:00:00Z | gpt-5.4 | OpenAI on X, 2026-07-30T17:17Z (https://x.com/OpenAI/status/2082878180478910571): "We're also upgrading Auto-review in the ChatGPT app and Codex CLI from GPT-5.4 to GPT-5.6 Luna." The same post from @OpenAIDevs (https://x.com/OpenAIDevs/status/2082878497043923265, 17:18Z): "We're upgrading auto review in the ChatGPT app and Codex CLI from GPT-5.4 to GPT-5.6 Luna." |
+| codex-auto-review | before 2026-03-05T08:00:00Z | (unpriced) | GPT-5.4 did not exist yet. Changelog, Mar 5: "Released GPT-5.4, our newest frontier model for professional work". |
+| codex-auto-review | 2026-03-05T08:00:00Z to 2026-07-30T07:00:00Z | gpt-5.4 | OpenAI on X, 2026-07-30T17:17Z (https://x.com/OpenAI/status/2082878180478910571): "We're also upgrading Auto-review in the ChatGPT app and Codex CLI from GPT-5.4 to GPT-5.6 Luna." The same post from @OpenAIDevs (https://x.com/OpenAIDevs/status/2082878497043923265, 17:18Z): "We're upgrading auto review in the ChatGPT app and Codex CLI from GPT-5.4 to GPT-5.6 Luna." |
 | codex-auto-review | from 2026-07-30T07:00:00Z | gpt-5.6-luna | Same posts. They accompany the Jul 30 price announcement (changelog: "Starting July 30, GPT-5.6 Luna costs 80% less"), also published as https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/ (that page refused automated fetches, HTTP 403, so its wording was not read here). |
 
 Rulings, not facts:
@@ -162,8 +163,9 @@ Rulings, not facts:
   dates above, the switch is placed at 00:00 America/Los_Angeles (07:00Z), the same instant
   as Luna's price cut. Auto-review usage between 07:00Z and the rollout of the upgrade is
   then priced as Luna although it may have run on GPT-5.4.
-- **No start date.** The posts say only what auto-review ran on before the switch. The
-  gpt-5.4 period therefore has no start (`from: null`).
+- **The start.** The posts say only what auto-review ran on before the switch. The gpt-5.4
+  period starts at GPT-5.4's release (Mar 5, 00:00 America/Los_Angeles, which is 08:00Z in
+  winter time), as ccusage's timeline does; auto-review usage before it stays unpriced.
 - **Routing.** Auto-review is server-routed; OpenAI may route some requests elsewhere.
   That is why the rates are marked as estimates.
 

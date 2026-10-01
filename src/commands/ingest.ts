@@ -157,10 +157,10 @@ function table(report: PassReport): string {
         `  ${r.label}: ${r.malformed} malformed, ${r.unkeyed} without a key, ${r.unstorable} unstorable, ${r.errors} unreadable`,
     );
   const codex = report.roots
-    .filter((r) => r.provider === "codex" && r.records + r.inherited > 0)
+    .filter((r) => r.provider === "codex" && r.records + r.inherited + r.tombstoned > 0)
     .map(
       (r) =>
-        `  ${r.label}: ${r.inherited} inherited (replayed) events skipped, ${r.removed} stored rows removed; ${r.fast} fast-tier records, ${r.tierFromConfig} tiers from config.toml`,
+        `  ${r.label}: ${r.inherited} inherited (replayed) events skipped, ${r.removed} stored rows removed, ${r.tombstoned} rows of removed keys not written; ${r.fast} fast-tier records`,
     );
   const labelOf = (identity: string) =>
     report.roots.find((r) => r.provider === "codex" && r.identity === identity)?.label ?? "?";

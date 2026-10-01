@@ -113,6 +113,7 @@ describe("importing the fixture ledger", () => {
       inserted: 16,
       merged: 0,
       unchanged: 0,
+      tombstoned: 0,
       skipped: 0,
       accounts: 3,
       models: 6,
@@ -452,5 +453,19 @@ describe("atomicity", () => {
     expect([...store.keys()]).toEqual([]);
     expect(store.meta.imports).toEqual([]);
     expect(imported(importCcUsage(store, ledgerCopy())).inserted).toBe(16);
+  });
+});
+
+describe("tombstones", () => {
+  test("rows whose keys tokenhud removed as replays are left out, and counted", () => {
+    const store = freshStore();
+    const first = importCcUsage(store, ledgerCopy());
+    if (first.status !== "imported") throw new Error("not imported");
+    const codex = [...store.accounts().values()].find((a) => a.provider === "codex");
+    const key = store.rows([...store.keys()]).find((r) => r.acct === codex?.id)?.key as bigint;
+    store.write({ drop: { keys: [key], reason: "codex-replay" } });
+    const again = importCcUsage(store, ledgerCopy());
+    expect(again).toMatchObject({ read: 16, inserted: 0, tombstoned: 1, unchanged: 15 });
+    expect(store.rows([key])).toEqual([]);
   });
 });

@@ -203,7 +203,7 @@ describe("tokenhud ingest", () => {
     expect(out.code).toBe(0);
     expect(out.stdout).toMatch(/^codex \(codex\)\s+1\s+1/m);
     expect(out.stdout).toContain(
-      "codex: 2 inherited (replayed) events skipped, 0 stored rows removed; 0 fast-tier records, 1 tiers from config.toml",
+      "codex: 2 inherited (replayed) events skipped, 0 stored rows removed, 0 rows of removed keys not written; 0 fast-tier records",
     );
   });
 });

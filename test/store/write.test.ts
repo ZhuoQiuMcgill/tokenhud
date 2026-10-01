@@ -23,12 +23,34 @@ function byKey(store: Store) {
 }
 
 describe("write", () => {
-  test("remove deletes the keys that exist and reports how many", () => {
+  test("drop deletes the keys that exist, tombstones every one, and reports how many", () => {
     const store = open();
     store.upsert([row(1n), row(2n), row(3n, { ts: T0 + HOUR })]);
-    expect(store.write({ remove: [1n, 3n, 99n] })).toEqual({ removed: 2, changed: 0 });
+    const dropped = store.write({ drop: { keys: [1n, 3n, 99n], reason: "codex-replay" } });
+    expect(dropped).toEqual({ removed: 2, changed: 0, skipped: 0 });
     expect([...store.keys()]).toEqual([2n]);
+    expect(store.droppedKeys()).toEqual(new Set([1n, 3n, 99n]));
     expect(store.rollupConsistent()).toBe(true);
+  });
+
+  test("a tombstoned key is never written again, until a restore lifts it", () => {
+    const store = open();
+    store.write({ drop: { keys: [1n], reason: "codex-replay" } });
+    expect(store.upsert([row(1n), row(2n)])).toBe(1);
+    expect(store.write({ replace: [row(1n)] })).toEqual({ removed: 0, changed: 0, skipped: 1 });
+    const record = { at: "t", source: "x", lineage: null, rows: 2, accounts: 0 };
+    expect(store.importRows([row(1n), row(3n)], [], [], record)).toEqual({
+      inserted: 1,
+      changed: 1,
+      tombstoned: 1,
+    });
+    expect([...store.keys()].sort()).toEqual([2n, 3n]);
+    expect(store.write({ restore: [1n], upsert: [row(1n)] })).toEqual({
+      removed: 0,
+      changed: 1,
+      skipped: 0,
+    });
+    expect(store.tombstones()).toBe(0);
   });
 
   test("replace takes the given counts and tier, even lower; keeps account and timestamp", () => {
@@ -55,7 +77,7 @@ describe("write", () => {
         row(2n, { ...codex, model: "gpt-a", inp: 7 }),
       ],
     });
-    expect(changed).toEqual({ removed: 0, changed: 2 });
+    expect(changed).toEqual({ removed: 0, changed: 2, skipped: 0 });
     const rows = byKey(store);
     expect(rows.get(1n)).toMatchObject({
       inp: 400,
@@ -89,7 +111,7 @@ describe("write", () => {
     expect(store.meta.codexRekeyPending).toEqual(["id-codex", "id-gone"]);
     const report = { scheme: 2, at: "t", accounts: [] };
     store.write({
-      remove: [2n],
+      drop: { keys: [2n], reason: "codex-replay" },
       upsert: [row(1n, { outp: 9 })],
       rekeyed: ["id-codex"],
       migrationReport: report,
@@ -102,7 +124,7 @@ describe("write", () => {
 
   test("an empty batch writes nothing", () => {
     const store = open();
-    expect(store.write({})).toEqual({ removed: 0, changed: 0 });
+    expect(store.write({})).toEqual({ removed: 0, changed: 0, skipped: 0 });
     expect(store.meta.migrationReport).toBeNull();
   });
 });

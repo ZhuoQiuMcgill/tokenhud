@@ -36,6 +36,8 @@ export interface ReadResult {
   entries: FileEntry[];
   /** Keys that must not stay in the store (a Codex child's inherited usage). */
   drop: bigint[];
+  /** Keys an earlier read reported in `drop` that this read counts after all. */
+  restore: bigint[];
   /** The newest Codex rate-limit snapshot in the bytes read. */
   limits: CodexLimitSnapshot | null;
   stats: ReadStats;
@@ -67,6 +69,7 @@ interface Read {
   stats: ReadStats;
   state: string | null;
   drop: bigint[];
+  restore: bigint[];
   limits: CodexLimitSnapshot | null;
   restarted: boolean;
 }
@@ -84,6 +87,7 @@ const READERS: Record<Provider, Reader> = {
     ...readClaudeFile(path, start),
     state: null,
     drop: [],
+    restore: [],
     limits: null,
     restarted: false,
   }),
@@ -113,6 +117,7 @@ export function readTask(task: ReadTask, context: ReadContext = {}): ReadResult 
       restarted: restarted || read.restarted,
       entries: read.entries,
       drop: read.drop,
+      restore: read.restore,
       limits: read.limits,
       stats: read.stats,
       ms: performance.now() - t0,
@@ -127,6 +132,7 @@ export function readTask(task: ReadTask, context: ReadContext = {}): ReadResult 
       restarted: false,
       entries: [],
       drop: [],
+      restore: [],
       limits: null,
       stats: emptyStats(),
       error: code,

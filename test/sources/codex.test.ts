@@ -284,7 +284,7 @@ describe("replay.rs edge cases", () => {
     const paths = rollouts({ [file(2)]: child });
     const read = readCodexFile(paths[file(2)] as string, 0, null);
     expect(read.entries.map((e) => e.post)).toEqual([
-      { inp: 90, outp: 20, cr: 10, cc: 0, e5: 0, e1: 0, tier: -1 },
+      { inp: 90, outp: 20, cr: 10, cc: 0, e5: 0, e1: 0, tier: 0 },
     ]);
   });
 });
@@ -321,6 +321,53 @@ describe("trigger-turn markers", () => {
     ];
     // all four are in the head burst; the marker makes the last two the child's own
     expect(ownInputs({ [file(2)]: child })[file(2)]).toEqual([300, 400]);
+  });
+
+  // The critique's case: replay.rs judges both leading events own (no parent anchor, no
+  // burst: they are 5 s apart), but the subagent's trigger turn comes later and wins.
+  test.each([
+    ["the parent is missing", false],
+    ["the parent is present but does not anchor them", true],
+  ])("markers overrule replay.rs's earlier judgement (%s)", (_name, withParent) => {
+    const parent = [counted(at("07:00:00"), [10, 0, 1], [10, 0, 1])];
+    const child = [
+      meta(2, withParent ? 1 : 99, at("08:03:00"), true),
+      counted(at("08:03:00"), [1000, 100, 200], [1000, 100, 200]),
+      counted(at("08:03:05"), [2100, 100, 400], [1100, 0, 200]),
+      taskStarted(at("08:03:06")),
+      trigger(at("08:03:06")),
+      counted(at("08:04:00"), [2650, 100, 450], [550, 0, 50]),
+    ];
+    const files = withParent ? { [file(1)]: parent, [file(2)]: child } : { [file(2)]: child };
+    expect(ownInputs(files)[file(2)]).toEqual([550]);
+  });
+
+  test("a fork without thread_spawn follows replay.rs alone: markers do not apply", () => {
+    const child = [
+      meta(2, 99, at("08:03:00")),
+      counted(at("08:03:00"), [1000, 100, 200], [1000, 100, 200]),
+      counted(at("08:03:05"), [2100, 100, 400], [1100, 0, 200]),
+      taskStarted(at("08:03:06")),
+      trigger(at("08:03:06")),
+      counted(at("08:04:00"), [2650, 100, 450], [550, 0, 50]),
+    ];
+    expect(ownInputs({ [file(2)]: child })[file(2)]).toEqual([1000, 1100, 550]);
+  });
+
+  test("a fork's open head ignores markers: what matched the parent stays inherited", () => {
+    const parent = [
+      counted(at("08:01:00"), [1000, 100, 200], [1000, 100, 200]),
+      counted(at("08:02:00"), [1500, 150, 300], [500, 50, 100]),
+    ];
+    const fork = [
+      meta(2, 1, at("08:03:00")),
+      counted(at("08:01:00"), [1000, 100, 200], [1000, 100, 200]),
+      taskStarted(at("08:03:01")),
+      counted(at("08:02:00"), [1500, 150, 300], [500, 50, 100]),
+      trigger(at("08:03:02")),
+      counted(at("08:04:00"), [1600, 150, 310], [100, 0, 10]),
+    ];
+    expect(ownInputs({ [file(1)]: parent, [file(2)]: fork })[file(2)]).toEqual([100]);
   });
 
   test("trigger_turn false is not a marker", () => {
@@ -388,6 +435,16 @@ describe("reading in pieces", () => {
         lastOnly(at("09:00:00.300"), 300),
         trigger(at("09:00:00.400")),
         lastOnly(at("09:00:00.500"), 400),
+      ],
+    },
+    "events replay.rs counted that a later trigger turn makes inherited": {
+      [file(2)]: [
+        meta(2, 99, at("08:03:00"), true),
+        counted(at("08:03:00"), [1000, 100, 200], [1000, 100, 200]),
+        counted(at("08:03:05"), [2100, 100, 400], [1100, 0, 200]),
+        taskStarted(at("08:03:06")),
+        trigger(at("08:03:06")),
+        counted(at("08:04:00"), [2650, 100, 450], [550, 0, 50]),
       ],
     },
     "a counted first event the trigger turn makes inherited": {

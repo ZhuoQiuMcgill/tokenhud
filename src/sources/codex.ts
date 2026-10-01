@@ -3,7 +3,6 @@ import { basename } from "node:path";
 import { ledgerKey } from "../store/key.ts";
 import { UNATTRIBUTED } from "../store/schema.ts";
 import { emptyStats, type FileEntry, KEY_SEP, type ReadStats } from "./claude.ts";
-import { serviceTier } from "./codex-config.ts";
 import { needsPyJson, PyBigInt, PyFloat, parsePyJson } from "./pyjson.ts";
 import { timestampMs } from "./timestamp.ts";
 
@@ -26,21 +25,26 @@ import { timestampMs } from "./timestamp.ts";
  * **Scheme 2** (tokenhud's live rule) is scheme 1 with the same keys, plus:
  * - **Replay skip.** A *child* rollout (its first line is a `session_meta` naming a parent:
  *   `forked_from_id`, else `source.subagent.thread_spawn.parent_thread_id`) may open with
- *   usage it inherited from its parent. Its *head* ends at whichever comes first:
- *   - its first trigger-turn marker (`inter_agent_communication_metadata`, or the older
- *     `inter_agent_communication`, with `payload.trigger_turn === true`): usage before the
- *     `task_started` that precedes the marker (or before the marker, if none does) is
- *     inherited; the rest is the child's own;
- *   - otherwise, the first event that is neither a continuation of the parent's usage
- *     stream (up to the fork time) nor part of the burst Codex wrote at the head of the
- *     file; logic adapted from ccusage (MIT), `replay.rs` and `parser.rs`.
- *   Inherited usage is not counted, and its scheme-1 keys are reported (`drop`) so they
- *   never stay in the store. The counters run through it, so the child's first own event
- *   counts only its own growth.
+ *   usage it inherited from its parent. Which usage that is, is decided in its *head*:
+ *   - **replay.rs's rule** (logic adapted from ccusage (MIT), `replay.rs` and `parser.rs`):
+ *     the leading events that continue the parent's usage stream (up to the fork time), or,
+ *     when the very first one does not, the burst Codex wrote at the head of the file;
+ *   - **in a subagent rollout** (`thread_spawn`), the first trigger-turn marker
+ *     (`inter_agent_communication_metadata`, or the older `inter_agent_communication`, with
+ *     `payload.trigger_turn === true`) overrides that rule whenever it comes: usage before
+ *     the `task_started` that precedes the marker (or before the marker, if none does) is
+ *     inherited, and the rest is the child's own. Until a marker arrives, replay.rs's
+ *     judgement stands, and the head stays open.
+ *   A fork without `thread_spawn` follows replay.rs alone, and its head ends with replay.rs's
+ *   first own event. Inherited usage is not counted, and its keys are reported (`drop`) so
+ *   they never stay in the store; keys a marker gives back are reported too (`restore`).
+ *   The counters run through inherited usage, so the first own event counts only its own
+ *   growth.
  * - **Speed tier.** `thread_settings_applied` sets the tier from `service_tier`
  *   (`priority`/`fast` 1, `default`/`standard` 0); a settings event without the key keeps
- *   the previous tier, and an unrecognised value makes it unknown. Records made while it is
- *   unknown carry `TIER_UNKNOWN`, which the ingest pass resolves from `config.toml`.
+ *   the previous tier, and any other value is standard. A rollout's events are the only
+ *   evidence of a tier: no settings event means standard (0). The current `config.toml` is
+ *   never consulted, because it says nothing about the history being priced.
  *
  * Reads are incremental: everything a later read needs is in the JSON state returned with
  * each read (counters, model, pending records, tier, replay progress). A decision the
@@ -48,7 +52,13 @@ import { timestampMs } from "./timestamp.ts";
  * splitting a file into reads stores exactly what one read of the whole file stores.
  */
 
-export const TIER_UNKNOWN = -1;
+/** `thread_settings_applied` spellings (ccusage's `codex_service_tier`): 1 fast, 0 standard. */
+const TIERS: ReadonlyMap<string, number> = new Map([
+  ["priority", 1],
+  ["fast", 1],
+  ["default", 0],
+  ["standard", 0],
+]);
 
 /** cc-usage's `_ROLLOUT_UUID`: the session id at the end of a rollout's file name. */
 const ROLLOUT_UUID =
@@ -186,7 +196,7 @@ interface HeadEntry {
 type Fork = { m: "match"; i: number } | { m: "burst"; p: number } | { m: "done" };
 
 interface CodexState {
-  v: 1;
+  v: 2;
   /** Scheme the state was built under; a read never mixes schemes. */
   scheme: 1 | 2;
   /** Whether the first line has been read (child detection happens there). */
@@ -196,7 +206,8 @@ interface CodexState {
   /** Counted records still carrying codex-unattributed, re-sent once a model arrives. */
   pending: Rec[];
   tier: number;
-  child: { parent: string; at: number | null } | null;
+  /** The parent's session id, the fork time, and whether this is a subagent (`thread_spawn`). */
+  child: { parent: string; at: number | null; spawn: boolean } | null;
   phase: "own" | "head" | "provisional";
   /** task_started markers seen in the head. */
   s: number;
@@ -209,13 +220,13 @@ interface CodexState {
 
 function newState(scheme: 1 | 2): CodexState {
   return {
-    v: 1,
+    v: 2,
     scheme,
     started: false,
     totals: null,
     model: null,
     pending: [],
-    tier: TIER_UNKNOWN,
+    tier: 0,
     child: null,
     phase: "own",
     s: 0,
@@ -230,7 +241,7 @@ function parseState(text: string | null, scheme: 1 | 2): CodexState | null {
   if (text === null) return null;
   try {
     const state = JSON.parse(text) as CodexState;
-    return isObject(state) && state.v === 1 && state.scheme === scheme && state.started === true
+    return isObject(state) && state.v === 2 && state.scheme === scheme && state.started === true
       ? state
       : null;
   } catch {
@@ -410,6 +421,8 @@ export interface CodexRead {
   entries: FileEntry[];
   /** Keys of inherited usage: never stored under scheme 2 (removed if they are). */
   drop: bigint[];
+  /** Keys this read counts that an earlier read reported in `drop` (a trigger turn gave them back). */
+  restore: bigint[];
   /** State for the next read. */
   state: string;
   /** The newest rate-limit snapshot in the bytes read, if any. */
@@ -463,6 +476,8 @@ class CodexFold {
   readonly #parents: ParentLookup | undefined;
   readonly #own = new Map<string, Rec>();
   readonly #drop = new Set<string>();
+  /** Keys judged inherited earlier and given back by a trigger turn. */
+  readonly #restore = new Set<string>();
   readonly #pending: Set<string>;
   #parent: ParentStream | null | undefined;
   limits: CodexLimitSnapshot | null = null;
@@ -505,7 +520,11 @@ class CodexFold {
           ? thread.parent_thread_id
           : "";
     if (parent === "") return;
-    st.child = { parent: parent.toLowerCase(), at: forkTime(obj.timestamp) };
+    st.child = {
+      parent: parent.toLowerCase(),
+      at: forkTime(obj.timestamp),
+      spawn: isObject(thread),
+    };
     st.phase = "head";
   }
 
@@ -641,7 +660,7 @@ class CodexFold {
   #settings(payload: Record<string, unknown>): void {
     const settings = payload.thread_settings;
     if (!isObject(settings) || typeof settings.service_tier !== "string") return;
-    this.#st.tier = serviceTier(settings.service_tier) ?? TIER_UNKNOWN;
+    this.#st.tier = TIERS.get(settings.service_tier) ?? 0;
   }
 
   #taskStarted(): void {
@@ -653,14 +672,19 @@ class CodexFold {
     st.head = st.head.filter((entry) => entry.own);
   }
 
+  /** A subagent's first trigger turn re-judges its whole head, whatever replay.rs said. */
   #triggerTurn(): void {
     const st = this.#st;
-    if (st.phase === "own") return;
+    if (st.phase === "own" || st.child?.spawn !== true) return;
     const markers = st.s;
     for (const entry of st.head) {
       const own = markers > 0 && entry.s === markers;
-      if (own && !entry.own) this.#emit(entry.r);
-      else if (!own && entry.own) this.#retract(entry.r);
+      if (own && !entry.own) {
+        this.#emit(entry.r);
+        this.#restore.add(entry.r.k);
+      } else if (!own && entry.own) {
+        this.#retract(entry.r);
+      }
     }
     this.#endHead();
   }
@@ -671,7 +695,7 @@ class CodexFold {
     if (st.phase === "provisional") {
       // Only a token_count outside an event_msg gets here before the burst probe settles;
       // ccusage would already be past the head.
-      this.#emit(rec);
+      this.#emitHead(rec);
       return;
     }
     for (;;) {
@@ -688,8 +712,7 @@ class CodexFold {
             // The burst probe needs the next token_count. Count this event for now; the
             // probe or a trigger turn may still make it inherited.
             st.phase = "provisional";
-            this.#emit(rec);
-            st.head.push({ r: rec, s: st.s, own: true });
+            this.#emitHead(rec);
             return;
           }
           const burst = this.#burstStart();
@@ -711,6 +734,12 @@ class CodexFold {
         st.fork = { m: "done" };
         continue;
       }
+      // replay.rs counts it. A subagent's head stays open: its trigger turn may yet say
+      // otherwise. A fork's head ends here.
+      if (st.child?.spawn === true) {
+        this.#emitHead(rec);
+        return;
+      }
       this.#endHead();
       this.#emit(rec);
       return;
@@ -728,12 +757,15 @@ class CodexFold {
     st.t2 = ts;
     if (st.phase !== "provisional") return;
     const burst = this.#burstStart();
-    const pending = st.head.findLast((entry) => entry.own);
+    const pending = st.head.find((entry) => entry.own);
     const pause = burst === null || pending === undefined ? -1 : pending.r.ts - burst;
     if (pending !== undefined && pause >= 0 && pause <= BURST_PAUSE_MS) {
       st.fork = { m: "burst", p: pending.r.ts };
       pending.own = false;
       this.#retract(pending.r);
+      st.phase = "head";
+    } else if (st.child?.spawn === true) {
+      st.fork = { m: "done" };
       st.phase = "head";
     } else {
       this.#endHead();
@@ -771,6 +803,12 @@ class CodexFold {
   }
 
   // ── output ─────────────────────────────────────────────────────────────────────
+
+  /** An event counted for now, which the head may still judge inherited. */
+  #emitHead(rec: Rec): void {
+    this.#emit(rec);
+    this.#st.head.push({ r: rec, s: this.#st.s, own: true });
+  }
 
   #emit(rec: Rec): void {
     const st = this.#st;
@@ -810,6 +848,10 @@ class CodexFold {
 
   drops(): bigint[] {
     return [...this.#drop].map((k) => BigInt(k));
+  }
+
+  restores(): bigint[] {
+    return [...this.#restore].map((k) => BigInt(k));
   }
 }
 
@@ -875,6 +917,7 @@ export function readCodexFile(
     offset: base,
     entries: fold.entries(),
     drop: fold.drops(),
+    restore: fold.restores(),
     state: JSON.stringify(fold.state),
     limits: fold.limits,
     stats: fold.stats,

@@ -10,10 +10,13 @@ const bundled = () => new PriceTable(bundledPricing().models, bundledPricing().a
 const SWITCH = at("2026-07-30T07:00:00Z");
 
 describe("the bundled codex-auto-review timeline", () => {
-  test("is gpt-5.4 before 2026-07-30T07:00Z and gpt-5.6-luna from then, always estimated", () => {
+  test("is unpriced before GPT-5.4's release, then gpt-5.4, then gpt-5.6-luna; always estimated", () => {
     const table = bundled();
+    expect(table.rates("codex-auto-review", "standard", at("2026-03-05T07:59:59Z"))).toBe(
+      "unpriced",
+    );
     for (const [when, model] of [
-      [at("2026-03-05T00:00:00Z"), "gpt-5.4"],
+      [at("2026-03-05T08:00:00Z"), "gpt-5.4"],
       [SWITCH - 1, "gpt-5.4"],
       [SWITCH, "gpt-5.6-luna"],
       [at("2026-08-06T00:00:00Z"), "gpt-5.6-luna"],

@@ -3,7 +3,7 @@
 // deleted rollouts kept as they were.
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, copyFileSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { walk } from "../../src/ingest/files.ts";
 import { extractCodexV1 } from "../../src/sources/codex.ts";
@@ -37,6 +37,14 @@ function asSchemeOne(path: string): void {
 function schemeOneStore(home: string, identity: string): string {
   const path = join(tempDir(), "tokenhud.db");
   const store = openStore(path);
+  store.upsert(schemeOneRows(home, identity));
+  store.close();
+  asSchemeOne(path);
+  return path;
+}
+
+/** What cc-usage's ledger holds for the rollouts of `home`, plus an orphan and a Claude row. */
+function schemeOneRows(home: string, identity: string): UsageRow[] {
   const account = { provider: "codex", identity, label: "codex", derivedLabel: true };
   const files = [
     ...walk(join(home, "sessions")).files,
@@ -72,10 +80,7 @@ function schemeOneStore(home: string, identity: string): string {
     e1: null,
     tier: 0,
   });
-  store.upsert(rows);
-  store.close();
-  asSchemeOne(path);
-  return path;
+  return rows;
 }
 
 /** The identity the engine gives the Codex home `home` (from a throwaway engine). */
@@ -242,5 +247,65 @@ describe("the re-key pass", () => {
     const engine = openCodexEngine([elsewhere], { storePath });
     await engine.fullPass();
     expect(engine.store.meta.codexRekeyPending).toEqual([identity]);
+  });
+});
+
+describe("tombstones", () => {
+  const record = { at: "t", source: "cc-usage", lineage: null, rows: 0, accounts: 0 };
+  const childOf21 = (home: string) =>
+    walk(join(home, "sessions")).files.find((f) => f.endsWith("-000000000021.jsonl")) as string;
+
+  test("the critique's case: re-key, delete a child rollout, import again: its replay stays gone", async () => {
+    const home = materialize();
+    const identity = await identityOf(home);
+    const storePath = schemeOneStore(home, identity);
+    const engine = openCodexEngine([home], { storePath });
+    await engine.fullPass();
+    const before = new Set(engine.store.keys());
+    expect(engine.store.tombstones()).toBe(9);
+    engine.close();
+
+    rmSync(childOf21(home));
+    const store = openStore(storePath);
+    const outcome = store.importRows(schemeOneRows(home, identity), [], [], record, [identity]);
+    const all = schemeOneRows(materialize(), identity);
+    const again = store.importRows(all, [], [], record, [identity]);
+    expect(again.tombstoned).toBe(9); // every replay row of every child, the deleted one's too
+    expect(outcome.inserted + again.inserted).toBe(0);
+    store.close();
+
+    const after = openCodexEngine([home], { storePath });
+    await after.fullPass();
+    expect(new Set(after.store.keys())).toEqual(before);
+  });
+
+  test("a pass writes no row for a tombstoned key, and counts it", async () => {
+    const home = materialize();
+    const probe = openCodexEngine([home]);
+    await probe.fullPass();
+    const [key] = [...probe.store.keys()];
+    const dir = tempDir();
+    const storePath = join(dir, "tokenhud.db");
+    const store = openStore(storePath);
+    store.write({ drop: { keys: [key as bigint], reason: "codex-replay" } });
+    store.close();
+    const engine = openCodexEngine([home], { storePath });
+    const report = await engine.fullPass();
+    expect(report?.roots[0]?.tombstoned).toBe(1);
+    expect(engine.store.rows([key as bigint])).toEqual([]);
+  });
+
+  test("a live ingest tombstones inherited keys it never stored, so an import cannot add them", async () => {
+    const home = materialize();
+    const engine = openCodexEngine([home]);
+    const report = await engine.fullPass();
+    expect(report?.roots[0]?.removed).toBe(0);
+    expect(engine.store.tombstones()).toBe(9);
+    const identity = codexRoot(engine, home).identity;
+    const before = engine.store.keys().toArray().length;
+    const outcome = engine.store.importRows(schemeOneRows(home, identity), [], [], record);
+    expect(outcome.tombstoned).toBe(9);
+    // Only the orphan and the Claude row of the scheme-1 set are new.
+    expect(engine.store.keys().toArray().length).toBe(before + 2);
   });
 });

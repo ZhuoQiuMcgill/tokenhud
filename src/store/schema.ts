@@ -207,6 +207,19 @@ const LIMIT_EVENTS_TABLE = `CREATE TABLE limit_events (
   resumed_at INTEGER
 )`;
 
+// ── tombstones ───────────────────────────────────────────────────────────────────
+// Keys tokenhud removed because they are not usage: a Codex child rollout's replay of its
+// parent (`reason` "codex-replay"), whether removed by the scheme-2 re-key or never stored.
+// cc-usage's ledger still holds such keys, and its rollout may be gone by the next import,
+// so the store remembers them: no write or import brings a tombstoned key back. Keys only,
+// with why and when (epoch ms); never content.
+
+const DROPPED_KEYS_TABLE = `CREATE TABLE dropped_keys (
+  key INTEGER PRIMARY KEY,
+  reason TEXT NOT NULL,
+  at INTEGER NOT NULL
+)`;
+
 // ── schema versions (PRAGMA user_version) ────────────────────────────────────────
 // SCHEMA_MIGRATIONS[n] upgrades a store at schema version n to n + 1, inside the write
 // transaction that also records the new version. Later tasks append entries; never edit a
@@ -233,6 +246,8 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
     db.exec("CREATE INDEX limit_events_at ON limit_events (at)");
     db.exec("CREATE INDEX limit_events_acct ON limit_events (acct, window, resets_at)");
   },
+  // v4: tombstones of keys removed as not being usage (T5).
+  (db) => db.exec(DROPPED_KEYS_TABLE),
 ];
 
 export const SCHEMA_VERSION = SCHEMA_MIGRATIONS.length;

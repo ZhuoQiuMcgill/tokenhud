@@ -1,11 +1,5 @@
 import { type Counts, mergeCounts } from "../sources/claude.ts";
-import {
-  type CodexLimitSnapshot,
-  codexSessionId,
-  newerLimits,
-  TIER_UNKNOWN,
-} from "../sources/codex.ts";
-import { configFallbackTier, type SpeedTier } from "../sources/codex-config.ts";
+import { type CodexLimitSnapshot, codexSessionId, newerLimits } from "../sources/codex.ts";
 import { comparePyPaths } from "../sources/pypath.ts";
 import type { Root } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
@@ -26,12 +20,13 @@ import type { ReadResult, ReadTask } from "./read.ts";
  * whichever Worker read them. And the store commits before the cursors move: a crash in
  * between only means the same bytes are read again, which the store's max-merge absorbs.
  *
- * Codex adds three things. A Codex record whose rollout named no tier gets its root's
- * fallback tier (`config.toml`). Keys a rollout reports as inherited usage are removed
- * from the store. And a Codex account awaiting the scheme-2 re-key (`rekey`) has every
- * rollout read from the start, whatever its cursor; in the pass's one write, the scheme-1
- * rows of those rollouts are deleted and their scheme-2 records written with replace
- * semantics, and the account's re-key is recorded with a report.
+ * Codex adds two things. Keys a rollout reports as inherited usage are removed from the
+ * store and tombstoned (`dropped_keys`), so no later write or import brings them back;
+ * keys a trigger turn gives back are un-tombstoned. And a Codex account awaiting the
+ * scheme-2 re-key (`rekey`) has every rollout read from the start, whatever its cursor; in
+ * the pass's one write, the scheme-1 rows of those rollouts are deleted and their scheme-2
+ * records written with replace semantics, and the account's re-key is recorded with a
+ * report.
  */
 
 export type LogLevel = "info" | "warn" | "error";
@@ -75,9 +70,10 @@ export interface RootStats {
   /** Codex: events judged inherited from a parent rollout, and stored rows removed for that. */
   inherited: number;
   removed: number;
-  /** Codex: records at the fast tier, and records whose tier came from config.toml. */
+  /** Rows not written because their key is tombstoned (removed earlier as not being usage). */
+  tombstoned: number;
+  /** Codex: records at the fast tier (from the rollout's own settings events). */
   fast: number;
-  tierFromConfig: number;
   /** Events the store cannot hold (negative or oversized counts, a ts before 1970). */
   unstorable: number;
   /** Files that could not be read (vanished or unreadable mid-pass). */
@@ -124,8 +120,6 @@ export interface PassContext {
   log: Log;
   /** Codex session id -> its rollouts, to find a child rollout's parent. This pass's files are added. */
   codexSessions?: Readonly<Record<string, readonly string[]>>;
-  /** A Codex root's fallback tier; by default read from its config.toml once per pass. */
-  codexTier?: (root: Root) => SpeedTier;
   /** Codex account identities to re-key in this pass (a full pass over their roots). */
   rekey?: ReadonlySet<string>;
 }
@@ -155,8 +149,8 @@ function newRootStats(root: Root): RootStats {
     changed: 0,
     inherited: 0,
     removed: 0,
+    tombstoned: 0,
     fast: 0,
-    tierFromConfig: 0,
     unstorable: 0,
     errors: 0,
     readMs: 0,
@@ -226,7 +220,13 @@ function toRow(
   };
 }
 
-/** Codex session id -> rollouts in Python path order: `base`'s, plus those among `files`. */
+/** Whether a rollout sits in a Codex home's `archived_sessions` (ccusage prefers the active copy). */
+const archived = (path: string) => path.split(/[\\/]/).includes("archived_sessions");
+
+/**
+ * Codex session id -> rollouts, active copies first, then in Python path order: `base`'s,
+ * plus those among `files`.
+ */
 export function codexSessionIndex(
   files: readonly PassFile[],
   base: Readonly<Record<string, readonly string[]>> = {},
@@ -241,7 +241,9 @@ export function codexSessionIndex(
     if (!paths.includes(file.path)) paths.push(file.path);
     index.set(sid, paths);
   }
-  for (const paths of index.values()) paths.sort((a, b) => comparePyPaths(a, b));
+  for (const paths of index.values()) {
+    paths.sort((a, b) => Number(archived(a)) - Number(archived(b)) || comparePyPaths(a, b));
+  }
   return Object.fromEntries(index);
 }
 
@@ -325,6 +327,7 @@ export async function runPass(
   const events = new Map<bigint, Event>();
   const preOnly = new Map<bigint, { root: Root; counts: Counts }>();
   const drops = new Map<bigint, Root>();
+  const restored = new Set<bigint>();
   const limits = new Map<string, CodexLimitSnapshot>();
   /** Per re-keyed root: its rollouts read, its scheme-1 keys (own and inherited). */
   const rekeyed = new Map<Root, { rollouts: number; keys: Set<bigint>; failed: boolean }>();
@@ -386,6 +389,7 @@ export async function runPass(
       rekey?.keys.add(key);
       if (!drops.has(key)) drops.set(key, root);
     }
+    for (const key of result.restore) restored.add(key);
     if (result.limits !== null && newerLimits(limits.get(root.identity), result.limits)) {
       limits.set(root.identity, result.limits);
     }
@@ -397,24 +401,8 @@ export async function runPass(
     );
   }
 
-  // A Codex record without a tier from its rollout takes its root's fallback.
-  const fallbacks = new Map<Root, SpeedTier>();
-  const fallbackTier = (root: Root): SpeedTier => {
-    let tier = fallbacks.get(root);
-    if (tier === undefined) {
-      tier = ctx.codexTier?.(root) ?? configFallbackTier(root.path);
-      fallbacks.set(root, tier);
-    }
-    return tier;
-  };
   for (const event of events.values()) {
-    if (event.root.provider !== "codex") continue;
-    const rs = statsOf(event.root);
-    if (event.counts.tier === TIER_UNKNOWN) {
-      event.counts.tier = fallbackTier(event.root);
-      rs.tierFromConfig++;
-    }
-    if (event.counts.tier === 1) rs.fast++;
+    if (event.root.provider === "codex" && event.counts.tier === 1) statsOf(event.root).fast++;
   }
 
   // Decide which rows change the store, and for the changed event, where they sit.
@@ -442,6 +430,10 @@ export async function runPass(
     const models = keys.length > 0 ? ctx.store.models() : new Map<number, string>();
     const modelIds = new Map([...models].map(([id, name]) => [name, id]));
     const unattributedId = modelIds.get(UNATTRIBUTED);
+    // Keys removed earlier as not being usage stay removed, unless a trigger turn gave
+    // them back in this pass.
+    const dead = ctx.store.droppedKeys();
+    for (const key of restored) dead.delete(key);
     const identityOf = (s: StoredRow, fallback: string) =>
       (accounts.get(s.acct)?.identity as string | undefined) ?? fallback;
     const reports = new Map<Root, RekeyAccountReport>();
@@ -461,6 +453,10 @@ export async function runPass(
       const rs = statsOf(root);
       if (!storable(row)) {
         rs.unstorable++;
+        return;
+      }
+      if (dead.has(row.key)) {
+        rs.tombstoned++;
         return;
       }
       const report = reports.get(root);
@@ -541,11 +537,13 @@ export async function runPass(
         accounts: [...kept, ...reports.values()],
       };
     }
-    if (rows.length + replaced.length + remove.length > 0 || rekey !== null) {
+    const tombstone = dropKeys.filter((key) => !dead.has(key));
+    if (rows.length + replaced.length + tombstone.length + restored.size > 0 || rekey !== null) {
       ctx.store.write({
         upsert: rows,
         replace: replaced,
-        remove,
+        drop: { keys: tombstone, reason: "codex-replay" },
+        restore: [...restored],
         rekeyed: finished,
         ...(rekey === null ? {} : { migrationReport: rekey }),
       });

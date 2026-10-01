@@ -86,6 +86,11 @@ export interface ImportSummary {
   merged: number;
   /** Rows the store already had at least as complete. */
   unchanged: number;
+  /**
+   * Rows left out because tokenhud removed their keys as not being usage (a Codex child
+   * rollout's replay of its parent, which cc-usage counted): `dropped_keys`.
+   */
+  tombstoned: number;
   /** Rows naming an account or model the ledger does not hold, or with impossible values. */
   skipped: number;
   /** Accounts and models copied (all of the ledger's, used by a row or not). */
@@ -138,16 +143,21 @@ export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
       accounts: ledger.accounts.length,
     };
     const codex = new Set(rows.filter((r) => r.provider === "codex").map((r) => r.identity));
-    const { inserted, changed } = store.importRows(rows, ledger.accounts, ledger.models, record, [
-      ...codex,
-    ]);
+    const { inserted, changed, tombstoned } = store.importRows(
+      rows,
+      ledger.accounts,
+      ledger.models,
+      record,
+      [...codex],
+    );
     return {
       status: "imported",
       lineage: ledger.lineage,
       read: ledger.read,
       inserted,
       merged: changed - inserted,
-      unchanged: rows.length - changed,
+      unchanged: rows.length - changed - tombstoned,
+      tombstoned,
       skipped: ledger.read - rows.length,
       accounts: ledger.accounts.length,
       models: ledger.models.length,
