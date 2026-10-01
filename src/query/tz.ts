@@ -79,7 +79,7 @@ export class Zone {
    * skips midnight.
    */
   startOf(date: LocalDate): number {
-    return this.#firstInstantAtOrAfter(Date.UTC(date.year, date.month - 1, date.day));
+    return this.#firstInstantAtOrAfter(utc(date.year, date.month - 1, date.day));
   }
 
   /** ISO-8601 with this zone's offset at `t`, e.g. 2026-03-08T00:00:00.000-05:00. */
@@ -100,7 +100,7 @@ export class Zone {
     for (const part of this.#format.formatToParts(at)) {
       if (part.type !== "literal") parts[part.type] = Number(part.value);
     }
-    const wall = Date.UTC(
+    const wall = utc(
       parts.year ?? 1970,
       (parts.month ?? 1) - 1,
       parts.day ?? 1,
@@ -148,6 +148,17 @@ export class Zone {
   }
 }
 
+/**
+ * Epoch ms of a UTC date and time; fields overflow as in Date.UTC. Unlike Date.UTC, years
+ * 0-99 stay years 0-99 instead of becoming 1900-1999.
+ */
+export function utc(year: number, month0: number, day: number, h = 0, mi = 0, sec = 0): number {
+  const d = new Date(0);
+  d.setUTCFullYear(year, month0, day);
+  d.setUTCHours(h, mi, sec, 0);
+  return d.getTime();
+}
+
 /** Whether `name` is a time zone Intl knows. */
 export function isTimeZone(name: string): boolean {
   try {
@@ -160,19 +171,19 @@ export function isTimeZone(name: string): boolean {
 
 /** `date` moved by `days` calendar days (proleptic Gregorian, zone-free). */
 export function addDays(date: LocalDate, days: number): LocalDate {
-  const d = new Date(Date.UTC(date.year, date.month - 1, date.day + days));
+  const d = new Date(utc(date.year, date.month - 1, date.day + days));
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
 }
 
 /** The Monday on or before `date`. */
 export function mondayOf(date: LocalDate): LocalDate {
-  const weekday = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+  const weekday = new Date(utc(date.year, date.month - 1, date.day)).getUTCDay();
   return addDays(date, -((weekday + 6) % 7));
 }
 
 /** The 1st of the month `months` after `date`'s month. */
 export function firstOfMonth(date: LocalDate, months = 0): LocalDate {
-  const d = new Date(Date.UTC(date.year, date.month - 1 + months, 1));
+  const d = new Date(utc(date.year, date.month - 1 + months, 1));
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: 1 };
 }
 

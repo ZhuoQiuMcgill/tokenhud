@@ -1,7 +1,8 @@
 // Query benchmark (T6 acceptance criterion 3) on 1M-row synthetic stores.
 // Usage: bun run bench:query   (exits 1 if a budget is missed)
 //
-// Two stores, in the OS temp dir (a Linux filesystem under WSL), never under the repo:
+// Two stores, in the OS temp dir (TMPDIR; on this WSL machine /tmp is tmpfs, so set TMPDIR
+// to a directory on ext4 to measure there), never under the repo:
 // - "sessions": a year of session-shaped use (synthetic.ts), what a heavy user produces;
 // - "uniform": a row every 30 s for the 347 days up to now, every account and model in
 //   every hour. Real use never looks like this; it is the worst case for the hour cache.
@@ -10,8 +11,10 @@
 // - cold: a fresh engine, so the hours it touches are read and priced first;
 // - warm: the engine's cached hours, which is what a view-model recompute costs;
 // - tick: after invalidating the latest hour (an ingest wrote to it), the Overview again.
-// Then `tokenhud json usage --period this_month --group-by day` end to end, process start
-// included. Budgets: warm queries and the tick 5 ms, the json command 300 ms.
+// Then `tokenhud json usage` by day over the stores' last month, end to end, process start
+// included: a custom period, since `--period this_month` follows the real clock and would
+// measure an empty month once the fixed data is in the past. Budgets: warm queries and the
+// tick 5 ms, the json command 300 ms.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -163,13 +166,16 @@ function jsonEndToEnd(dir: string): void {
   // The command reads <XDG_CONFIG_HOME>/tokenhud/tokenhud.db.
   const env = { ...process.env, XDG_CONFIG_HOME: dir, TZ };
   const cli = join(import.meta.dir, "..", "..", "src", "cli.ts");
+  // September 2026 in TZ: the month that holds END, as `this_month` would have on END.
   const args = [
     process.execPath,
     cli,
     "json",
     "usage",
-    "--period",
-    "this_month",
+    "--since",
+    "2026-09-01",
+    "--until",
+    "2026-09-30",
     "--group-by",
     "day",
   ];
@@ -179,14 +185,17 @@ function jsonEndToEnd(dir: string): void {
     const proc = Bun.spawnSync(args, { env, stdout: "pipe", stderr: "pipe" });
     times.push(performance.now() - t);
     if (proc.exitCode !== 0) throw new Error(`json failed: ${proc.stderr.toString()}`);
+    const records = JSON.parse(proc.stdout.toString()).totals.records;
+    if (records === 0) throw new Error("the json run measured an empty month");
   }
   times.shift(); // the first run warms the OS file cache
-  console.log("\n tokenhud json usage --period this_month --group-by day (spawned, median of 10)");
+  console.log("\n tokenhud json usage, September by day (spawned, median of 10)");
   report("end to end, process start included", median(times), JSON_BUDGET_MS);
   report("(slowest run)", Math.max(...times));
 }
 
 const root = mkdtempSync(join(tmpdir(), "tokenhud-query-bench-"));
+console.log(`stores in ${root}`);
 try {
   const sessionsDir = join(root, "sessions", "tokenhud");
   let t0 = performance.now();

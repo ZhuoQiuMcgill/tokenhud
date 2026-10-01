@@ -9,6 +9,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -268,6 +269,8 @@ describe("json", () => {
     [["usage", "--period", "custom"], "needs --since"],
     [["usage", "--period", "today", "--since", "2026-01-01"], "--since and --until need"],
     [["usage", "--since", "2026-02-30"], "--since must be"],
+    [["usage", "--since", "0001-01-01"], "1970 or later"],
+    [["usage", "--since", "1969-12-31T23:59:59Z"], "1970 or later"],
     [["usage", "--since", "2026-05-01T10:00"], "--since must be"],
     [["usage", "--since", "2026-05-02", "--until", "2026-05-01"], "--until must be after"],
     [["usage", "--group-by", "project"], "unknown group"],
@@ -378,6 +381,25 @@ describe("doctor", () => {
     expect(out.stdout).toContain("only there    16 rows");
     const report = JSON.parse(run(env, "doctor", "--json").stdout);
     expect(report.store.error).toBeString();
+  });
+
+  test("sweeps ledger copies a killed doctor left in the temp dir, and nothing else", () => {
+    const env = home();
+    const tmp = tempDir();
+    const old = Date.now() / 1000 - 2 * 3600;
+    for (const name of ["tokenhud-doctor-stale", "tokenhud-doctor-fresh", "someone-else-stale"]) {
+      mkdirSync(join(tmp, name));
+      writeFileSync(join(tmp, name, "ledger.sqlite3"), "x");
+    }
+    utimesSync(join(tmp, "tokenhud-doctor-stale"), old, old);
+    utimesSync(join(tmp, "someone-else-stale"), old, old);
+    const proc = Bun.spawnSync([process.execPath, CLI, "doctor"], {
+      env: { ...process.env, XDG_CONFIG_HOME: env.xdg, TMPDIR: tmp, TEMP: tmp, TMP: tmp },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(proc.exitCode).toBe(0);
+    expect(readdirSync(tmp).sort()).toEqual(["someone-else-stale", "tokenhud-doctor-fresh"]);
   });
 
   test("bad arguments exit 2", () => {

@@ -4,7 +4,15 @@
 // the overrides file, cc-usage's directory), never a transcript, prompt or credential path.
 
 import type { Database } from "bun:sqlite";
-import { existsSync, mkdtempSync, statSync } from "node:fs";
+import {
+  type Dirent,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -89,6 +97,32 @@ export interface DoctorReport {
 }
 
 const IN_BATCH = 500;
+// doctor's private copies of cc-usage's ledger, in the OS temp dir. A copy is removed when
+// doctor finishes; one left by a killed doctor is swept by a later run once this old.
+const SCRATCH_PREFIX = "tokenhud-doctor-";
+const SCRATCH_MAX_AGE_MS = 60 * 60 * 1000;
+
+/** Removes stale ledger copies: only real directories named like ours. Best effort. */
+function sweepScratch(dir: string, now: number): void {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    // Dirent types come from lstat, so a symlink is never followed.
+    if (!entry.name.startsWith(SCRATCH_PREFIX) || !entry.isDirectory()) continue;
+    const path = join(dir, entry.name);
+    try {
+      if (lstatSync(path).mtimeMs < now - SCRATCH_MAX_AGE_MS) {
+        rmSync(path, { recursive: true, force: true });
+      }
+    } catch {
+      // in use or already gone
+    }
+  }
+}
 
 function storeFacts(
   db: Database,
@@ -192,7 +226,8 @@ function ccUsageSection(
     return section;
   }
   try {
-    const keys = readCcUsageKeys(ledgerPath, mkdtempSync(join(tmpdir(), "tokenhud-doctor-")));
+    sweepScratch(tmpdir(), Date.now());
+    const keys = readCcUsageKeys(ledgerPath, mkdtempSync(join(tmpdir(), SCRATCH_PREFIX)));
     if (keys === null) section.note = "cc-usage was writing its ledger; run doctor again";
     else section.rows_only_in_cc_usage = missingFrom(db, keys);
   } catch (error) {

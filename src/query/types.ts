@@ -244,7 +244,8 @@ export interface JsonCalendarGroup extends JsonUsage {
 
 export type JsonGroup = JsonModelGroup | JsonAccountGroup | JsonCalendarGroup;
 
-interface JsonDocument {
+/** What every document starts with; the MCP server's documents too. */
+export interface JsonDocument {
   schema: typeof JSON_SCHEMA;
   /** ISO-8601 UTC. */
   generated_at: string;

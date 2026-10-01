@@ -25,7 +25,7 @@ import {
   type JsonError,
   type JsonErrorCode,
 } from "../query/types.ts";
-import { addDays, isTimeZone, Zone } from "../query/tz.ts";
+import { addDays, isTimeZone, utc, Zone } from "../query/tz.ts";
 import { StoreError } from "../store/errors.ts";
 import { emptyStoreDatabase, openStoreReader } from "../store/store.ts";
 
@@ -66,24 +66,30 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-
 /**
  * A --since or --until value as epoch ms. A local date means its midnight in `zone`, or,
  * for --until, the next midnight, so the named day is included. An instant must carry its
- * offset: a bare local time would be ambiguous across DST.
+ * offset: a bare local time would be ambiguous across DST. Nothing before 1970: the store
+ * holds no usage then, and a range from year 1 would print tens of thousands of groups.
  */
 function parseBound(option: string, text: string, zone: Zone, until: boolean): number {
+  let at: number | undefined;
   const date = DATE.exec(text);
   if (date !== null) {
     const [year, month, day] = [Number(date[1]), Number(date[2]), Number(date[3])];
-    const check = new Date(Date.UTC(year, month - 1, day));
+    const check = new Date(utc(year, month - 1, day));
     if (check.getUTCMonth() === month - 1 && check.getUTCDate() === day) {
       const local = { year, month, day };
-      return zone.startOf(until ? addDays(local, 1) : local);
+      at = zone.startOf(until ? addDays(local, 1) : local);
     }
   } else if (INSTANT.test(text)) {
-    const at = Date.parse(text);
-    if (!Number.isNaN(at)) return at;
+    const parsed = Date.parse(text);
+    if (!Number.isNaN(parsed)) at = parsed;
   }
-  throw new BadArgument(
-    `${option} must be a date (YYYY-MM-DD) or an ISO-8601 instant with an offset, got '${text}'`,
-  );
+  if (at === undefined) {
+    throw new BadArgument(
+      `${option} must be a date (YYYY-MM-DD) or an ISO-8601 instant with an offset, got '${text}'`,
+    );
+  }
+  if (at < 0) throw new BadArgument(`${option} must be in 1970 or later, got '${text}'`);
+  return at;
 }
 
 function resolveAccounts(wanted: readonly string[], known: readonly AccountRef[]): number[] {

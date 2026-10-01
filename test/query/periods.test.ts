@@ -3,7 +3,7 @@
 // hand from each zone's rules and written in UTC.
 import { describe, expect, test } from "bun:test";
 import { calendarSlices, equalBuckets, resolvePeriod } from "../../src/query/periods.ts";
-import { isTimeZone, Zone } from "../../src/query/tz.ts";
+import { isTimeZone, utc, Zone } from "../../src/query/tz.ts";
 
 const at = (iso: string) => Date.parse(iso);
 const toronto = Zone.of("America/Toronto");
@@ -35,6 +35,13 @@ describe("Zone", () => {
     const santiago = Zone.of("America/Santiago");
     expect(santiago.startOf({ year: 2026, month: 9, day: 6 })).toBe(at("2026-09-06T04:00:00Z"));
     expect(santiago.dateAt(at("2026-09-06T03:59:59.999Z")).day).toBe(5);
+  });
+
+  test("years before 100 stay themselves", () => {
+    expect(new Date(utc(1, 0, 1)).toISOString()).toBe("0001-01-01T00:00:00.000Z");
+    expect(Zone.of("UTC").startOf({ year: 99, month: 12, day: 31 })).toBe(
+      Date.parse("0099-12-31T00:00:00Z"),
+    );
   });
 
   test("names are validated and canonicalised", () => {
