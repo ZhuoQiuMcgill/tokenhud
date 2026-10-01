@@ -5,6 +5,7 @@
 //   bun run build --target=bun-windows-x64       # cross-compile (any Bun compile target)
 //
 // The output is always dist/tokenhud, plus .exe for Windows targets.
+import { rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { VERSION } from "../src/version.ts";
@@ -22,9 +23,16 @@ const root = join(import.meta.dir, "..");
 const outfile = join(root, "dist", windows ? "tokenhud.exe" : "tokenhud");
 
 // Bun.build throws on failure (its `throw` option defaults to true), which fails the script.
-await Bun.build({
+const result = await Bun.build({
   entrypoints: [join(root, "src", "cli.ts")],
-  minify: true,
+  // Identifiers stay unmangled: stack frames take function names from the runtime, which a
+  // sourcemap does not rename back (`keepNames` doesn't either), so mangling would turn
+  // `main` into `f` in every crash report. Mangling saves about a fifth of our own JS (420
+  // bytes at T1), which is noise next to the ~80 MB Bun runtime in the binary.
+  minify: { whitespace: true, syntax: true, identifiers: false },
+  // With `compile`, this embeds a zstd-compressed sourcemap in the binary (the API form of
+  // `--compile --sourcemap`), so stack frames point at src/*.ts lines, not the bundle.
+  sourcemap: "linked",
   compile: {
     ...(target === undefined ? {} : { target }),
     outfile,
@@ -35,6 +43,12 @@ await Bun.build({
     autoloadBunfig: false,
   },
 });
+
+// Bun also writes the map next to the binary. The binary doesn't need it, so keep dist/ to
+// the one file that ships.
+for (const output of result.outputs) {
+  if (output.kind === "sourcemap") await rm(output.path);
+}
 
 const bytes = Bun.file(outfile).size;
 const megabytes = (bytes / 1e6).toFixed(1);
