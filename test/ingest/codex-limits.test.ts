@@ -51,9 +51,9 @@ test("rows have T8's layout: identity, captured_at (s) and cc-usage's rate_limit
     codex_primary: { used_percentage: 12.5, resets_at: 1_783_700_000, window_minutes: 300 },
     codex_secondary: { used_percentage: 40, resets_at: 1_784_000_000 },
   });
-  expect(
-    CursorCache.open(path).codexLimitSnapshots().get("id-a")?.secondary?.windowMinutes,
-  ).toBeNull();
+  const reopened = CursorCache.open(path);
+  expect(reopened.codexLimitSnapshots().get("id-a")?.secondary?.windowMinutes).toBeNull();
+  reopened.close();
 });
 
 test("a newer (or equally new) snapshot replaces the stored one; an older one does not", async () => {
