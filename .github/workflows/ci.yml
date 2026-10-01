@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+  build:
+    name: build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      # Bun 1.3.12 and 1.4.0 shipped binaries with broken ad-hoc signatures, which macOS
+      # kills on launch. Check before running it, and re-sign ad hoc if needed.
+      - name: Verify the macOS code signature
+        if: runner.os == 'macOS'
+        run: |
+          if codesign --verify --verbose=2 dist/tokenhud; then
+            echo "codesign: the signature from bun build is valid" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::codesign --verify failed on the bun build output; re-signing ad hoc"
+            codesign -s - --force dist/tokenhud
+            codesign --verify --verbose=2 dist/tokenhud
+            echo "codesign: bun build output failed verification; valid after ad-hoc re-sign" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run the binary
+        run: |
+          bin=dist/tokenhud
+          if [ "$RUNNER_OS" = "Windows" ]; then bin=dist/tokenhud.exe; fi
+          size=$(wc -c < "$bin" | tr -d ' ')
+          echo "$RUNNER_OS binary: $bin, $size bytes" | tee -a "$GITHUB_STEP_SUMMARY"
+          out=$("./$bin" --version)
+          echo "--version printed: $out"
+          if [ "$out" != "tokenhud 0.0.0" ]; then
+            echo "::error::expected 'tokenhud 0.0.0', got '$out'"
+            exit 1
+          fi

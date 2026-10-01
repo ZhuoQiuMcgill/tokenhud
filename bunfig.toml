@@ -1,0 +1,8 @@
+[install]
+# `bun add` writes exact versions, so new dependencies are pinned by default.
+exact = true
+
+[test]
+# Only discover tests under test/. The gitignored docs/ tree holds spike code with its
+# own *.test.* files and dependencies, which must not run as part of this project.
+root = "test"

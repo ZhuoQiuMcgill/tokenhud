@@ -1,0 +1,24 @@
+{
+  "name": "tokenhud",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Live terminal heads-up display for coding-agent usage, limits and cost",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "scripts": {
+    "check": "bun run typecheck && bun run lint && bun run test",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check",
+    "format": "biome format --write",
+    "test": "bun test",
+    "build": "bun scripts/build.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}
