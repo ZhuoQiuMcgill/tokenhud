@@ -24,7 +24,13 @@ const outfile = join(root, "dist", windows ? "tokenhud.exe" : "tokenhud");
 
 // Bun.build throws on failure (its `throw` option defaults to true), which fails the script.
 const result = await Bun.build({
-  entrypoints: [join(root, "src", "cli.ts")],
+  // Worker scripts must be entrypoints too, or the compiled binary has no module to start
+  // them from (`new Worker(new URL(...))` then exits silently).
+  entrypoints: [
+    join(root, "src", "cli.ts"),
+    join(root, "src", "ingest", "worker.ts"),
+    join(root, "src", "ingest", "parse-worker.ts"),
+  ],
   // Identifiers stay unmangled: stack frames take function names from the runtime, which a
   // sourcemap does not rename back (`keepNames` doesn't either), so mangling would turn
   // `main` into `f` in every crash report. Mangling saves about a fifth of our own JS (420

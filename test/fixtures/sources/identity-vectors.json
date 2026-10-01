@@ -1,0 +1,98 @@
+[
+  {
+    "path": "/home/example/.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "/home/example/.claude-work",
+    "identity": "af7cd477f2d55119636ae76b4fa233ed"
+  },
+  {
+    "path": "~/.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "~/.claude-work/",
+    "identity": "af7cd477f2d55119636ae76b4fa233ed"
+  },
+  {
+    "path": "~",
+    "identity": "67a166d2c72af6bb1509998130b696c9"
+  },
+  {
+    "path": "~/",
+    "identity": "67a166d2c72af6bb1509998130b696c9"
+  },
+  {
+    "path": "/home/example//.claude/",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "/home/example/./.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "/home/example/x/../.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "/home/example/../example/.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "//home/example/.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "///home/example/.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "/mnt/c/Users/Example User/.claude",
+    "identity": "a0deada04548ff28e64196562bc75289"
+  },
+  {
+    "path": "/mnt/c/Users/Example User/.codex",
+    "identity": "6fe76f909fd08d5979106cb1e996821f"
+  },
+  {
+    "path": "/mnt/c/Users/example/.claude-team",
+    "identity": "8631cf64bc7dce7f6f711f644d70b004"
+  },
+  {
+    "path": "/mnt/d/Work Dirs/claude config",
+    "identity": "8820fd5b56dcb4f00bad708f809ec24f"
+  },
+  {
+    "path": "/home/example/.claude-\u00e9quipe",
+    "identity": "9be9506d1ca3bf751c749bd95560cd31"
+  },
+  {
+    "path": "/home/example/.claude-e\u0301quipe",
+    "identity": "71baad1a3f18c8b242a0a31cbbc3531d"
+  },
+  {
+    "path": "/home/example/\u914d\u7f6e/.claude",
+    "identity": "25027b73eb9936b636565dbfd27a89fd"
+  },
+  {
+    "path": "/home/example/\ud83d\ude00/.claude",
+    "identity": "c1361386796de26df1aefebfade3f7a5"
+  },
+  {
+    "path": "/home/example/.codex",
+    "identity": "364c086c132d7dd272fa6bc718991472"
+  },
+  {
+    "path": "/srv/claude/../../home/example/.claude",
+    "identity": "3783d4cabe65f8cd16feba5a84044dfb"
+  },
+  {
+    "path": "/..",
+    "identity": "8a5edab282632443219e051e4ade2d1d"
+  },
+  {
+    "path": "/",
+    "identity": "8a5edab282632443219e051e4ade2d1d"
+  }
+]
