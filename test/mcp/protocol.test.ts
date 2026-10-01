@@ -154,6 +154,7 @@ describe("limits", () => {
       as_of: "2026-10-01T14:59:30.000Z",
       error: null,
       note: "projected_exhaustion_at is an estimate from this machine's recent spend pace",
+      warnings: [],
     });
     expect(f.refreshed).toEqual([[f.personal.identity, 60]]);
   });
@@ -215,6 +216,25 @@ describe("should_wait", () => {
     expect(fits.value.reason).toContain("an estimated $14.00 takes WEEKLY to about 75%");
     const over = await pipe.call("should_wait", { window: "weekly", estimated_cost: 20 });
     expect(over.value).toMatchObject({ wait: true, window: "WEEKLY", wait_s: 3 * 86400 + 30 });
+  });
+
+  test("model makes a model's own weekly window bind; without it, it is only noted", async () => {
+    const f = fixture();
+    writeLimits(f.m, {
+      [f.personal.identity]: {
+        capture: capture(NOW - 30_000, {
+          session: { pct: 95, resetsAt: NOW + 40 * MIN },
+          weekly_scoped: { pct: 100, resetsAt: NOW + 4 * DAY, label: "FABLE WEEKLY" },
+        }),
+        status: {},
+      },
+    });
+    const { pipe } = await serve(f);
+    const plain = await pipe.call("should_wait");
+    expect(plain.value).toMatchObject({ wait: true, window: "5-HOUR", wait_s: 40 * 60 + 30 });
+    expect(plain.value.reason).toContain("note: FABLE WEEKLY is at 100% until Oct 5 15:00");
+    const own = await pipe.call("should_wait", { model: "claude-fable-5" });
+    expect(own.value).toMatchObject({ wait: true, window: "FABLE WEEKLY", wait_s: 4 * 86400 + 30 });
   });
 
   test("an account not signed in on this machine never waits", async () => {
@@ -281,7 +301,7 @@ describe("wait_for_reset", () => {
       [120, 150],
       [150, 150],
     ]);
-    expect(progress[0]?.message).toBe("waited 30s of 3m; 5-HOUR 100%, resets 15:02");
+    expect(progress[0]?.message).toBe("waited 30s of 2m 30s; 5-HOUR 100%, resets 15:02");
     // Refreshed at the start and after the reset.
     expect(f.refreshed).toEqual([
       [f.personal.identity, 60],
@@ -463,11 +483,51 @@ describe("usage", () => {
     expect(result.isError).toBe(true);
     expect(result.text).toBe("the usage store looks damaged; run `tokenhud doctor` for details");
     expect(result.value).toEqual({ error: { code: "store_error", message: result.text } });
+
+    // The limit tools don't need the store: they answer without pace or projections.
+    const limits = await pipe.call("limits");
+    expect(limits.isError).toBe(false);
+    expect(limits.value.warnings).toEqual([
+      "the usage store can't be read, so the spend pace and projections are unknown (run `tokenhud doctor`)",
+    ]);
+    const windows = limits.value.windows as Array<{
+      utilization: number;
+      pace_cost_per_h: unknown;
+      projected_exhaustion_at: unknown;
+    }>;
+    expect(
+      windows.map((w) => [w.utilization, w.pace_cost_per_h, w.projected_exhaustion_at]),
+    ).toEqual([
+      [0.95, null, null],
+      [0.4, null, null],
+    ]);
+    const verdict = await pipe.call("should_wait");
+    expect(verdict.value).toMatchObject({ wait: true, window: "5-HOUR" });
+    expect(verdict.value.reason).toEndWith(
+      "; the usage store can't be read, so the spend pace and projections are unknown (run `tokenhud doctor`)",
+    );
+    const accounts = await pipe.call("accounts");
+    expect(accounts.isError).toBe(false);
+    expect((accounts.value.accounts as unknown[]).length).toBe(3);
+  });
+
+  test("a bad price overrides file is a fixed warning: no path, no file content", async () => {
+    const f = fixture();
+    mkdirSync(join(f.m.xdg, "tokenhud"), { recursive: true });
+    writeFileSync(join(f.m.xdg, "tokenhud", "pricing.overrides.json"), "{ oops");
+    const { pipe } = await serve(f);
+    const { value } = await pipe.call("usage", { period: "today" });
+    const warnings = value.warnings as string[];
+    expect(warnings[0]).toBe(
+      "the price overrides file has problems, so some or all of it is ignored (run `tokenhud doctor` for details)",
+    );
+    expect(JSON.stringify(value)).not.toContain(f.m.xdg);
+    expect(JSON.stringify(value)).not.toContain("oops");
   });
 });
 
 describe("accounts", () => {
-  test("every account, checked once through T8 if never checked, with the current one marked", async () => {
+  test("every account from cached data only, with the current one marked", async () => {
     const f = fixture();
     const { pipe } = await serve(f, { CLAUDE_CONFIG_DIR: f.m.claude });
     expect((await pipe.call("accounts")).value).toEqual({
@@ -492,14 +552,15 @@ describe("accounts", () => {
           id: f.codex.identity,
           label: "codex",
           provider: "codex",
-          signed_in: true,
+          // Never checked: unknown until its limits are first read.
+          signed_in: null,
           last_seen: "2026-10-01T12:00:00.000Z",
           is_current: false,
         },
       ],
     });
-    // Only codex had no sign-in state yet.
-    expect(f.refreshed).toEqual([[f.codex.identity, 0]]);
+    // No request, no app-server, no sign-in refresh.
+    expect(f.refreshed).toEqual([]);
   });
 
   test("history_only_roots in config: never fetched, signed_in false", async () => {

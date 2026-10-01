@@ -106,7 +106,16 @@ export class Freshener {
           "the store was not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
       };
     }
-    const beat = setInterval(() => lock.heartbeat(), this.#o.lockHeartbeatMs ?? LOCK_HEARTBEAT_MS);
+    // A pass can't be stopped part-way; a lost lock (this process was stalled past the
+    // stale limit and another took over) is logged, and the store's max-merge keeps the
+    // double write harmless.
+    let lost = false;
+    const beat = setInterval(() => {
+      if (!lost && !lock.heartbeat()) {
+        lost = true;
+        this.#o.log?.("lost the ingest lock to another process during a pass");
+      }
+    }, this.#o.lockHeartbeatMs ?? LOCK_HEARTBEAT_MS);
     try {
       await this.#o.ingestOnce();
       this.#lastPassAt = this.#now();

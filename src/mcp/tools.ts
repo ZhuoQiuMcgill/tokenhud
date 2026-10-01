@@ -9,23 +9,38 @@ import { calendarSlices, type Period, type PeriodName } from "../query/periods.t
 import type { GroupBy, JsonUsageDocument } from "../query/types.ts";
 import { isTimeZone, Zone } from "../query/tz.ts";
 import type { Provider, Root } from "../sources/roots.ts";
+import { StoreError } from "../store/errors.ts";
 import { type Resolved, type ResolveRequest, resolveAccount } from "./accounts.ts";
-import { type LimitsView, limitsView, type ShouldWaitResult, shouldWait } from "./decide.ts";
+import {
+  type LimitsView,
+  limitsView,
+  type ShouldWaitArgs,
+  type ShouldWaitResult,
+  type Spent,
+  shouldWait,
+} from "./decide.ts";
 import { ToolError } from "./errors.ts";
 import type { Freshness } from "./freshness.ts";
 import type { StoreHandle } from "./store.ts";
-import { type WaitClock, type WaitResult, waitForReset } from "./wait.ts";
+import { type WaitArgs, type WaitClock, type WaitResult, waitForReset } from "./wait.ts";
 
 /**
  * The five MCP tools, independent of the protocol: `server.ts` registers them. Every
  * answer comes from T8 (limits, through `Limits` and an on-demand `refresh`) and T6 (usage,
  * through the shared query and JSON modules), so they match `tokenhud json` and the TUI.
+ *
+ * Limits live in limits.json, not in the usage store, which only adds the spend pace,
+ * projections and last-seen times. So `limits`, `should_wait`, `wait_for_reset` and
+ * `accounts` still answer when the store can't be read, without those; only `usage` fails.
  */
 
 /** `limits` and `should_wait` ask T8 for data at most this old (ARCHITECTURE.md §7). */
 export const LIMITS_MAX_AGE_S = 60;
 /** The finest `usage` grouping per call (T6 critic Q1: fine queries over long ranges are slow). */
 export const MAX_USAGE_GROUPS = 500;
+
+export const STORE_DOWN =
+  "the usage store can't be read, so the spend pace and projections are unknown (run `tokenhud doctor`)";
 
 export interface ToolsDeps {
   env: Readonly<Record<string, string | undefined>>;
@@ -49,6 +64,8 @@ export interface ToolsDeps {
   clock: WaitClock;
   /** Called once per tool call, with the account label it was about (heartbeat). */
   record?: (tool: string, account: string | null) => void;
+  /** Detail of a failure the answer works around (stderr). */
+  log?: (message: string) => void;
 }
 
 export interface AccountArgs {
@@ -71,7 +88,8 @@ export interface AccountEntry {
   id: string;
   label: string;
   provider: Provider;
-  signed_in: boolean;
+  /** Null until the account's limits are first checked (`limits` or the TUI). */
+  signed_in: boolean | null;
   last_seen: string | null;
   is_current: boolean;
 }
@@ -79,6 +97,8 @@ export interface AccountEntry {
 /** `projected_exhaustion_at` must always be labelled an estimate (T8). */
 export const PROJECTION_NOTE =
   "projected_exhaustion_at is an estimate from this machine's recent spend pace";
+
+type StoreAccounts = Map<string, { id: number; lastSeen: number | null }>;
 
 export class Tools {
   readonly #d: ToolsDeps;
@@ -91,24 +111,45 @@ export class Tools {
     return this.#d.roots().filter((r) => r.enabled);
   }
 
-  /** Store account id and newest usage per root identity. */
-  #storeAccounts(store: StoreHandle): Map<string, { id: number; lastSeen: number | null }> {
-    const out = new Map<string, { id: number; lastSeen: number | null }>();
-    if (store.db === null) return out;
-    const seen = new Map(store.queries.accounts().map((a) => [a.id, a.lastSeen]));
-    for (const row of store.db
-      .query<{ id: bigint; provider: string; identity: string }, []>(
-        "SELECT id, provider, identity FROM accounts",
-      )
-      .all()) {
-      const id = Number(row.id);
-      out.set(`${row.provider}:${row.identity}`, { id, lastSeen: seen.get(id) ?? null });
+  #storeFailed(error: unknown): void {
+    if (!(error instanceof StoreError)) throw error;
+    this.#d.log?.(`store error: ${error.message}`);
+  }
+
+  /** The store, or null when it can't be read (logged): limits don't need it. */
+  #optionalStore(): StoreHandle | null {
+    try {
+      return this.#d.store();
+    } catch (error) {
+      this.#storeFailed(error);
+      return null;
+    }
+  }
+
+  /** Store account id and newest usage per `provider:identity`; empty without a store. */
+  #storeAccounts(store: StoreHandle | null): StoreAccounts {
+    const out: StoreAccounts = new Map();
+    if (store === null || store.db === null) return out;
+    const db = store.db;
+    try {
+      const seen = new Map(store.queries.accounts().map((a) => [a.id, a.lastSeen]));
+      for (const row of db
+        .query<{ id: bigint; provider: string; identity: string }, []>(
+          "SELECT id, provider, identity FROM accounts",
+        )
+        .all()) {
+        const id = Number(row.id);
+        out.set(`${row.provider}:${row.identity}`, { id, lastSeen: seen.get(id) ?? null });
+      }
+    } catch (error) {
+      this.#storeFailed(error);
+      out.clear();
     }
     return out;
   }
 
-  #resolve(req: ResolveRequest, store: StoreHandle, roots: readonly Root[]): Resolved {
-    let accounts: Map<string, { id: number; lastSeen: number | null }> | null = null;
+  #resolve(req: ResolveRequest, store: StoreHandle | null, roots: readonly Root[]): Resolved {
+    let accounts: StoreAccounts | null = null;
     return resolveAccount(req, {
       env: this.#d.env,
       home: this.#d.home,
@@ -121,81 +162,108 @@ export class Tools {
     });
   }
 
-  #limits(store: StoreHandle): Limits {
+  #limits(store: StoreHandle | null): Limits {
+    const db = store?.db ?? null;
     return new Limits({
       limitsPath: this.#d.limitsPath,
       roots: () => this.#d.roots(),
-      db: store.db,
-      spend: store.db === null ? null : spendFromQueries(store.queries),
+      db,
+      spend: store === null || db === null ? null : spendFromQueries(store.queries),
       ...(this.#d.snapshots !== undefined && { snapshots: this.#d.snapshots }),
       now: this.#d.now,
     });
   }
 
-  /** The account's limits after a T8 refresh (when `refresh`) of data older than 60 s. */
-  async #accountLimits(root: Root, refresh: boolean): Promise<AccountLimits> {
+  /** T8's limits of every account (or one), without the store if reading it fails. */
+  #readLimits<T>(read: (limits: Limits) => T): { value: T; storeDown: boolean } {
+    const store = this.#optionalStore();
+    if (store !== null) {
+      try {
+        return { value: read(this.#limits(store)), storeDown: false };
+      } catch (error) {
+        this.#storeFailed(error);
+      }
+    }
+    return { value: read(this.#limits(null)), storeDown: true };
+  }
+
+  /** The account's limits, after a T8 refresh (when `refresh`) of data older than 60 s. */
+  async #accountLimits(
+    root: Root,
+    refresh: boolean,
+  ): Promise<{ limits: AccountLimits; storeDown: boolean }> {
     if (refresh) await this.#d.refresh(root.identity, LIMITS_MAX_AGE_S);
-    const limits = this.#limits(this.#d.store()).getLimits(root.identity);
-    if (limits === null) {
+    const { value, storeDown } = this.#readLimits((l) => l.getLimits(root.identity));
+    if (value === null) {
       throw new ToolError("unknown_account", `account '${root.label}' is no longer enabled`);
     }
-    return limits;
+    return { limits: value, storeDown };
   }
 
-  async limits(args: AccountArgs): Promise<LimitsView & { note: string }> {
-    const resolved = this.#resolve(args, this.#d.store(), this.#roots());
+  async limits(args: AccountArgs): Promise<LimitsView & { note: string; warnings: string[] }> {
+    const resolved = this.#resolve(args, this.#optionalStore(), this.#roots());
     this.#d.record?.("limits", resolved.root.label);
-    const limits = await this.#accountLimits(resolved.root, true);
-    return { ...limitsView(resolved, limits, this.#d.zone), note: PROJECTION_NOTE };
+    const { limits, storeDown } = await this.#accountLimits(resolved.root, true);
+    return {
+      ...limitsView(resolved, limits, this.#d.zone),
+      note: PROJECTION_NOTE,
+      warnings: storeDown ? [STORE_DOWN] : [],
+    };
   }
 
-  async shouldWait(
-    args: AccountArgs & { min_headroom?: number; window?: string; estimated_cost?: number },
-  ): Promise<ShouldWaitResult> {
-    const store = this.#d.store();
-    const resolved = this.#resolve(args, store, this.#roots());
+  async shouldWait(args: AccountArgs & ShouldWaitArgs): Promise<ShouldWaitResult> {
+    const resolved = this.#resolve(args, this.#optionalStore(), this.#roots());
     this.#d.record?.("should_wait", resolved.root.label);
-    const limits = await this.#accountLimits(resolved.root, true);
+    const { limits, storeDown } = await this.#accountLimits(resolved.root, true);
+    const store = storeDown ? null : this.#optionalStore();
     const acct = this.#storeAccounts(store).get(
       `${resolved.root.provider}:${resolved.root.identity}`,
     )?.id;
-    const spend = store.db === null ? null : spendFromQueries(store.queries);
-    return shouldWait(
+    const spend = store === null ? null : spendFromQueries(store.queries);
+    const spent: Spent = (from, to) => {
+      if (acct === undefined || spend === null) return null;
+      try {
+        return spend.cost(acct, from, to);
+      } catch (error) {
+        this.#storeFailed(error);
+        return null;
+      }
+    };
+    const verdict = shouldWait(
       limits,
       {
         min_headroom: args.min_headroom,
         window: args.window,
         estimated_cost: args.estimated_cost,
+        model: args.model,
       },
       this.#d.now(),
       this.#d.zone,
-      (from, to) => (acct === undefined || spend === null ? null : spend.cost(acct, from, to)),
+      spent,
     );
+    return storeDown ? { ...verdict, reason: `${verdict.reason}; ${STORE_DOWN}` } : verdict;
   }
 
   async waitForReset(
-    args: AccountArgs & {
-      window?: string;
-      max_wait_s: number;
-      until_utilization_below?: number;
-    },
+    args: AccountArgs & WaitArgs,
     signal: AbortSignal,
     progress: ((progress: number, total: number, message: string) => Promise<void>) | null,
   ): Promise<WaitResult> {
-    const resolved = this.#resolve(args, this.#d.store(), this.#roots());
+    const resolved = this.#resolve(args, this.#optionalStore(), this.#roots());
     this.#d.record?.("wait_for_reset", resolved.root.label);
     return waitForReset(
       {
         window: args.window,
         max_wait_s: args.max_wait_s,
         until_utilization_below: args.until_utilization_below,
+        model: args.model,
       },
       {
         clock: this.#d.clock,
         zone: this.#d.zone,
         signal,
         progress,
-        check: (refresh) => this.#accountLimits(resolved.root, refresh),
+        check: async (refresh) => (await this.#accountLimits(resolved.root, refresh)).limits,
       },
     );
   }
@@ -232,27 +300,35 @@ export class Tools {
       period = args.period;
     }
 
-    const freshness = await this.#d.freshen();
-    const store = this.#d.store();
+    // Everything that can refuse the call is checked before a stale store is refreshed, so
+    // a request that will be refused never triggers an ingest pass.
     const roots = this.#roots();
-    const named = args.account === undefined ? null : this.#storeIds(args.account, store, roots);
-    this.#d.record?.("usage", named?.label ?? null);
-    const req: DocumentRequest = {
-      period,
-      tz: zone.name,
-      ...(named !== null && { accounts: named.ids }),
-      ...(args.provider !== undefined && { providers: [args.provider] }),
-    };
     const groupBy = args.group_by ?? null;
-    if (groupBy === "day" || groupBy === "week" || groupBy === "month") {
-      const groups = calendarSlices(store.queries.range(req), groupBy, zone).length;
-      if (groups > MAX_USAGE_GROUPS) {
-        throw new ToolError(
-          "bad_argument",
-          `group_by '${groupBy}' over this period gives ${groups} groups; at most ${MAX_USAGE_GROUPS} per call: use a coarser group_by or a shorter period`,
-        );
+    const request = (store: StoreHandle) => {
+      const named = args.account === undefined ? null : this.#storeIds(args.account, store, roots);
+      const req: DocumentRequest = {
+        period,
+        tz: zone.name,
+        ...(named !== null && { accounts: named.ids }),
+        ...(args.provider !== undefined && { providers: [args.provider] }),
+      };
+      if (groupBy === "day" || groupBy === "week" || groupBy === "month") {
+        const groups = calendarSlices(store.queries.range(req), groupBy, zone).length;
+        if (groups > MAX_USAGE_GROUPS) {
+          throw new ToolError(
+            "bad_argument",
+            `group_by '${groupBy}' over this period gives ${groups} groups; at most ${MAX_USAGE_GROUPS} per call: use a coarser group_by or a shorter period`,
+          );
+        }
       }
-    }
+      return { req, label: named?.label ?? null };
+    };
+    const checked = request(this.#d.store());
+    this.#d.record?.("usage", checked.label);
+    const freshness = await this.#d.freshen();
+    // The pass may have created the store or new accounts: build the request again.
+    const store = this.#d.store();
+    const { req } = request(store);
     const warnings = [...this.#d.priceWarnings];
     if (freshness.warning !== null) warnings.push(freshness.warning);
     const doc = usageDocument(store.queries, req, groupBy, { now, warnings });
@@ -291,38 +367,39 @@ export class Tools {
     );
   }
 
+  /**
+   * Every enabled account from what is cached: no request, no app-server, no sign-in
+   * refresh. `signed_in` is known once T8 has checked the account (its status in
+   * limits.json), for a history-only root, or for a Codex account with limits read here
+   * (T8 counts those as signed in); otherwise null.
+   */
   async accounts(): Promise<{ accounts: AccountEntry[] }> {
     this.#d.record?.("accounts", null);
     const roots = this.#roots();
-    // An account never checked has no sign-in state yet: check each once, through T8 (no
-    // request for one without a credential file; history-only roots are never fetched).
-    const status = loadLimitsCache(this.#d.limitsPath).status;
-    await Promise.all(
-      roots
-        .filter((r) => !r.historyOnly && status[r.identity] === undefined)
-        .map((r) => this.#d.refresh(r.identity, 0)),
-    );
-    const store = this.#d.store();
+    const store = this.#optionalStore();
     let current: string | null = null;
     try {
       current = this.#resolve({}, store, roots).root.identity;
     } catch {
       // No current Claude account (disabled, or an unknown CLAUDE_CONFIG_DIR).
     }
-    const byIdentity = new Map(
-      this.#limits(store)
-        .getLimits()
-        .map((l) => [l.account.id, l]),
-    );
+    const status = loadLimitsCache(this.#d.limitsPath).status;
+    const all = this.#readLimits((l) => l.getLimits()).value;
+    const byIdentity = new Map(all.map((l) => [l.account.id, l]));
     const seen = this.#storeAccounts(store);
     return {
       accounts: roots.map((root) => {
+        const limits = byIdentity.get(root.identity);
+        const known =
+          root.historyOnly ||
+          status[root.identity] !== undefined ||
+          (root.provider === "codex" && (limits?.source === "rollout" || limits?.source === "rpc"));
         const lastSeen = seen.get(`${root.provider}:${root.identity}`)?.lastSeen ?? null;
         return {
           id: root.identity,
           label: root.label,
           provider: root.provider,
-          signed_in: byIdentity.get(root.identity)?.account.signed_in ?? !root.historyOnly,
+          signed_in: known ? (limits?.account.signed_in ?? !root.historyOnly) : null,
           last_seen: lastSeen === null ? null : this.#d.zone.iso(lastSeen),
           is_current: root.identity === current,
         };

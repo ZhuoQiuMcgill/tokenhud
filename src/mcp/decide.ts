@@ -90,10 +90,11 @@ export function findWindow(limits: AccountLimits, name: string): LimitWindow {
 
 export const percent = (u: number) => `${Math.round(u * 100)}%`;
 
-/** A short duration: "45s", "38m", "2h 10m", "3d 4h". */
+/** A short duration: "45s", "1m 15s" (seconds under 10 minutes), "38m", "2h 10m", "3d 4h". */
 export function duration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s`;
+  if (s < 600) return s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`;
   const m = Math.round(s / 60);
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
@@ -121,6 +122,78 @@ function resets(w: LimitWindow, now: number, zone: Zone): string {
     : `resets at ${at} (in ${duration(w.resets_at - now)})`;
 }
 
+// ── which windows bind ───────────────────────────────────────────────────────────
+
+/**
+ * Utilisation compares to `1 - min_headroom` with this tolerance: 1 - 0.18 is
+ * 0.8200000000000001 in floating point, and 82 % must still count as at the line.
+ */
+const EPSILON = 1e-9;
+
+const CODEX_SLOT = /^(.+)_(primary|secondary|individualLimit)$/;
+const DURATION_SUFFIX = /\s+(WEEKLY|\d+-(MIN|HOUR|DAY|WEEK))$/i;
+
+/**
+ * The model a window is limited to, as the provider names it ("FABLE"), or null for an
+ * account-wide window (5-hour, weekly), which limits every model.
+ * - Claude: `weekly_scoped` windows, labelled "<model> WEEKLY" by T8, and the older
+ *   response's `seven_day_<model>` keys.
+ * - Codex: every limit but the account's own `codex` one. T8 keys them
+ *   `<limit id>_<slot>` and labels them "<limit name> <duration>".
+ * A window scoped to something other than a model (a surface) reads as scoped too, so it
+ * binds only when named; T8's captures don't keep the scope's type.
+ */
+export function windowScope(
+  provider: string,
+  w: Pick<LimitWindow, "kind" | "label">,
+): string | null {
+  if (provider === "codex") {
+    const slot = CODEX_SLOT.exec(w.kind);
+    if (slot === null || slot[1] === "codex") return null;
+    const named = w.label.replace(DURATION_SUFFIX, "");
+    return named !== w.label && named !== "" ? named : (slot[1] as string).replace(/^codex_/, "");
+  }
+  if (/^weekly_scoped(_\d+)?$/.test(w.kind)) return w.label.replace(/\s+WEEKLY$/i, "") || "scoped";
+  const old = /^seven_day_(.+)$/.exec(w.kind);
+  return old === null ? null : (old[1] as string).replaceAll("_", " ");
+}
+
+const words = (text: string) =>
+  text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+
+/**
+ * Whether a model id (or name) is the one a scope names: every word of the scope is a word
+ * of the model. "FABLE" matches "claude-fable-5"; "Opus 4.8" matches "claude-opus-4-8".
+ */
+export function scopeMatches(scope: string, model: string): boolean {
+  const have = new Set(words(model));
+  const need = words(scope);
+  return need.length > 0 && need.every((w) => have.has(w));
+}
+
+/**
+ * The windows that bind this agent: the one `window` names (an explicit choice binds
+ * whatever its scope), else every account-wide window plus the model-scoped ones whose
+ * model is `model`. The rest only get a note.
+ */
+function relevance(
+  limits: AccountLimits,
+  args: { window?: string | undefined; model?: string | undefined },
+): { binding: LimitWindow[]; others: LimitWindow[] } {
+  if (args.window !== undefined) return { binding: [findWindow(limits, args.window)], others: [] };
+  const binding: LimitWindow[] = [];
+  const others: LimitWindow[] = [];
+  for (const w of limits.windows) {
+    const scope = windowScope(limits.account.provider, w);
+    const binds = scope === null || (args.model !== undefined && scopeMatches(scope, args.model));
+    (binds ? binding : others).push(w);
+  }
+  return { binding, others };
+}
+
 // ── should_wait ──────────────────────────────────────────────────────────────────
 
 export interface ShouldWaitArgs {
@@ -128,6 +201,8 @@ export interface ShouldWaitArgs {
   window?: string | undefined;
   /** USD (API-equivalent) the work about to start is expected to cost. */
   estimated_cost?: number | undefined;
+  /** The agent's model id: model-scoped windows bind only when they match it. */
+  model?: string | undefined;
 }
 
 export interface ShouldWaitResult {
@@ -158,46 +233,50 @@ function perDollar(w: LimitWindow, asOf: number, now: number, spent: Spent): num
   return Math.max(0, w.utilization) / s;
 }
 
+const unavailable = (reason: string): ShouldWaitResult => ({
+  wait: false,
+  reason: `limits unavailable: ${reason}`,
+  utilization: null,
+  wait_s: 0,
+});
+
+/** A verdict, and the window it is about: the binding one, else the fullest that binds. */
+export interface Evaluation {
+  verdict: ShouldWaitResult;
+  window: LimitWindow | null;
+}
+
 /**
- * Whether to pause before more work. Wait when any relevant window (all of them, or the
- * one `window` names) is at `1 - min_headroom` or more, would get there after
- * `estimated_cost`, or is projected to run out within 10 minutes and before its reset.
- * `wait_s` runs to the reset of the binding window, the triggered one that resets last
- * (all must have reset before work can go on), plus 30 s.
+ * Whether to pause before more work. Wait when a window that binds this agent (see
+ * `relevance`) is at `1 - min_headroom` or more, would get there after `estimated_cost`, or
+ * is projected to run out within 10 minutes and before its reset. `wait_s` runs to the
+ * reset of the binding window, the triggered one that resets last (all must have reset
+ * before work can go on), plus 30 s. Another model's window at the line is only noted.
  */
-export function shouldWait(
+export function evaluate(
   limits: AccountLimits,
   args: ShouldWaitArgs,
   now: number,
   zone: Zone,
   spent: Spent,
-): ShouldWaitResult {
+): Evaluation {
   if (!limits.account.signed_in) {
-    return {
-      wait: false,
-      reason: "limits unavailable: not signed in on this machine",
-      utilization: null,
-      wait_s: 0,
-    };
+    return { verdict: unavailable("not signed in on this machine"), window: null };
   }
-  const windows = args.window === undefined ? limits.windows : [findWindow(limits, args.window)];
-  if (windows.length === 0 || limits.as_of === null) {
-    return {
-      wait: false,
-      reason: `limits unavailable: ${limits.error ?? "no limits captured yet"}`,
-      utilization: null,
-      wait_s: 0,
-    };
+  if (limits.windows.length === 0 || limits.as_of === null) {
+    return { verdict: unavailable(limits.error ?? "no limits captured yet"), window: null };
   }
+  const { binding: windows, others } = relevance(limits, args);
   const asOf = limits.as_of;
   const headroom = args.min_headroom ?? DEFAULT_MIN_HEADROOM;
   const ceiling = 1 - headroom;
+  const atLine = (u: number) => u >= ceiling - EPSILON;
   const cost = args.estimated_cost;
   const hits: Hit[] = [];
   const costNotes: string[] = [];
   let unscaled = false;
   for (const w of windows) {
-    if (w.utilization >= ceiling) {
+    if (atLine(w.utilization)) {
       hits.push({
         window: w,
         why: `${w.label} is at ${percent(w.utilization)}, at or over ${percent(ceiling)}`,
@@ -219,7 +298,7 @@ export function shouldWait(
         continue;
       }
       const after = w.utilization + k * ((spent(asOf, now + 1) ?? 0) + cost);
-      if (after >= ceiling) {
+      if (atLine(after)) {
         hits.push({
           window: w,
           why: `an estimated $${cost.toFixed(2)} would take ${w.label} from ${percent(w.utilization)} to about ${percent(after)}, over ${percent(ceiling)}`,
@@ -230,18 +309,44 @@ export function shouldWait(
     }
   }
 
+  const notes = others
+    .filter((w) => atLine(w.utilization))
+    .map((w) => {
+      const until = w.resets_at > now ? ` until ${clock(w.resets_at, now, zone)}` : "";
+      const which =
+        args.model === undefined
+          ? "it limits one model only; pass model to check yours"
+          : "another model's limit";
+      return `note: ${w.label} is at ${percent(w.utilization)}${until} (${which})`;
+    });
   const age = Math.floor((now - asOf) / 1000);
-  const staleNote = age > STALE_NOTE_S ? ` (limits data ${duration(age * 1000)} old)` : "";
+  const tail =
+    notes.map((n) => `; ${n}`).join("") +
+    (age > STALE_NOTE_S ? ` (limits data ${duration(age * 1000)} old)` : "");
   if (hits.length > 0) {
     const binding = hits.reduce((a, b) => (b.window.resets_at > a.window.resets_at ? b : a));
     const w = binding.window;
     return {
-      wait: true,
-      reason: `${binding.why}; it ${resets(w, now, zone)}${staleNote}`,
-      window: w.label,
-      utilization: round(w.utilization, 4),
-      resets_at: zone.iso(w.resets_at),
-      wait_s: Math.max(0, Math.ceil((w.resets_at - now) / 1000)) + RESET_MARGIN_S,
+      verdict: {
+        wait: true,
+        reason: `${binding.why}; it ${resets(w, now, zone)}${tail}`,
+        window: w.label,
+        utilization: round(w.utilization, 4),
+        resets_at: zone.iso(w.resets_at),
+        wait_s: Math.max(0, Math.ceil((w.resets_at - now) / 1000)) + RESET_MARGIN_S,
+      },
+      window: w,
+    };
+  }
+  if (windows.length === 0) {
+    return {
+      verdict: {
+        wait: false,
+        reason: `headroom ok: no window limits this model${tail}`,
+        utilization: null,
+        wait_s: 0,
+      },
+      window: null,
     };
   }
   const top = windows.reduce((a, b) => (b.utilization > a.utilization ? b : a));
@@ -251,11 +356,24 @@ export function shouldWait(
   if (unscaled)
     reason += "; estimated_cost not checked for windows with too little spend to scale it";
   return {
-    wait: false,
-    reason: reason + staleNote,
-    window: top.label,
-    utilization: round(top.utilization, 4),
-    resets_at: zone.iso(top.resets_at),
-    wait_s: 0,
+    verdict: {
+      wait: false,
+      reason: reason + tail,
+      window: top.label,
+      utilization: round(top.utilization, 4),
+      resets_at: zone.iso(top.resets_at),
+      wait_s: 0,
+    },
+    window: top,
   };
+}
+
+export function shouldWait(
+  limits: AccountLimits,
+  args: ShouldWaitArgs,
+  now: number,
+  zone: Zone,
+  spent: Spent,
+): ShouldWaitResult {
+  return evaluate(limits, args, now, zone, spent).verdict;
 }

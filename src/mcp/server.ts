@@ -54,6 +54,11 @@ const ACCOUNT: JsonSchemaType = {
   description:
     "An account label or id from the accounts tool. Omit it for the account this session runs on.",
 };
+const MODEL: JsonSchemaType = {
+  type: "string",
+  description:
+    "Your model id (e.g. claude-opus-4-8), if you know it. Per-model limits (e.g. FABLE WEEKLY) apply only when they match it; without it they are only mentioned.",
+};
 const ACCOUNT_PROVIDER: JsonSchemaType = {
   ...PROVIDER,
   description: "claude (default) or codex: which provider's current account to use.",
@@ -69,6 +74,7 @@ type ShouldWaitInput = AccountArgs & {
   min_headroom?: number;
   window?: string;
   estimated_cost?: number;
+  model?: string;
 };
 const SHOULD_WAIT_INPUT = schema<ShouldWaitInput>({
   min_headroom: {
@@ -86,6 +92,7 @@ const SHOULD_WAIT_INPUT = schema<ShouldWaitInput>({
     minimum: 0,
     description: "Rough API-equivalent USD the next piece of work will cost.",
   },
+  model: MODEL,
   account: ACCOUNT,
   provider: ACCOUNT_PROVIDER,
 });
@@ -94,6 +101,7 @@ type WaitInput = AccountArgs & {
   window?: string;
   max_wait_s: number;
   until_utilization_below?: number;
+  model?: string;
 };
 const WAIT_INPUT = schema<WaitInput>(
   {
@@ -113,6 +121,7 @@ const WAIT_INPUT = schema<WaitInput>(
       maximum: 1,
       description: "Also stop once the window's utilization (0-1) is under this.",
     },
+    model: MODEL,
     account: ACCOUNT,
     provider: ACCOUNT_PROVIDER,
   },
@@ -144,12 +153,12 @@ const DESCRIPTIONS = {
   limits:
     "Usage limits of this Claude Code (or Codex) account: each rate limit window (5-hour, weekly), its utilization (0-1), when it resets, the spend pace and the projected exhaustion time (an estimate). Use it to see the remaining quota; should_wait decides whether to wait. Defaults to the account this session runs on.",
   should_wait:
-    "Should this agent pause because a usage limit / rate limit is nearly used up? Returns wait (true/false), a short reason, the binding window and wait_s until its reset. Call it before a long autonomous run or many subagents, and after a rate-limit or 'usage limit reached' error. estimated_cost (USD) checks whether that much work still fits in the quota.",
+    "Should this agent pause because a usage limit / rate limit is nearly used up? Returns wait (true/false), a short reason, the binding window and wait_s until its reset. Call it before a long autonomous run or many subagents, and after a rate-limit or 'usage limit reached' error. Pass model (your model id) so per-model limits count when they are yours. estimated_cost (USD) checks whether that much work still fits in the quota.",
   wait_for_reset:
     "Wait until a usage limit window resets, for non-interactive sessions (claude -p, background tasks, teammates) blocked by a rate limit or an exhausted quota. Sends progress while it waits, re-checks the limits every 5 minutes, returns once the window resets or utilization drops under until_utilization_below, and never waits past max_wait_s (at most 18000 s). In an interactive session, tell the user instead of waiting.",
   usage: `Token usage and API-equivalent cost from this machine's Claude Code and Codex transcripts, for a period (today, this_week, this_month, all, 1h, 5h, 24h, or custom since/until), optionally grouped by model, account, day, week or month (at most ${MAX_USAGE_GROUPS} groups per call). Not the subscription quota: use limits for usage limits and resets.`,
   accounts:
-    "The Claude Code and Codex accounts on this machine: label, provider, whether usage limits can be read here (signed_in), last usage, and which one this session runs on (is_current). Pass a label as account to the other tools.",
+    "The Claude Code and Codex accounts on this machine, from cached data (no requests): label, provider, whether usage limits can be read here (signed_in; null until first checked), last usage, and which one this session runs on (is_current). Pass a label as account to the other tools.",
 } as const;
 
 function ok(value: object): CallToolResult {
@@ -225,6 +234,10 @@ export function createMcpServer(tools: Tools, log: (message: string) => void): M
   return server;
 }
 
+/** What usage answers say about a bad price overrides file; the detail goes to stderr. */
+export const PRICE_WARNING =
+  "the price overrides file has problems, so some or all of it is ignored (run `tokenhud doctor` for details)";
+
 /** How long discovered roots are reused: discovery reads /mnt/c over 9P under WSL. */
 const ROOTS_TTL_MS = 60_000;
 
@@ -287,6 +300,8 @@ export function wireTools(options: WiringOptions = {}): Wiring {
 
   const zone = options.zone ?? Zone.system();
   const { table, warnings } = loadPriceTable(pricingOverridesPath(env, home));
+  // The warnings quote the file's path and contents: they stay in the log.
+  for (const warning of warnings) log(`price overrides: ${warning}`);
   const path = storePath(env, home);
   const store = new StoreSource(path, table, zone.name, now);
   const snapshots = codexSnapshotsFrom(cachePath(env, home));
@@ -333,7 +348,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     now,
     roots,
     store: () => store.get(),
-    priceWarnings: warnings,
+    priceWarnings: warnings.length === 0 ? [] : [PRICE_WARNING],
     limitsPath: limitsPath(env, home),
     snapshots,
     refresh: options.refresh ?? ((account, maxAgeS) => service.refresh(account, maxAgeS)),
@@ -345,6 +360,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
       sleep: (ms, signal) => clock.sleep(ms, AbortSignal.any([signal, shutdown.signal])),
     },
     record: (tool, account) => heartbeat.record(tool, account),
+    log,
   });
   return {
     tools,

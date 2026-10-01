@@ -131,6 +131,26 @@ describe("Freshener", () => {
     expect(lock.beats).toBe(beats);
   });
 
+  test("a lock lost during a long pass is logged once", async () => {
+    const logs: string[] = [];
+    let beats = 0;
+    const { f } = freshener({
+      acquireWriterLock: () => ({
+        heartbeat: () => {
+          beats++;
+          return false;
+        },
+        release: () => {},
+      }),
+      lockHeartbeatMs: 5,
+      ingestOnce: () => Bun.sleep(40),
+      log: (message) => logs.push(message),
+    });
+    await f.ensure();
+    expect(beats).toBe(1);
+    expect(logs).toEqual(["lost the ingest lock to another process during a pass"]);
+  });
+
   test("a failed pass releases the lock and warns", async () => {
     const lock = fakeLock();
     const { f, calls } = freshener({
@@ -187,6 +207,22 @@ describe("the usage tool with the store's freshness", () => {
     appendFileSync(file, claudeLine("3", "3", 4_000, 40, { ts: at(1) }));
     const second = await tools.usage({ period: "all" });
     expect(second.totals.records).toBe(2);
+    expect(lock.taken).toBe(1);
+  });
+
+  test("a request that will be refused never triggers an ingest pass", async () => {
+    const m = machine();
+    writeStore(m, [usageRow(rootNamed(m, "personal"), NOW - 7 * MIN)]);
+    const lock = fakeLock();
+    const { tools } = wire(m, { acquireWriterLock: lock.acquire });
+    await expect(tools.usage({ period: "all", account: "nobody" })).rejects.toThrow(
+      "unknown account 'nobody'",
+    );
+    await expect(
+      tools.usage({ period: "custom", since: "2024-01-01", group_by: "day" }),
+    ).rejects.toThrow("at most 500 per call");
+    expect(lock.taken).toBe(0);
+    await tools.usage({ period: "all" });
     expect(lock.taken).toBe(1);
   });
 

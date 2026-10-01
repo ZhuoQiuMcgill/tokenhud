@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { AccountLimits, LimitWindow } from "../../src/limits/index.ts";
-import { clock, duration, limitsView, type Spent, shouldWait } from "../../src/mcp/decide.ts";
+import {
+  clock,
+  duration,
+  limitsView,
+  type Spent,
+  scopeMatches,
+  shouldWait,
+  windowScope,
+} from "../../src/mcp/decide.ts";
 import { ToolError } from "../../src/mcp/errors.ts";
 import { Zone } from "../../src/query/tz.ts";
 import type { Root } from "../../src/sources/roots.ts";
@@ -26,6 +34,8 @@ function win(kind: string, label: string, over: Partial<LimitWindow>): LimitWind
 
 const session = (over: Partial<LimitWindow>) => win("session", "5-HOUR", over);
 const weekly = (over: Partial<LimitWindow>) => win("weekly_all", "WEEKLY", over);
+/** A per-model weekly window, as T8 labels Claude's `weekly_scoped` limits. */
+const fable = (over: Partial<LimitWindow>) => win("weekly_scoped", "FABLE WEEKLY", over);
 
 function account(windows: LimitWindow[], over: Partial<AccountLimits> = {}): AccountLimits {
   return {
@@ -60,6 +70,28 @@ describe("should_wait", () => {
       shouldWait(account([session({ utilization: u })]), {}, NOW, UTC, noSpend).wait;
     expect(at(0.9)).toBe(true);
     expect(at(0.8999)).toBe(false);
+  });
+
+  test("the line holds at every whole percentage, floating point or not", () => {
+    // 1 - 0.18 is 0.8200000000000001: 82 % with 0.18 headroom is still at the line.
+    const misses: number[] = [];
+    for (let p = 1; p <= 100; p++) {
+      const limits = account([session({ utilization: p / 100 })]);
+      const verdict = shouldWait(limits, { min_headroom: (100 - p) / 100 }, NOW, UTC, noSpend);
+      if (!verdict.wait) misses.push(p);
+    }
+    expect(misses).toEqual([]);
+    const at82 = account([session({ utilization: 0.82 })]);
+    expect(shouldWait(at82, { min_headroom: 0.18 }, NOW, UTC, noSpend).wait).toBe(true);
+    expect(
+      shouldWait(
+        account([session({ utilization: 0.819 })]),
+        { min_headroom: 0.18 },
+        NOW,
+        UTC,
+        noSpend,
+      ).wait,
+    ).toBe(false);
   });
 
   test("several windows over the line: the one that resets last binds", () => {
@@ -205,6 +237,17 @@ describe("should_wait", () => {
     );
   });
 
+  test("no data yet, with a window named: limits unavailable, not a bad argument", () => {
+    expect(
+      shouldWait(account([], { as_of: null }), { window: "weekly" }, NOW, UTC, noSpend),
+    ).toEqual({
+      wait: false,
+      reason: "limits unavailable: no limits captured yet",
+      utilization: null,
+      wait_s: 0,
+    });
+  });
+
   test("not signed in on this machine: never wait", () => {
     const limits = account([session({ utilization: 1 })], {
       account: { id: "0".repeat(32), label: "away", provider: "claude", signed_in: false },
@@ -242,6 +285,94 @@ describe("should_wait", () => {
       wait: false,
       reason: "headroom ok: 5-HOUR is at 0% and has reset (at 14:55)",
     });
+  });
+});
+
+describe("model-scoped windows", () => {
+  // The critic's case: 5-HOUR nearly full and resetting in 40 minutes, while one model's
+  // weekly limit is exhausted for 4 days.
+  const limits = account([
+    session({ utilization: 0.95, resets_at: NOW + 40 * MIN }),
+    weekly({ utilization: 0.2, resets_at: NOW + 6 * DAY }),
+    fable({ utilization: 1, resets_at: NOW + 4 * DAY }),
+  ]);
+
+  test("without model, only account-wide windows bind: wait 40 minutes, and note the other", () => {
+    expect(shouldWait(limits, {}, NOW, UTC, noSpend)).toEqual({
+      wait: true,
+      reason:
+        "5-HOUR is at 95%, at or over 90%; it resets at 15:40 (in 40m); note: FABLE WEEKLY is at 100% until Oct 5 15:00 (it limits one model only; pass model to check yours)",
+      window: "5-HOUR",
+      utilization: 0.95,
+      resets_at: "2026-10-01T15:40:00.000Z",
+      wait_s: 40 * 60 + 30,
+    });
+  });
+
+  test("the model it limits: it binds, and it resets last", () => {
+    for (const model of ["claude-fable-5", "Fable", "claude-fable-5[1m]"]) {
+      expect(shouldWait(limits, { model }, NOW, UTC, noSpend)).toMatchObject({
+        wait: true,
+        window: "FABLE WEEKLY",
+        wait_s: 4 * 86400 + 30,
+      });
+    }
+  });
+
+  test("another model: the 5-hour answer, with the note", () => {
+    const verdict = shouldWait(limits, { model: "claude-opus-4-8" }, NOW, UTC, noSpend);
+    expect(verdict).toMatchObject({ wait: true, window: "5-HOUR", wait_s: 40 * 60 + 30 });
+    expect(verdict.reason).toEndWith(
+      "; note: FABLE WEEKLY is at 100% until Oct 5 15:00 (another model's limit)",
+    );
+  });
+
+  test("only another model's window is full: no wait, but the note", () => {
+    const quiet = account([
+      session({ utilization: 0.3, resets_at: NOW + 40 * MIN }),
+      fable({ utilization: 1, resets_at: NOW + 4 * DAY }),
+    ]);
+    expect(shouldWait(quiet, {}, NOW, UTC, noSpend)).toMatchObject({
+      wait: false,
+      reason:
+        "headroom ok: 5-HOUR is at 30% and resets at 15:40 (in 40m); note: FABLE WEEKLY is at 100% until Oct 5 15:00 (it limits one model only; pass model to check yours)",
+      window: "5-HOUR",
+      wait_s: 0,
+    });
+  });
+
+  test("naming the window binds it, whatever the model", () => {
+    expect(
+      shouldWait(limits, { window: "fable weekly", model: "claude-opus-4-8" }, NOW, UTC, noSpend),
+    ).toMatchObject({ wait: true, window: "FABLE WEEKLY" });
+  });
+
+  test("which windows are scoped, and to what", () => {
+    expect(windowScope("claude", { kind: "session", label: "5-HOUR" })).toBeNull();
+    expect(windowScope("claude", { kind: "weekly_all", label: "WEEKLY" })).toBeNull();
+    expect(windowScope("claude", { kind: "weekly_scoped", label: "FABLE WEEKLY" })).toBe("FABLE");
+    expect(windowScope("claude", { kind: "weekly_scoped_3", label: "OPUS 4.8 WEEKLY" })).toBe(
+      "OPUS 4.8",
+    );
+    // Claude's older response shape.
+    expect(windowScope("claude", { kind: "seven_day", label: "WEEKLY" })).toBeNull();
+    expect(windowScope("claude", { kind: "seven_day_opus", label: "SEVEN DAY OPUS" })).toBe("opus");
+    // Codex: the account's own limit, and a model's limit with and without a name.
+    expect(windowScope("codex", { kind: "codex_primary", label: "5-HOUR" })).toBeNull();
+    expect(windowScope("codex", { kind: "codex_secondary", label: "WEEKLY" })).toBeNull();
+    expect(
+      windowScope("codex", { kind: "codex_spark_primary", label: "GPT-5.3-CODEX-SPARK 5-HOUR" }),
+    ).toBe("GPT-5.3-CODEX-SPARK");
+    expect(windowScope("codex", { kind: "codex_spark_secondary", label: "WEEKLY" })).toBe("spark");
+  });
+
+  test("a model matches a scope when it has every word of it", () => {
+    expect(scopeMatches("FABLE", "claude-fable-5")).toBe(true);
+    expect(scopeMatches("OPUS 4.8", "claude-opus-4-8")).toBe(true);
+    expect(scopeMatches("OPUS 4.8", "claude-opus-5-5")).toBe(false);
+    expect(scopeMatches("GPT-5.3-CODEX-SPARK", "gpt-5.3-codex-spark")).toBe(true);
+    expect(scopeMatches("spark", "gpt-5.5")).toBe(false);
+    expect(scopeMatches("FABLE", "claude-opus-4-8")).toBe(false);
   });
 });
 
@@ -296,8 +427,18 @@ describe("limitsView", () => {
 describe("text", () => {
   test("durations", () => {
     expect(
-      [45_000, 38 * MIN, 2 * HOUR, 2 * HOUR + 10 * MIN, 3 * DAY, 3 * DAY + 4 * HOUR].map(duration),
-    ).toEqual(["45s", "38m", "2h", "2h 10m", "3d", "3d 4h"]);
+      [
+        45_000,
+        60_000,
+        75_000,
+        9 * MIN + 59_000,
+        38 * MIN,
+        2 * HOUR,
+        2 * HOUR + 10 * MIN,
+        3 * DAY,
+        3 * DAY + 4 * HOUR,
+      ].map(duration),
+    ).toEqual(["45s", "1m", "1m 15s", "9m 59s", "38m", "2h", "2h 10m", "3d", "3d 4h"]);
   });
 
   test("clock times carry the date when not today", () => {

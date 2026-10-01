@@ -267,4 +267,75 @@ describe("wait_for_reset", () => {
     );
     expect((await run(none, { max_wait_s: 18_000 })).window).toBe("WEEKLY");
   });
+  test("targets the window should_wait binds on for the model: not another model's", async () => {
+    const windows = () =>
+      account([
+        win("session", "5-HOUR", 0.95, NOW + 40 * MIN),
+        win("weekly_scoped", "FABLE WEEKLY", 1, NOW + 4 * DAY),
+      ]);
+    const other = harness(windows());
+    const any = await run(other, { max_wait_s: 18_000 });
+    expect(any).toMatchObject({ window: "5-HOUR", waited_s: 40 * 60 + 30, reset: true });
+    const opus = harness(windows());
+    expect((await run(opus, { max_wait_s: 18_000, model: "claude-opus-4-8" })).window).toBe(
+      "5-HOUR",
+    );
+    const own = harness(windows());
+    const fable = await run(own, { max_wait_s: 600, model: "claude-fable-5" });
+    expect(fable).toMatchObject({ window: "FABLE WEEKLY", waited_s: 600, reset: false });
+  });
+
+  test("progress keeps coming while a re-check is slow", async () => {
+    const h = harness(account([win("session", "5-HOUR", 1, NOW + 2 * HOUR)]));
+    const original = h.deps.check;
+    // Each refreshed re-check takes 45 s of the clock.
+    h.deps.check = (refresh) => {
+      if (!refresh || h.clock.t === NOW) return original(refresh);
+      const until = h.clock.t + 45_000;
+      return new Promise<AccountLimits>((resolve) => {
+        const previous = h.clock.onSleep;
+        h.clock.onSleep = (t) => {
+          previous?.(t);
+          if (t >= until) {
+            h.clock.onSleep = previous;
+            resolve(h.limits);
+          }
+        };
+      });
+    };
+    await run(h, { max_wait_s: 1_200 });
+    const times = [0, ...h.progress.map((p) => p.at)];
+    const gaps = times.slice(1).map((t, i) => t - (times[i] as number));
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(30 * S);
+    // Progress values only ever grow.
+    const values = h.progress.map((p) => p.progress);
+    expect(values).toEqual([...values].sort((a, b) => a - b));
+    expect(new Set(values).size).toBe(values.length);
+  });
+
+  test("the first check honours the deadline: a hung one can't stretch max_wait_s", async () => {
+    const h = harness(account([win("session", "5-HOUR", 1, NOW + 2 * HOUR)]));
+    const original = h.deps.check;
+    h.deps.check = (refresh) =>
+      refresh ? new Promise<AccountLimits>(() => {}) : original(refresh);
+    const result = await run(h, { max_wait_s: 40 });
+    expect(result).toMatchObject({ waited_s: 40, reset: false, aborted: false, window: "5-HOUR" });
+    expect(h.clock.t - NOW).toBe(40 * S);
+    expect(h.progress.map((p) => p.message)).toEqual(["waited 30s of 40s; checking the limits"]);
+  });
+
+  test("the first check honours cancellation", async () => {
+    const h = harness(account([win("session", "5-HOUR", 1, NOW + 2 * HOUR)]));
+    h.deps.check = () => new Promise<AccountLimits>(() => {});
+    h.clock.onSleep = (t) => {
+      if (t >= NOW + 30 * S) h.abort.abort();
+    };
+    expect(await run(h, { max_wait_s: 18_000 })).toEqual({
+      waited_s: 30,
+      reset: false,
+      utilization_now: null,
+      aborted: true,
+      reason: "cancelled",
+    });
+  });
 });
