@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadLimitsCache } from "../../src/limits/cache.ts";
 import {
@@ -9,10 +9,20 @@ import {
   SignedOut,
 } from "../../src/limits/capture.ts";
 import { credentialsMtime, fetchClaudeLimits } from "../../src/limits/claude.ts";
+import { codexAuthMtime, fetchCodexLimits } from "../../src/limits/codex.ts";
 import { Limits } from "../../src/limits/index.ts";
 import { LimitsService, type LimitsServiceOptions } from "../../src/limits/service.ts";
 import type { Root } from "../../src/sources/roots.ts";
-import { capture, cleanup, fakeRoot, tempDir } from "./helpers.ts";
+import {
+  capture,
+  cleanup,
+  FAKE_TOKEN,
+  fakeRoot,
+  posixOnly,
+  stubExecutable,
+  tempDir,
+  writeCredentials,
+} from "./helpers.ts";
 
 afterEach(cleanup);
 
@@ -102,6 +112,15 @@ describe("Codex precedence: the freshest of snapshot, last-good and RPC", () => 
     const file = h.file();
     expect(file.providers[def.identity]?.rate_limits.codex_primary?.used_percentage).toBe(99);
     expect(file.providers[win.identity]?.rate_limits.codex_primary?.used_percentage).toBe(28);
+  });
+
+  test("on a captured_at tie the snapshot beats last-good, as in cc-usage", async () => {
+    const win = fakeRoot("codex", "codex-win", "/mnt/c/Users/x/.codex", { source: "wsl" });
+    const h = harness([win]);
+    writeFileSync(h.limitsPath, JSON.stringify({ providers: { [win.identity]: at(T0, 11) } }));
+    h.state.snapshots.set(win.identity, { ...at(T0, 22), via: "rollout" });
+    await h.service.refreshDue();
+    expect(h.file().providers[win.identity]?.rate_limits.codex_primary?.used_percentage).toBe(22);
   });
 
   test("the last-good capture survives when its snapshot is gone", async () => {
@@ -422,6 +441,184 @@ describe("a Codex home whose login is refused", () => {
     h.state.mtime = 99; // `codex login` rewrote auth.json
     await h.service.refreshDue();
     expect(h.calls).toEqual(["codex", "codex"]);
+  });
+});
+
+describe("transient failures never sign an account out", () => {
+  const lastGood = capture("claude", T0 / 1000 - 600, {
+    session: { pct: 40, resets: T0 / 1000 + 3600, label: "5-HOUR" },
+  });
+
+  function signedInRoot(over: Partial<LimitsServiceOptions> = {}) {
+    const dir = tempDir();
+    const root = fakeRoot("claude", "personal", join(dir, ".claude"), { source: "auto" });
+    const h = harness([root], { credentialsMtime: (r) => credentialsMtime(r.path), ...over });
+    writeFileSync(h.limitsPath, JSON.stringify({ providers: { [root.identity]: lastGood } }));
+    return { root, h };
+  }
+
+  test("an offline refresh run: back-off, last-good kept and shown stale, still signed in", async () => {
+    let requests = 0;
+    const { root, h } = signedInRoot({
+      fetchClaude: (r, signal) => {
+        h.calls.push(r.label);
+        return fetchClaudeLimits(r, {
+          signal,
+          which: () => "/fake/claude",
+          runRefresh: async () =>
+            "API Error: Connection error. getaddrinfo EAI_AGAIN api.anthropic.com",
+          fetch: async () => {
+            requests++;
+            return new Response("{}");
+          },
+        });
+      },
+    });
+    writeCredentials(root.path, FAKE_TOKEN, 1); // expired; the client cannot reach the server
+    await h.service.refreshDue();
+    h.clock.now += 30 * S;
+    await h.service.refreshDue();
+    h.clock.now += 60 * S;
+    await h.service.refreshDue();
+    expect(h.calls).toHaveLength(3); // backing off, not given up for the day
+    expect(requests).toBe(0);
+    expect(h.file().status[root.identity]).toMatchObject({
+      signed_in: true,
+      history_only: null,
+      errors: 3,
+    });
+    const shown = new Limits({
+      limitsPath: h.limitsPath,
+      roots: () => [root],
+      db: null,
+      spend: null,
+      now: () => h.clock.now,
+    }).getLimits("personal");
+    expect(shown?.account.signed_in).toBe(true);
+    expect(shown?.windows.map((w) => w.utilization)).toEqual([0.4]);
+    expect(shown?.windows[0]?.stale_s).toBe(690);
+    expect(shown?.error).toBe("Claude credentials are expired and the refresh did not complete");
+  });
+
+  test.each([
+    ["offline", Object.assign(new Error("x"), { code: "ConnectionRefused" })],
+    ["DNS", Object.assign(new Error("x"), { code: "ENOTFOUND" })],
+    ["a timeout", new DOMException("t", "TimeoutError")],
+    ["a 500", 500],
+    ["a 429", 429],
+  ])("%s: back-off from 30 s, still signed in", async (_name, failure) => {
+    const { root, h } = signedInRoot({
+      fetchClaude: (r, signal) =>
+        fetchClaudeLimits(r, {
+          signal,
+          fetch: async () => {
+            if (typeof failure === "number") return new Response("", { status: failure });
+            throw failure;
+          },
+        }),
+    });
+    writeCredentials(root.path, FAKE_TOKEN, T0 + HOUR);
+    await h.service.refreshDue();
+    expect(h.file().status[root.identity]).toMatchObject({
+      signed_in: true,
+      history_only: null,
+      errors: 1,
+      next_at: T0 + 30 * S,
+    });
+    expect(h.file().providers[root.identity]).toEqual(lastGood);
+  });
+});
+
+describe("a Codex home without a login", () => {
+  (posixOnly ? test.skip : test)(
+    "codex 0.135.0's 'authentication required': at most one app-server spawn a day",
+    async () => {
+      const dir = tempDir();
+      const spawns = join(dir, "spawns.txt");
+      const executable = stubExecutable(
+        "codex",
+        [
+          `echo spawn >> '${spawns}'`,
+          `read a; printf '{"id":1,"result":{}}\\n'; read b; read c`,
+          `printf '{"id":2,"error":{"code":-32600,"message":"codex account authentication required to read rate limits"}}\\n'`,
+        ].join("\n"),
+      );
+      const root = fakeRoot("codex", "codex", join(dir, ".codex"), { source: "auto" });
+      const h = harness([root], {
+        fetchCodex: (r, signal) => fetchCodexLimits({ codexHome: r.path, executable, signal }),
+        credentialsMtime: (r) => codexAuthMtime(r.path), // no auth.json: null, unchanged
+      });
+      const count = () => readFileSync(spawns, "utf8").trim().split("\n").length;
+      await h.service.refreshDue();
+      for (let t = 5 * MIN; t < 24 * HOUR; t += 5 * MIN) {
+        h.clock.now = T0 + t;
+        await h.service.refreshDue();
+        await h.service.refresh(null, 0);
+      }
+      expect(count()).toBe(1);
+      expect(h.file().status[root.identity]).toMatchObject({
+        signed_in: false,
+        history_only: "detected",
+        last_error: "Codex is not signed in here",
+      });
+      h.clock.now = T0 + 24 * HOUR; // the daily re-check
+      await h.service.refreshDue();
+      expect(count()).toBe(2);
+      mkdirSync(root.path, { recursive: true });
+      writeFileSync(join(root.path, "auth.json"), "{}"); // `codex login`: checked at once
+      h.clock.now += 5 * MIN;
+      await h.service.refreshDue();
+      expect(count()).toBe(3);
+    },
+  );
+});
+
+describe("stop()", () => {
+  const claudeRoot = () => fakeRoot("claude", "personal", "/home/x/.claude", { source: "auto" });
+
+  test("aborts a fetch in flight, returns at once, and leaves the account unmarked", async () => {
+    const root = claudeRoot();
+    const h = harness([root], {
+      fetchClaude: (_r, signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () =>
+            reject(new LimitFetchError("Claude limits fetch cancelled")),
+          );
+        }),
+    });
+    const pending = h.service.refresh(null, 0);
+    await Bun.sleep(20);
+    const t0 = performance.now();
+    await h.service.stop();
+    expect(performance.now() - t0).toBeLessThan(500);
+    expect((await pending)[0]?.fetched).toBe(true);
+    expect(h.file().status[root.identity]).toMatchObject({ errors: 0, last_error: null });
+  });
+
+  test("returns within 2 s even if a fetcher ignores the abort", async () => {
+    const h = harness([claudeRoot()], { fetchClaude: () => new Promise(() => {}) });
+    void h.service.refresh(null, 0);
+    await Bun.sleep(20);
+    const t0 = performance.now();
+    await h.service.stop();
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
+  (posixOnly ? test.skip : test)("kills a hanging app-server within 2 s", async () => {
+    const dir = tempDir();
+    const pidFile = join(dir, "pid");
+    const executable = stubExecutable("codex", `echo $$ > '${pidFile}'\nexec sleep 30`);
+    const root = fakeRoot("codex", "codex", join(dir, ".codex"), { source: "auto" });
+    const h = harness([root], {
+      fetchCodex: (r, signal) => fetchCodexLimits({ codexHome: r.path, executable, signal }),
+    });
+    void h.service.refresh(null, 0);
+    while (!existsSync(pidFile)) await Bun.sleep(5);
+    const t0 = performance.now();
+    await h.service.stop();
+    expect(performance.now() - t0).toBeLessThan(2000);
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    expect(() => process.kill(pid, 0)).toThrow();
   });
 });
 

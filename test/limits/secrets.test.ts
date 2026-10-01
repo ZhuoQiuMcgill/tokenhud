@@ -160,6 +160,36 @@ describe("a fake token never leaves memory", () => {
   });
 });
 
+describe("BUN_CONFIG_VERBOSE_FETCH cannot print the token", () => {
+  const CHILD = join(import.meta.dir, "verbose-child.ts");
+
+  async function run(mode: string, value: string): Promise<string> {
+    const proc = Bun.spawn([process.execPath, CHILD, mode, tempDir()], {
+      env: { ...process.env, BUN_CONFIG_VERBOSE_FETCH: value },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(code).toBe(0);
+    expect(out).toContain("ok 3"); // the fetch really ran
+    return `${out}\n${err}`;
+  }
+
+  test.each(["1", "curl"])("=%s: nothing about the request is printed", async (value) => {
+    const printed = await run("quiet", value);
+    expectClean(printed);
+    expect(printed).not.toMatch(/authorization/i);
+  });
+
+  test("control: without tokenhud's verbose: false, =curl does print it", async () => {
+    expect(await run("control", "curl")).toContain(FAKE_TOKEN);
+  });
+});
+
 describe("the source tree", () => {
   const ROOT = join(import.meta.dir, "..", "..");
 
@@ -180,6 +210,18 @@ describe("the source tree", () => {
       )
       .map(rel);
     expect(readers).toEqual(["src/limits/claude.ts"]);
+  });
+
+  test("fetch is called only through quietFetch (verbose: false)", () => {
+    const calls = files(join(ROOT, "src")).flatMap((path) =>
+      readFileSync(path, "utf8")
+        .split("\n")
+        .filter((line) => /(^|[^\w.#$])fetch\(/.test(line))
+        .map((line) => `${rel(path)}: ${line.trim()}`),
+    );
+    expect(calls).toEqual([
+      "src/limits/claude.ts: export const quietFetch: HttpFetch = (url, init) => fetch(url, { ...init, verbose: false });",
+    ]);
   });
 
   test("the limits module never writes to the console; it logs through its caller", () => {

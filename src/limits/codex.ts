@@ -52,32 +52,45 @@ export interface CodexFetchOptions {
   env?: Readonly<Record<string, string | undefined>>;
   /** Epoch ms. */
   now?: () => number;
+  /** Aborting kills the app-server and ends the fetch at once. */
+  signal?: AbortSignal;
 }
 
-/** How long an app-server error may be in a message. */
-const DETAIL_LIMIT = 200;
-/** An app-server error that means this Codex home is not signed in (or its login is refused). */
-const UNAUTHORIZED = /\b401\b|unauthori[sz]ed|sign(ing)? in again|not (logged|signed) in/i;
+/** Login refusals as the app-server words them, e.g. 0.135.0's "codex account authentication required to read rate limits". */
+const SIGNED_OUT_TEXT =
+  /authentication required|unauthori[sz]ed|not (logged|signed) in|log ?in required|sign(ing)? in again/i;
+/** Where a quoted HTTP response starts in an app-server error. */
+const QUOTED_BODY = /;\s*(?:content-type|body)\s*[=:]|\bbody\s*[=:]|[{[]/i;
+/** An HTTP status in what precedes it: "status 500", "HTTP 429", "failed: 401 Unauthorized". */
+const HTTP_STATUS = /\b(?:status|HTTP)\s*:?\s*([1-5]\d\d)\b|\b([1-5]\d\d)\s+[A-Za-z]/i;
 
 /**
- * The app-server's error as a message. Its text can quote the HTTP response it got
- * (`...; content-type=...; body={...}`), which must never reach a log or the cache, so only
- * the first line up to that point is kept, and at most 200 characters of it. A refused
- * login is `SignedOut`: the account is then history-only until its auth.json changes.
+ * An app-server error as a fixed message. Its text can quote the HTTP response the
+ * app-server got (`...; content-type=...; body={...}`), and nothing a provider sent may
+ * reach a log or the cache. So only the text before any quoted body is looked at, for an
+ * HTTP status and for a refused login, and only that status (or the JSON-RPC error code)
+ * is reported. A refused login (401, 403, "authentication required", ...) is `SignedOut`:
+ * the home is then history-only until its auth.json changes.
  */
 export function rpcError(error: unknown): LimitFetchError {
-  const raw =
-    typeof error === "object" && error !== null && typeof Reflect.get(error, "message") === "string"
-      ? (Reflect.get(error, "message") as string)
-      : typeof error === "string"
-        ? error
-        : "unknown error";
-  const line = raw.split(/\r?\n/, 1)[0] ?? "";
-  const cut = line.search(/;\s*(content-type|body)\s*=|\bbody\s*=/i);
-  let detail = (cut >= 0 ? line.slice(0, cut) : line).trim();
-  if (detail.length > DETAIL_LIMIT) detail = `${detail.slice(0, DETAIL_LIMIT)}...`;
-  const message = `Codex rate-limit fetch failed: ${detail}`;
-  return UNAUTHORIZED.test(raw) ? new SignedOut(message) : new LimitFetchError(message);
+  const field = (name: string) =>
+    typeof error === "object" && error !== null ? Reflect.get(error, name) : undefined;
+  const text = typeof error === "string" ? error : field("message");
+  const raw = typeof text === "string" ? text : "";
+  const head = raw.split(/\r?\n/, 1)[0]?.split(QUOTED_BODY, 1)[0] ?? "";
+  const match = HTTP_STATUS.exec(head);
+  const status = match === null ? null : Number(match[1] ?? match[2]);
+  if (status === 401 || status === 403) {
+    return new SignedOut(`Codex is not signed in here (HTTP ${status})`);
+  }
+  if (SIGNED_OUT_TEXT.test(head)) return new SignedOut("Codex is not signed in here");
+  if (status !== null) return new LimitFetchError(`Codex rate-limit fetch failed: HTTP ${status}`);
+  const code = field("code");
+  return new LimitFetchError(
+    typeof code === "number"
+      ? `Codex rate-limit fetch failed (app-server error ${code})`
+      : "Codex rate-limit fetch failed (app-server error)",
+  );
 }
 
 /** The mtime (epoch ms) of a Codex home's auth.json, or null; only stat-ed, never read. */
@@ -189,6 +202,16 @@ export async function runCodexRpc(options: CodexFetchOptions): Promise<Record<st
   }
 
   const lines = new LineReader(proc.stdout);
+  // Stopping kills the child at once; the read loop sees "aborted" instead of waiting.
+  let onAbort = () => {};
+  const aborted = new Promise<"aborted">((resolve) => {
+    onAbort = () => {
+      proc.kill("SIGKILL");
+      resolve("aborted");
+    };
+  });
+  if (options.signal?.aborted) onAbort();
+  else options.signal?.addEventListener("abort", onAbort, { once: true });
   const send = (message: object) => {
     settle(proc.stdin.write(`${JSON.stringify(message)}\n`));
     settle(proc.stdin.flush());
@@ -208,8 +231,9 @@ export async function runCodexRpc(options: CodexFetchOptions): Promise<Record<st
     }
     for (;;) {
       const wait = timeoutAfter(deadline - performance.now());
-      const line = await Promise.race([lines.next(), wait.promise]);
+      const line = await Promise.race([lines.next(), wait.promise, aborted]);
       wait.clear();
+      if (line === "aborted") throw new LimitFetchError("Codex limits fetch cancelled");
       if (line === "timeout") throw new LimitFetchError("Codex rate-limit fetch timed out");
       if (line === null) break;
       let message: unknown;
@@ -257,6 +281,7 @@ export async function runCodexRpc(options: CodexFetchOptions): Promise<Record<st
     if (error instanceof LimitFetchError) throw error;
     throw new LimitFetchError(`Codex app-server connection failed: ${(error as Error).name}`);
   } finally {
+    options.signal?.removeEventListener("abort", onAbort);
     lines.cancel();
     try {
       settle(proc.stdin.end());

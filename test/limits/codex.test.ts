@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CodexAppServerUnavailable, LimitFetchError, SignedOut } from "../../src/limits/capture.ts";
 import {
@@ -9,7 +9,7 @@ import {
   rpcError,
   runCodexRpc,
 } from "../../src/limits/codex.ts";
-import { CODEX_RESPONSE, cleanup, tempDir } from "./helpers.ts";
+import { CODEX_RESPONSE, cleanup, stubExecutable, tempDir } from "./helpers.ts";
 
 afterEach(cleanup);
 
@@ -18,12 +18,7 @@ afterEach(cleanup);
 // plumbing itself. The stubs are POSIX shell scripts.
 const posix = process.platform === "win32" ? test.skip : test;
 
-function stub(body: string): string {
-  const path = join(tempDir(), "codex");
-  writeFileSync(path, `#!/bin/sh\n${body}\n`);
-  chmodSync(path, 0o755);
-  return path;
-}
+const stub = (body: string) => stubExecutable("codex", body);
 
 const run = (executable: string, timeoutMs = 5000) =>
   runCodexRpc({ codexHome: "/nonexistent/codex-home", executable, timeoutMs });
@@ -66,7 +61,7 @@ describe("runCodexRpc", () => {
     expect(error).toBeInstanceOf(CodexAppServerUnavailable);
   });
 
-  posix("a JSON-RPC error is a retryable failure with the server's message", async () => {
+  posix("a JSON-RPC error is a retryable failure, reported by its code only", async () => {
     const error = await run(
       stub(
         `read a\nprintf '{"id":1,"result":{}}\\n'\nread b\nread c\nprintf '{"id":2,"error":{"code":-1,"message":"usage service unavailable"}}\\n'`,
@@ -75,7 +70,39 @@ describe("runCodexRpc", () => {
     expect(error).toBeInstanceOf(LimitFetchError);
     expect(error).not.toBeInstanceOf(CodexAppServerUnavailable);
     expect(error).not.toBeInstanceOf(SignedOut);
-    expect(error.message).toBe("Codex rate-limit fetch failed: usage service unavailable");
+    expect(error.message).toBe("Codex rate-limit fetch failed (app-server error -1)");
+  });
+
+  posix("codex 0.135.0's answer for a home without a login is SignedOut", async () => {
+    // The exact frame the real app-server sends offline with an empty CODEX_HOME.
+    const error = await run(
+      stub(
+        `read a\nprintf '{"id":1,"result":{}}\\n'\nread b\nread c\nprintf '{"id":2,"error":{"code":-32600,"message":"codex account authentication required to read rate limits"}}\\n'`,
+      ),
+    ).catch((e) => e);
+    expect(error).toBeInstanceOf(SignedOut);
+    expect(error.message).toBe("Codex is not signed in here");
+  });
+
+  posix("an abort kills the app-server and ends the fetch at once", async () => {
+    const dir = tempDir();
+    const pidFile = join(dir, "pid");
+    const abort = new AbortController();
+    const t0 = performance.now();
+    const pending = runCodexRpc({
+      codexHome: dir,
+      executable: stub(`echo $$ > '${pidFile}'\nexec sleep 30`),
+      timeoutMs: 20_000,
+      signal: abort.signal,
+    }).catch((e) => e);
+    while (!existsSync(pidFile)) await Bun.sleep(5);
+    abort.abort();
+    const error = await pending;
+    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(error).toBeInstanceOf(LimitFetchError);
+    expect(error.message).toBe("Codex limits fetch cancelled");
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    expect(() => process.kill(pid, 0)).toThrow(); // the child is gone
   });
 
   posix("a silent child times out, retryably", async () => {
@@ -123,7 +150,7 @@ describe("runCodexRpc", () => {
   );
 });
 
-describe("app-server errors", () => {
+describe("app-server errors become fixed messages", () => {
   // The shape codex-cli 0.135.0 reports when the backend refuses the login (body made up).
   const refused = [
     "failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized; content-type=text/plain; body={",
@@ -132,30 +159,52 @@ describe("app-server errors", () => {
     "}",
   ].join("\n");
 
-  test("a refused login is SignedOut, and the quoted response never reaches the message", () => {
-    const error = rpcError({ code: -32603, message: refused });
-    expect(error).toBeInstanceOf(SignedOut);
-    expect(error.message).toBe(
-      "Codex rate-limit fetch failed: failed to fetch codex rate limits: GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized",
-    );
-  });
-
   test.each([
-    ["Not logged in. Run codex login", true],
-    ["please try signing in again", true],
-    ["upstream timeout; body=<html>FAKE0000TOKEN</html>", false],
-    ["x".repeat(500), false],
-  ])("%p: signed out %p, trimmed", (message, signedOut) => {
-    const error = rpcError({ message });
-    expect(error instanceof SignedOut).toBe(signedOut);
-    expect(error).toBeInstanceOf(LimitFetchError);
-    expect(error.message).not.toContain("FAKE0000TOKEN");
-    expect(error.message.length).toBeLessThanOrEqual(240);
-  });
-
-  test("odd error values still give a message", () => {
-    expect(rpcError("plain").message).toBe("Codex rate-limit fetch failed: plain");
-    expect(rpcError(42).message).toBe("Codex rate-limit fetch failed: unknown error");
+    [{ code: -32603, message: refused }, true, "Codex is not signed in here (HTTP 401)"],
+    [
+      { code: -32600, message: "codex account authentication required to read rate limits" },
+      true,
+      "Codex is not signed in here",
+    ],
+    [
+      { message: "chatgpt authentication required to read rate limits" },
+      true,
+      "Codex is not signed in here",
+    ],
+    [{ message: "Not logged in. Run codex login" }, true, "Codex is not signed in here"],
+    [
+      { message: "GET /x failed: 403 Forbidden; body=FAKE0000TOKEN" },
+      true,
+      "Codex is not signed in here (HTTP 403)",
+    ],
+    // A 429 whose body happens to hold "401" is a 429: the body is never looked at.
+    [
+      { message: 'GET /x failed: 429 Too Many Requests; body={"id":"req-401-FAKE0000TOKEN"}' },
+      false,
+      "Codex rate-limit fetch failed: HTTP 429",
+    ],
+    [
+      { message: 'unexpected status 500: {"detail":"FAKE0000TOKEN unauthorized"}' },
+      false,
+      "Codex rate-limit fetch failed: HTTP 500",
+    ],
+    [
+      { message: "upstream timeout body: <html>FAKE0000TOKEN</html>" },
+      false,
+      "Codex rate-limit fetch failed (app-server error)",
+    ],
+    [
+      { code: 7, message: "x".repeat(500) },
+      false,
+      "Codex rate-limit fetch failed (app-server error 7)",
+    ],
+    ["plain", false, "Codex rate-limit fetch failed (app-server error)"],
+    [42, false, "Codex rate-limit fetch failed (app-server error)"],
+  ])("%p", (error, signedOut, message) => {
+    const mapped = rpcError(error);
+    expect(mapped instanceof SignedOut).toBe(signedOut);
+    expect(mapped).toBeInstanceOf(LimitFetchError);
+    expect(mapped.message).toBe(message);
   });
 
   test("auth.json is only stat-ed", () => {

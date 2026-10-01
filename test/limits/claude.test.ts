@@ -29,6 +29,7 @@ interface Seen {
   beta: string | null;
   userAgent: string | null;
   hasSignal: boolean;
+  verbose: unknown;
 }
 
 /** HTTP that answers each request with the next of `responses` and records what it saw. */
@@ -44,6 +45,7 @@ function http(responses: (Response | Error)[]): { fetch: HttpFetch; seen: Seen[]
         beta: headers.get("anthropic-beta"),
         userAgent: headers.get("user-agent"),
         hasSignal: init.signal instanceof AbortSignal,
+        verbose: init.verbose,
       });
       const next = responses.shift();
       if (next === undefined) throw new Error("unexpected request");
@@ -83,6 +85,7 @@ describe("fetchClaudeLimits", () => {
         beta: "oauth-2025-04-20",
         userAgent: expect.stringMatching(/^tokenhud\//),
         hasSignal: true,
+        verbose: false,
       },
     ]);
     expect(capture).toMatchObject({ captured_at: NOW / 1000, source: "claude", via: "api" });
@@ -145,15 +148,41 @@ describe("fetchClaudeLimits", () => {
     expect(h.seen).toHaveLength(0);
   });
 
-  test("still expired with no recognisable output: cc-usage's message, still signed out", async () => {
+  // Only positive evidence signs an account out: a refresh run that failed for its own
+  // reasons (offline, DNS, a crash, a timeout that killed it) leaves it retryable.
+  test.each([
+    ["no output at all (killed by its timeout, or crashed)", ""],
+    ["offline", "API Error: Connection error. getaddrinfo EAI_AGAIN api.anthropic.com"],
+    ["DNS", "Error: getaddrinfo ENOTFOUND console.anthropic.com"],
+    ["offline, while also asking to log in", "Connection error. Please run /login"],
+    ["an unrelated failure", "Error: Input must be provided either through stdin or as a prompt"],
+  ])("an expired token the refresh run left alone, %s: retryable", async (_name, output) => {
+    const dir = tempDir();
+    writeCredentials(dir, FAKE_TOKEN, 1);
+    const h = http([]);
+    const error = await fetchClaudeLimits(
+      { path: dir, source: "auto" },
+      options({ fetch: h.fetch, runRefresh: async () => output }),
+    ).catch((e) => e);
+    expect(error).toBeInstanceOf(LimitFetchError);
+    expect(error).not.toBeInstanceOf(SignedOut);
+    expect(error.message).toBe("Claude credentials are expired and the refresh did not complete");
+    expect(h.seen).toHaveLength(0);
+  });
+
+  test.each([
+    "OAuth token has expired. Please obtain a new token or refresh your existing token.",
+    "Invalid API key · Please run /login",
+    "refresh failed: invalid_grant",
+    "OAuth token has been revoked",
+  ])("the refresh run reporting %p: signed out", async (output) => {
     const dir = tempDir();
     writeCredentials(dir, FAKE_TOKEN, 1);
     const error = await fetchClaudeLimits(
       { path: dir, source: "config" },
-      options({ fetch: http([]).fetch, runRefresh: async () => "" }),
+      options({ fetch: http([]).fetch, runRefresh: async () => output }),
     ).catch((e) => e);
     expect(error).toBeInstanceOf(SignedOut);
-    expect(error.message).toBe("Claude credentials remain expired; run Claude Code to sign in");
   });
 
   test("no credential file: signed out, without a request or a refresh", async () => {
@@ -209,16 +238,90 @@ describe("fetchClaudeLimits", () => {
     expect(capture.source).toBe("claude");
   });
 
-  test("a 401 after the refresh means the sign-in is not usable here", async () => {
+  test.each([401, 403])(
+    "a %d for a token the refresh run just replaced: signed out",
+    async (status) => {
+      const dir = tempDir();
+      writeCredentials(dir, FAKE_TOKEN, LATER);
+      const h = http([new Response("no", { status: 401 }), new Response("no", { status })]);
+      const replace = async () => {
+        writeCredentials(dir, FAKE_TOKEN_2, LATER);
+        return "";
+      };
+      const error = await fetchClaudeLimits(
+        { path: dir, source: "config" },
+        options({ fetch: h.fetch, runRefresh: replace }),
+      ).catch((e) => e);
+      expect(error).toBeInstanceOf(SignedOut);
+      expect(error.message).toBe(
+        `Claude rejected this machine's refreshed sign-in (HTTP ${status})`,
+      );
+      expect(h.seen).toHaveLength(2);
+    },
+  );
+
+  test("a 401 for an expired token the refresh run replaced: signed out, without a second run", async () => {
+    const dir = tempDir();
+    writeCredentials(dir, FAKE_TOKEN, 1);
+    let runs = 0;
+    const h = http([new Response("no", { status: 401 })]);
+    const error = await fetchClaudeLimits(
+      { path: dir, source: "config" },
+      options({
+        fetch: h.fetch,
+        runRefresh: async () => {
+          runs++;
+          writeCredentials(dir, FAKE_TOKEN_2, LATER);
+          return "";
+        },
+      }),
+    ).catch((e) => e);
+    expect(error).toBeInstanceOf(SignedOut);
+    expect(runs).toBe(1);
+  });
+
+  test("a 401 the refresh run could not fix (token unchanged): retryable, no pointless retry", async () => {
     const dir = tempDir();
     writeCredentials(dir, FAKE_TOKEN, LATER);
-    const h = http([new Response("no", { status: 401 }), new Response("no", { status: 401 })]);
+    const h = http([new Response("no", { status: 401 })]);
     const error = await fetchClaudeLimits(
       { path: dir, source: "config" },
       options({ fetch: h.fetch, runRefresh: async () => "" }),
     ).catch((e) => e);
-    expect(error).toBeInstanceOf(SignedOut);
-    expect(h.seen).toHaveLength(2);
+    expect(error).toBeInstanceOf(LimitFetchError);
+    expect(error).not.toBeInstanceOf(SignedOut);
+    expect(error.message).toBe("Claude usage fetch failed: HTTP 401");
+    expect(h.seen).toHaveLength(1);
+  });
+
+  test("a first 403 (no refresh yet) is retryable", async () => {
+    const dir = tempDir();
+    writeCredentials(dir, FAKE_TOKEN, LATER);
+    const error = await fetchClaudeLimits(
+      { path: dir, source: "config" },
+      options({ fetch: http([new Response("no", { status: 403 })]).fetch }),
+    ).catch((e) => e);
+    expect(error).not.toBeInstanceOf(SignedOut);
+    expect(error.message).toBe("Claude usage fetch failed: HTTP 403");
+  });
+
+  test("an abort cancels the request: neither signed out nor a request failure", async () => {
+    const dir = tempDir();
+    writeCredentials(dir, FAKE_TOKEN, LATER);
+    const abort = new AbortController();
+    const hanging: HttpFetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("a", "AbortError")));
+      });
+    const pending = fetchClaudeLimits(
+      { path: dir, source: "config" },
+      options({ fetch: hanging, signal: abort.signal }),
+    ).catch((e) => e);
+    abort.abort();
+    const error = await pending;
+    expect(error).toBeInstanceOf(LimitFetchError);
+    expect(error).not.toBeInstanceOf(SignedOut);
+    expect(error.message).toBe("Claude limits fetch cancelled");
   });
 
   test.each([
@@ -231,6 +334,11 @@ describe("fetchClaudeLimits", () => {
       "Claude usage fetch failed: ECONNREFUSED",
     ],
     [new DOMException("t", "TimeoutError"), "Claude usage fetch failed: timed out"],
+    [
+      Object.assign(new Error("dns"), { code: "ENOTFOUND" }),
+      "Claude usage fetch failed: ENOTFOUND",
+    ],
+    [new Response("down", { status: 503 }), "Claude usage fetch failed: HTTP 503"],
   ])("a failed request is a retryable LimitFetchError (%#)", async (response, message) => {
     const dir = tempDir();
     writeCredentials(dir, FAKE_TOKEN, LATER);

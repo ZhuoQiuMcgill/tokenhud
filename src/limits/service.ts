@@ -8,6 +8,7 @@ import {
   initialStatus,
   type KnownAccount,
   type LimitsFile,
+  leasePath,
   loadLimitsCache,
   saveLimitsCache,
   updateLimitsCache,
@@ -21,6 +22,7 @@ import {
 } from "./capture.ts";
 import { credentialsMtime, fetchClaudeLimits } from "./claude.ts";
 import { codexAuthMtime, fetchCodexLimits } from "./codex.ts";
+import { type Lease, tryLease } from "./lease.ts";
 import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
 
 /**
@@ -46,8 +48,11 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
  *   cannot work at all latches the RPC off for the life of the process.
  * - **Never blank:** a failure keeps the last-good capture and records the error; readers
  *   show the capture's age.
- * Fetch state lives in limits.json beside the captures, so all of this holds across the
- * TUI and every MCP server process. Nothing here throws to the caller.
+ * - **Across processes:** fetch state lives in limits.json beside the captures, and an
+ *   account is fetched only under its lease file, so the cadence, the back-off, the 30 s
+ *   rate limit and de-duplication hold across the ingest Worker and every MCP server
+ *   process (see `#run`).
+ * Nothing here throws to the caller.
  */
 
 export interface LimitsTiming {
@@ -56,6 +61,8 @@ export interface LimitsTiming {
   backoffMinMs: number;
   backoffMaxMs: number;
   recheckMs: number;
+  /** A fetch lease older than this belongs to a crashed process (a fetch takes at most ~1 min). */
+  leaseTtlMs: number;
 }
 
 export const DEFAULT_LIMITS_TIMING: LimitsTiming = {
@@ -64,10 +71,13 @@ export const DEFAULT_LIMITS_TIMING: LimitsTiming = {
   backoffMinMs: 30_000,
   backoffMaxMs: 30 * 60_000,
   recheckMs: 24 * 3_600_000,
+  leaseTtlMs: 2 * 60_000,
 };
 
 /** The shortest wait between scheduled rounds. */
 const MIN_ROUND_DELAY_MS = 1_000;
+/** `stop()` returns within this, whatever is still running (it has been aborted). */
+const STOP_WAIT_MS = 1_500;
 
 export interface LimitsServiceOptions {
   /** limits.json. */
@@ -83,8 +93,9 @@ export interface LimitsServiceOptions {
   recordEvents?: ((root: Root, capture: Capture) => void) | null;
   /** Called with the identities whose entry in limits.json changed. */
   onChanged?: (accounts: string[]) => void;
-  fetchClaude?: (root: Root) => Promise<Capture>;
-  fetchCodex?: (root: Root) => Promise<Capture>;
+  /** Fetchers get the service's signal, aborted by `stop()`. */
+  fetchClaude?: (root: Root, signal: AbortSignal) => Promise<Capture>;
+  fetchCodex?: (root: Root, signal: AbortSignal) => Promise<Capture>;
   credentialsMtime?: (root: Root) => number | null;
   /** Whether a Codex root gets the app-server RPC; the default `~/.codex` when it exists. */
   usesRpc?: (root: Root) => boolean;
@@ -145,6 +156,7 @@ export class LimitsService {
   #timer: ReturnType<typeof setTimeout> | null = null;
   #round: Promise<void> | null = null;
   #stopped = false;
+  readonly #abort = new AbortController();
 
   constructor(options: LimitsServiceOptions) {
     this.#o = options;
@@ -196,13 +208,21 @@ export class LimitsService {
     this.#schedule(0);
   }
 
-  /** Stops the schedule and waits for fetches in flight. */
+  /**
+   * Stops the schedule and aborts fetches in flight (requests are cancelled, the refresh
+   * run and the app-server killed). Returns once they have settled, within 1.5 s.
+   */
   async stop(): Promise<void> {
     this.#stopped = true;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
-    await this.#round;
-    await Promise.allSettled([...this.#inflight.values()]);
+    this.#abort.abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, STOP_WAIT_MS);
+    });
+    await Promise.race([Promise.allSettled([this.#round, ...this.#inflight.values()]), late]);
+    clearTimeout(timer);
   }
 
   #schedule(delay: number): void {
@@ -296,35 +316,82 @@ export class LimitsService {
     return job;
   }
 
-  async #run(root: Root, mode: Mode): Promise<RefreshOutcome> {
-    const id = root.identity;
+  /** The account's stored capture, its status, and its rollout snapshot, as they are now. */
+  #read(root: Root): {
+    prior: Capture | null;
+    /** The stored status, as JSON, to tell whether this run changed it. */
+    before: string;
+    status: AccountStatus;
+    current: Capture | null;
+  } {
     const file = loadLimitsCache(this.#o.limitsPath);
-    const prior = file.providers[id] ?? null;
-    let status: AccountStatus = { ...(file.status[id] ?? initialStatus()) };
+    const prior = file.providers[root.identity] ?? null;
+    const snapshot =
+      root.provider === "codex" ? (this.#snapshots().get(root.identity) ?? null) : null;
+    let status: AccountStatus = { ...(file.status[root.identity] ?? initialStatus()) };
     const before = JSON.stringify(status);
-    const snapshot = root.provider === "codex" ? (this.#snapshots().get(id) ?? null) : null;
-    let capture = freshest([prior, snapshot]);
-    let fetched = false;
-
     if (root.historyOnly) {
       status = { ...status, signed_in: false, history_only: "config", last_error: null };
-    } else {
-      if (status.history_only === "config") status = initialStatus();
-      if (this.#due(root, status, capture, mode)) {
-        fetched = true;
-        const attempt = await this.#fetch(root);
-        status = this.#after(root, status, attempt);
-        capture = freshest([capture, attempt.capture]);
+    } else if (status.history_only === "config") {
+      status = initialStatus();
+    }
+    // cc-usage's order: on a captured_at tie the snapshot beats last-good, which beats the RPC.
+    return { prior, before, status, current: freshest([snapshot, prior]) };
+  }
+
+  /**
+   * Decides, fetches and records one account. A fetch happens only under the account's
+   * lease (`.limits-leases/<identity>.lease` beside limits.json), so one process at a time
+   * fetches an account; the holder decides again on the file as it is then and records the
+   * attempt before fetching, so a process that comes after it within 30 s does not fetch.
+   * A process that cannot get the lease serves what limits.json holds.
+   */
+  async #run(root: Root, mode: Mode): Promise<RefreshOutcome> {
+    const id = root.identity;
+    let { prior, before, status, current } = this.#read(root);
+    let fetched = false;
+    if (!root.historyOnly && !this.#stopped && this.#due(root, status, current, mode)) {
+      const lease = this.#lease(id);
+      if (lease !== null) {
+        try {
+          ({ prior, before, status, current } = this.#read(root));
+          if (this.#due(root, status, current, mode)) {
+            fetched = true;
+            this.#save(id, null, { ...status, last_attempt_at: this.#now() });
+            const attempt = await this.#fetch(root);
+            if (this.#stopped && attempt.capture === null) {
+              // Cancelled by stop(): not a failure of the account; leave its state alone.
+              return { account: id, fetched, error: null };
+            }
+            status = this.#after(root, status, attempt);
+            current = freshest([current, attempt.capture]);
+          }
+        } finally {
+          lease.release();
+        }
       }
     }
 
-    const changed = capture !== prior || JSON.stringify(status) !== before;
+    const newCapture = current !== null && JSON.stringify(current) !== JSON.stringify(prior);
+    const changed = newCapture || JSON.stringify(status) !== before;
     if (changed) {
-      this.#save(id, capture === prior ? null : capture, status);
+      this.#save(id, newCapture ? current : null, status);
       this.#o.onChanged?.([id]);
     }
-    if (capture !== null && (changed || mode.kind === "scheduled")) this.#record(root, capture);
-    return { account: id, fetched, error: shownError(root, status, capture) };
+    if (current !== null && (changed || mode.kind === "scheduled")) this.#record(root, current);
+    return { account: id, fetched, error: shownError(root, status, current) };
+  }
+
+  /** The account's fetch lease, or null while another process holds it. */
+  #lease(id: string): Lease | null {
+    try {
+      return tryLease(leasePath(this.#o.limitsPath, id), this.#timing.leaseTtlMs, this.#now);
+    } catch (error) {
+      // No writable config dir: limits.json cannot be saved either; fetch unguarded.
+      const code = (error as NodeJS.ErrnoException).code ?? "error";
+      this.#log("warn", `limits: cannot take the fetch lease (${code})`);
+      return { path: "", release() {} };
+    }
   }
 
   #due(root: Root, status: AccountStatus, current: Capture | null, mode: Mode): boolean {
@@ -353,13 +420,18 @@ export class LimitsService {
   }
 
   async #fetch(root: Root): Promise<Attempt> {
+    const signal = this.#abort.signal;
     try {
       const capture =
         root.provider === "claude"
-          ? await (this.#o.fetchClaude ?? ((r: Root) => fetchClaudeLimits(r)))(root)
-          : await (this.#o.fetchCodex ?? ((r: Root) => fetchCodexLimits({ codexHome: r.path })))(
-              root,
-            );
+          ? await (
+              this.#o.fetchClaude ??
+              ((r: Root, s: AbortSignal) => fetchClaudeLimits(r, { signal: s }))
+            )(root, signal)
+          : await (
+              this.#o.fetchCodex ??
+              ((r: Root, s: AbortSignal) => fetchCodexLimits({ codexHome: r.path, signal: s }))
+            )(root, signal);
       return { capture, error: null };
     } catch (error) {
       return { capture: null, error };

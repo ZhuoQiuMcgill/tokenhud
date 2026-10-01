@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Capture } from "../../src/limits/capture.ts";
@@ -100,3 +100,14 @@ export function capture(
   }
   return { captured_at: capturedAt, source, rate_limits };
 }
+
+/** A POSIX shell script standing in for a CLI (`codex`, `claude`); returns its path. */
+export function stubExecutable(name: string, body: string): string {
+  const path = join(tempDir(), name);
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+/** The stub scripts are POSIX shell. */
+export const posixOnly = process.platform === "win32";

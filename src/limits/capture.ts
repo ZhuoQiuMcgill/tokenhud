@@ -59,10 +59,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** A finite number. Unlike Python's isinstance check, a boolean is not one (deliberately). */
 const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-/** cc-usage's `_epoch`: a number as is, an ISO-8601 string in epoch seconds, else null. */
+/**
+ * cc-usage's `_epoch`: a number as is, an ISO-8601 string in epoch seconds, else null.
+ * Deliberate differences on inputs no provider sends: a string without a zone is read as
+ * UTC (cc-usage read it in local time), and string times keep millisecond precision.
+ */
 export function epochSeconds(value: unknown): number | null {
   if (isNumber(value)) return value;
   if (typeof value !== "string" || value === "") return null;

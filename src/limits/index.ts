@@ -120,7 +120,8 @@ export class Limits {
       : new Map<string, Capture>();
     const now = this.#now();
     const out = chosen.map((root): AccountLimits => {
-      const capture = freshest([file.providers[root.identity], snapshots.get(root.identity)]);
+      // cc-usage's order: on a captured_at tie the snapshot beats last-good.
+      const capture = freshest([snapshots.get(root.identity), file.providers[root.identity]]);
       const status = file.status[root.identity];
       return this.#account(
         root,

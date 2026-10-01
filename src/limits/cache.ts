@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { ccUsageDir } from "../config.ts";
 import { configDir } from "../paths.ts";
 import { type Capture, freshest, parseCapture } from "./capture.ts";
+import { withLock } from "./lease.ts";
 
 /**
  * The last-good limits of every account, `~/.config/tokenhud/limits.json`. Its
@@ -13,9 +14,9 @@ import { type Capture, freshest, parseCapture } from "./capture.ts";
  * rate limit and the history-only check hold across the TUI's Worker and every MCP server
  * process that reads and writes this file. It never holds a credential or a raw response.
  *
- * Every write re-reads the file and merges into it (a capture is replaced only by a
- * fresher one), then replaces it atomically, so processes that share it lose at most a
- * status update in a race, never a capture or the file.
+ * Every write takes the file's lock, re-reads the file, merges into it (a capture is
+ * replaced only by a fresher one) and replaces it atomically (a temp file, then a rename),
+ * so processes that share it never lose each other's updates.
  */
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -143,22 +144,32 @@ export interface CacheUpdate {
 
 /**
  * Re-reads the file, applies `updates` (a capture replaces the stored one only when it is
- * fresher), and writes it back. Returns the merged file.
+ * fresher), and writes it back, all under the file's lock (`limits.json.lock`), so another
+ * process's update made in between is never lost. Returns the merged file.
  */
 export function updateLimitsCache(
   path: string,
   updates: ReadonlyMap<string, CacheUpdate>,
 ): LimitsFile {
-  const file = loadLimitsCache(path);
-  for (const [id, update] of updates) {
-    if (update.capture) {
-      const best = freshest([file.providers[id], update.capture]);
-      if (best !== null) file.providers[id] = best;
+  mkdirSync(dirname(path), { recursive: true });
+  return withLock(`${path}.lock`, () => {
+    const file = loadLimitsCache(path);
+    for (const [id, update] of updates) {
+      if (update.capture) {
+        // On a tie the update wins: it was decided (snapshot over last-good) after the read.
+        const best = freshest([update.capture, file.providers[id]]);
+        if (best !== null) file.providers[id] = best;
+      }
+      if (update.status) file.status[id] = update.status;
     }
-    if (update.status) file.status[id] = update.status;
-  }
-  saveLimitsCache(file, path);
-  return file;
+    saveLimitsCache(file, path);
+    return file;
+  });
+}
+
+/** Where one account's fetch lease lives: beside limits.json, in `.limits-leases/`. */
+export function leasePath(limitsPath: string, identity: string): string {
+  return join(dirname(limitsPath), ".limits-leases", `${identity}.lease`);
 }
 
 /** An account as cc-usage named it: its labels are the ones in cc-usage's ledger. */
