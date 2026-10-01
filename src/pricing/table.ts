@@ -4,6 +4,7 @@ import { computeCost, type Rates, type TokenCounts, type Unpriced } from "./cost
 import { normalizeModel, OFFICIAL_ALIASES } from "./normalize.ts";
 import bundledJson from "./pricing.json";
 import {
+  type EstimatedAlias,
   isDated,
   type ModelPricing,
   type PriceTableFile,
@@ -95,15 +96,63 @@ function compile(pricing: ModelPricing): readonly CompiledPeriod[] {
   }));
 }
 
+const estimate = (rates: Rates): Rates => Object.freeze({ ...rates, estimated: true });
+
+/**
+ * An estimated alias as periods of its own: in each of its periods, the periods its model
+ * has then, every rate marked `estimated`. Null when a period's model is missing or has no
+ * card when the period starts (a user override may have removed it): the alias is then
+ * unpriced rather than priced from the wrong card.
+ */
+function compileAlias(
+  alias: EstimatedAlias,
+  models: ReadonlyMap<string, readonly CompiledPeriod[]>,
+): readonly CompiledPeriod[] | null {
+  const out: CompiledPeriod[] = [];
+  for (const [i, { from, model }] of alias.periods.entries()) {
+    const target = models.get(model);
+    if (target === undefined) return null;
+    const startMs = from === null ? Number.NEGATIVE_INFINITY : (parseIsoUtc(from) ?? Number.NaN);
+    const next = alias.periods[i + 1]?.from;
+    const endMs =
+      next === undefined || next === null
+        ? Number.POSITIVE_INFINITY
+        : (parseIsoUtc(next) ?? Number.NaN);
+    const first = target.findLastIndex((p) => p.fromMs <= startMs);
+    if (first < 0) return null;
+    for (const [j, period] of target.entries()) {
+      if (j < first || period.fromMs >= endMs) continue;
+      out.push({
+        fromMs: j === first ? startMs : period.fromMs,
+        standard: estimate(period.standard),
+        fast: period.fast === undefined ? undefined : estimate(period.fast),
+      });
+    }
+  }
+  return out;
+}
+
 export class PriceTable {
   readonly #models: ReadonlyMap<string, readonly CompiledPeriod[]>;
   // Raw id -> its periods. Ids repeat across millions of records, but there are only a
   // few dozen distinct ones, so normalising each once keeps lookups to a map hit.
   readonly #byRawId = new Map<string, readonly CompiledPeriod[] | null>();
 
-  /** `models` must already be validated (schema.ts) and keyed by normalised id. */
-  constructor(models: Readonly<Record<string, ModelPricing>>) {
-    this.#models = new Map(Object.entries(models).map(([id, pricing]) => [id, compile(pricing)]));
+  /**
+   * `models` and `aliases` must already be validated (schema.ts) and keyed by normalised
+   * id. A model with its own entry (a user override, say) is never read through an alias.
+   */
+  constructor(
+    models: Readonly<Record<string, ModelPricing>>,
+    aliases: Readonly<Record<string, EstimatedAlias>> = {},
+  ) {
+    const compiled = new Map(Object.entries(models).map(([id, pricing]) => [id, compile(pricing)]));
+    for (const [id, alias] of Object.entries(aliases)) {
+      if (compiled.has(id)) continue;
+      const periods = compileAlias(alias, compiled);
+      if (periods !== null) compiled.set(id, periods);
+    }
+    this.#models = compiled;
   }
 
   #periods(model: string | null | undefined): readonly CompiledPeriod[] | null {
@@ -126,7 +175,8 @@ export class PriceTable {
    * in the table or `atMs` falls before its first period; "unpriced-tier" when the model
    * has no card for that tier then. A fast request is never silently priced as standard.
    * Fast rates without a long-context price carry `long_context_unpriced`, and computeCost
-   * turns a record above the threshold into "unpriced-tier".
+   * turns a record above the threshold into "unpriced-tier". Rates found through an
+   * estimated alias carry `estimated`.
    */
   rates(model: string | null | undefined, tier: Tier, atMs: number): Rates | Unpriced {
     const periods = this.#periods(model);

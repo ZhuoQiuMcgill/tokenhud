@@ -12,11 +12,15 @@
 
 /**
  * Version of the rules that turn transcript lines into keyed usage rows, as cc-usage's
- * `KEY_SCHEME` (1: Claude `(requestId, message.id)` / `uuid`; Codex session + timestamp +
- * counters). Bump it only together with a `KEY_SCHEME_MIGRATIONS` entry in the store.
+ * `KEY_SCHEME`. Bump it only together with a `KEY_SCHEME_MIGRATIONS` entry in the store.
+ * - 1 (cc-usage v2.6.1): Claude `(requestId, message.id)` / `uuid`; Codex session +
+ *   timestamp + counters, counted when the cumulative counters advance.
+ * - 2 (tokenhud): the same keys; a Codex child rollout's inherited usage is no longer
+ *   emitted, and Codex records carry their speed tier. The rows scheme 1 stored for that
+ *   usage are removed by the Codex re-key, which needs the rollouts (see the store).
  * Typed `number`, not the literal, so guards comparing it to other schemes type-check.
  */
-export const KEY_SCHEME: number = 1;
+export const KEY_SCHEME: number = 2;
 
 // ── WTF-8 ────────────────────────────────────────────────────────────────────────
 // Python's `surrogatepass` writes a lone surrogate as its 3-byte generalized UTF-8 form.

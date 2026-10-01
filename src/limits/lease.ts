@@ -57,7 +57,10 @@ function create(path: string, holder: Holder): boolean {
   try {
     fd = openSync(path, "wx");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    // Windows answers EPERM, not EEXIST, while another process is deleting the lock file
+    // (a delete pending). Either way it is held for now; the caller retries.
+    if (code === "EEXIST" || (process.platform === "win32" && code === "EPERM")) return false;
     throw error;
   }
   try {

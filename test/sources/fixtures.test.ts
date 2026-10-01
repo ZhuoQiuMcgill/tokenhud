@@ -21,8 +21,8 @@ test.each(files.map((f) => [f.slice(f.lastIndexOf("test")), f]))(
   "%s has only fake ids",
   (_name, file) => {
     let text = readFileSync(file).toString("latin1");
-    // The Claude cases are stored base64-encoded; check the decoded transcripts too.
-    if (file.endsWith("claude-cases.json")) {
+    // The Claude and Codex cases are stored base64-encoded; check the decoded files too.
+    if (file.endsWith("claude-cases.json") || file.endsWith("codex-cases.json")) {
       const cases = JSON.parse(text) as { files: Record<string, string> };
       text += Object.values(cases.files)
         .map((b64) => Buffer.from(b64, "base64").toString("latin1"))

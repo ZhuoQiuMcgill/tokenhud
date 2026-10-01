@@ -3,6 +3,7 @@ import { closeSync, mkdirSync, openSync, readSync, rmSync, statSync } from "node
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { configDir } from "../paths.ts";
+import type { CodexLimitSnapshot, CodexLimitWindow } from "../sources/codex.ts";
 
 /**
  * Per-file read positions, in the derived `~/.config/tokenhud/cache.db`, kept apart from
@@ -10,11 +11,15 @@ import { configDir } from "../paths.ts";
  * every transcript is read again from the start, and the store's max-merge makes that
  * re-read change nothing. So a damaged cache.db is deleted and rebuilt, and one that
  * cannot be opened is replaced by an in-memory cache for the session.
+ *
+ * It also keeps the newest Codex rate-limit snapshot found in each Codex account's
+ * rollouts (`codex_limit_snapshots`, numbers only), which a re-read recreates.
  */
 
 /** "TkHC": marks a tokenhud cursor cache, so a mistyped --cache path is never deleted. */
 const APPLICATION_ID = 0x546b4843;
-const VERSION = 1;
+/** v2 added `codex_limit_snapshots`; a v1 cache keeps its cursors. */
+const VERSION = 2;
 const SQLITE_MAGIC = "SQLite format 3\0";
 const HEADER_BYTES = 100;
 const BUSY_TIMEOUT_MS = 2000;
@@ -42,7 +47,7 @@ export interface Cursor {
   state: string | null;
 }
 
-const SCHEMA = `CREATE TABLE cursor (
+const CURSOR_SCHEMA = `CREATE TABLE cursor (
   path TEXT PRIMARY KEY,
   dev TEXT NOT NULL,
   ino TEXT NOT NULL,
@@ -52,6 +57,41 @@ const SCHEMA = `CREATE TABLE cursor (
   tail TEXT,
   state TEXT
 ) WITHOUT ROWID`;
+
+/**
+ * One row per Codex account: cc-usage's `latest_rate_limits_by_account` capture, in the
+ * layout the limits module (T8, `src/limits/snapshots.ts`) reads:
+ * - `identity`: the account's identity (sha256 of the Codex home's resolved path, 32 hex);
+ * - `captured_at`: epoch seconds of the token_count event that carried it (0 when it had
+ *   no usable timestamp); a newer or equally new capture replaces the whole row;
+ * - `rate_limits`: JSON `{"codex_primary": {"used_percentage", "resets_at" (epoch s),
+ *   "window_minutes"?}, "codex_secondary": {...}}`, numbers only, a window present only if
+ *   the capture had it.
+ */
+const LIMITS_SCHEMA = `CREATE TABLE codex_limit_snapshots (
+  identity TEXT PRIMARY KEY,
+  captured_at REAL NOT NULL,
+  rate_limits TEXT NOT NULL
+)`;
+
+type Bucket = { used_percentage: number; resets_at: number; window_minutes?: number };
+
+function toBucket(window: CodexLimitWindow): Bucket {
+  const bucket: Bucket = { used_percentage: window.usedPercentage, resets_at: window.resetsAt };
+  if (window.windowMinutes !== null) bucket.window_minutes = window.windowMinutes;
+  return bucket;
+}
+
+function fromBucket(value: unknown): CodexLimitWindow | null {
+  if (typeof value !== "object" || value === null) return null;
+  const b = value as Partial<Bucket>;
+  if (typeof b.used_percentage !== "number" || typeof b.resets_at !== "number") return null;
+  return {
+    usedPercentage: b.used_percentage,
+    resetsAt: b.resets_at,
+    windowMinutes: typeof b.window_minutes === "number" ? b.window_minutes : null,
+  };
+}
 
 interface Row {
   path: string;
@@ -106,8 +146,12 @@ function prepare(db: Database): void {
   );
   if (version !== VERSION) {
     db.exec("BEGIN IMMEDIATE");
-    db.exec("DROP TABLE IF EXISTS cursor");
-    db.exec(SCHEMA);
+    if (version !== 1) {
+      db.exec("DROP TABLE IF EXISTS cursor");
+      db.exec(CURSOR_SCHEMA);
+    }
+    db.exec("DROP TABLE IF EXISTS codex_limit_snapshots");
+    db.exec(LIMITS_SCHEMA);
     db.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec("COMMIT");
@@ -139,6 +183,7 @@ export class CursorCache {
           db = new Database(path, { create: true, readwrite: true, strict: true });
           prepare(db);
           db.query("SELECT count(*) FROM cursor").get();
+          db.query("SELECT count(*) FROM codex_limit_snapshots").get();
           const note: CacheOpenNote =
             attempt === 1 ? "rebuilt" : owner === "new" ? "created" : "opened";
           return new CursorCache(db, note);
@@ -199,6 +244,53 @@ export class CursorCache {
       for (const c of put)
         upsert.run(c.path, c.dev, c.ino, c.size, c.mtimeMs, c.offset, c.tail, c.state);
       for (const path of remove) del.run(path);
+    })();
+  }
+
+  /** The stored Codex rate-limit snapshot of each account identity; none when unreadable. */
+  codexLimitSnapshots(): Map<string, CodexLimitSnapshot> {
+    const out = new Map<string, CodexLimitSnapshot>();
+    let rows: { identity: string; captured_at: number; rate_limits: string }[];
+    try {
+      rows = this.#db
+        .query<{ identity: string; captured_at: number; rate_limits: string }, []>(
+          "SELECT identity, captured_at, rate_limits FROM codex_limit_snapshots",
+        )
+        .all();
+    } catch {
+      return out;
+    }
+    for (const row of rows) {
+      let buckets: Record<string, unknown>;
+      try {
+        buckets = JSON.parse(row.rate_limits) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      out.set(row.identity, {
+        capturedAt: row.captured_at,
+        primary: fromBucket(buckets.codex_primary),
+        secondary: fromBucket(buckets.codex_secondary),
+      });
+    }
+    return out;
+  }
+
+  /** Replaces the snapshots of the given account identities, in one transaction. */
+  putCodexLimitSnapshots(snapshots: ReadonlyMap<string, CodexLimitSnapshot>): void {
+    if (snapshots.size === 0) return;
+    const db = this.#db;
+    const put = db.query(
+      `INSERT OR REPLACE INTO codex_limit_snapshots (identity, captured_at, rate_limits)
+       VALUES (?1, ?2, ?3)`,
+    );
+    db.transaction(() => {
+      for (const [identity, { capturedAt, primary, secondary }] of snapshots) {
+        const buckets: Record<string, Bucket> = {};
+        if (primary !== null) buckets.codex_primary = toBucket(primary);
+        if (secondary !== null) buckets.codex_secondary = toBucket(secondary);
+        put.run(identity, capturedAt, JSON.stringify(buckets));
+      }
     })();
   }
 

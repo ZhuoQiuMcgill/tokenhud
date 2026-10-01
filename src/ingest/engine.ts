@@ -8,13 +8,20 @@ import {
   isWsl,
   type Root,
 } from "../sources/roots.ts";
+import { StoreError } from "../store/errors.ts";
 import { type ImportOutcome, ImportSourceError, importCcUsage } from "../store/import-cc-usage.ts";
 import { openStore, type Store } from "../store/store.ts";
 import { CursorCache } from "./cursors.ts";
 import { listDir, statFiles, walk } from "./files.ts";
-import { type ChangedEvent, type Log, type PassFile, type PassReport, runPass } from "./pass.ts";
+import {
+  type ChangedEvent,
+  codexSessionIndex,
+  type Log,
+  type PassFile,
+  type PassReport,
+  runPass,
+} from "./pass.ts";
 import { defaultPoolSize } from "./pool.ts";
-import { canRead } from "./read.ts";
 
 /**
  * Owns ingest for one process: discovers roots, imports cc-usage's history on the first
@@ -30,6 +37,9 @@ import { canRead } from "./read.ts";
  * - **Every root:** a full sweep every 60 s re-discovers roots and stats every transcript,
  *   which catches whatever a watch missed and old sessions that are resumed.
  * Passes run one at a time. An error in one is logged and the next runs as usual.
+ *
+ * A full pass also refreshes each Codex session's rollouts (to find a child rollout's
+ * parent), and it re-keys the Codex accounts the store marks as pending (scheme 1 -> 2).
  */
 
 export interface LiveTiming {
@@ -102,6 +112,8 @@ export class IngestEngine {
   /** Polled roots' directories and their last mtimes. */
   readonly #pollDirs = new Map<string, { root: Root; mtimeMs: number }>();
   readonly #hot = new Map<string, Hot>();
+  /** Codex session id -> its rollouts, as of the last full pass. */
+  #codexSessions: Record<string, string[]> = {};
 
   private constructor(options: EngineOptions, store: Store, cursors: CursorCache) {
     this.#options = options;
@@ -158,7 +170,11 @@ export class IngestEngine {
     try {
       const outcome = importCcUsage(this.store, ledger);
       if (outcome.status === "deferred") this.#log("warn", outcome.warning);
-      else this.#log("info", `imported ${outcome.inserted} rows of cc-usage history`);
+      else {
+        const left =
+          outcome.tombstoned > 0 ? ` (${outcome.tombstoned} replayed Codex rows left out)` : "";
+        this.#log("info", `imported ${outcome.inserted} rows of cc-usage history${left}`);
+      }
       return outcome;
     } catch (error) {
       const reason = error instanceof ImportSourceError ? ` (${error.reason})` : "";
@@ -178,13 +194,42 @@ export class IngestEngine {
     return settled;
   }
 
-  #ctx() {
+  #ctx(rekey?: ReadonlySet<string>) {
     return {
       store: this.store,
       cursors: this.cursors,
       poolSize: this.#options.poolSize ?? defaultPoolSize(),
       log: this.#log,
+      codexSessions: this.#codexSessions,
+      ...(rekey === undefined ? {} : { rekey }),
     };
+  }
+
+  /** The Codex accounts awaiting the scheme-2 re-key among `roots`. */
+  #pendingRekey(roots: readonly Root[]): Set<string> {
+    let pending: string[];
+    try {
+      pending = this.store.meta.codexRekeyPending;
+    } catch (error) {
+      if (!(error instanceof StoreError)) throw error;
+      return new Set();
+    }
+    const codex = new Set(roots.filter((r) => r.provider === "codex").map((r) => r.identity));
+    return new Set(pending.filter((id) => codex.has(id)));
+  }
+
+  /** Account labels as the store has them (a root's own label until it has rows). */
+  labels(roots: readonly Root[]): string[] {
+    let stored: Map<string, string>;
+    try {
+      stored = new Map(
+        [...this.store.accounts().values()].map((a) => [`${a.provider}\0${a.identity}`, a.label]),
+      );
+    } catch (error) {
+      if (!(error instanceof StoreError)) throw error;
+      stored = new Map();
+    }
+    return roots.map((r) => stored.get(`${r.provider}\0${r.identity}`) ?? r.label);
   }
 
   #report(report: PassReport): PassReport {
@@ -198,7 +243,7 @@ export class IngestEngine {
     return this.#enqueue(async () => {
       const t0 = performance.now();
       const walkedAt = Date.now();
-      this.#roots = this.discover().filter((root) => root.enabled && canRead(root.provider));
+      this.#roots = this.discover().filter((root) => root.enabled);
       const files: PassFile[] = [];
       const polledDirs: { dir: string; root: Root }[] = [];
       for (const root of this.#roots) {
@@ -212,11 +257,25 @@ export class IngestEngine {
       files.forEach((f, i) => {
         f.stat = stats[i] ?? null;
       });
-      const report = await runPass(this.#ctx(), files, true);
+      this.#refreshCodex(files);
+      const report = await runPass(this.#ctx(this.#pendingRekey(this.#roots)), files, true);
+      if (report.rekey !== null) {
+        const sum = (f: "deleted" | "changed" | "untouched") =>
+          report.rekey?.accounts.reduce((a, r) => a + r[f], 0) ?? 0;
+        this.#log(
+          "info",
+          `re-keyed Codex history (scheme ${report.rekey.scheme}): ${sum("deleted")} replayed rows removed, ${sum("changed")} rows corrected, ${sum("untouched")} rows from deleted rollouts kept`,
+        );
+      }
       report.wallMs = performance.now() - t0;
       if (this.#live) await this.#refreshLive(files, polledDirs, walkedAt);
       return this.#report(report);
     });
+  }
+
+  /** Indexes Codex rollouts by session, to find a child rollout's parent. */
+  #refreshCodex(files: readonly PassFile[]): void {
+    this.#codexSessions = codexSessionIndex(files);
   }
 
   // ── live ─────────────────────────────────────────────────────────────────────

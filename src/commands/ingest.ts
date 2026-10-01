@@ -156,9 +156,26 @@ function table(report: PassReport): string {
       (r) =>
         `  ${r.label}: ${r.malformed} malformed, ${r.unkeyed} without a key, ${r.unstorable} unstorable, ${r.errors} unreadable`,
     );
-  return [line(header), ...rows.map(line), `wall ${report.wallMs.toFixed(0)} ms`, ...extra].join(
-    "\n",
+  const codex = report.roots
+    .filter((r) => r.provider === "codex" && r.records + r.inherited + r.tombstoned > 0)
+    .map(
+      (r) =>
+        `  ${r.label}: ${r.inherited} inherited (replayed) events skipped, ${r.removed} stored rows removed, ${r.tombstoned} rows of removed keys not written; ${r.fast} fast-tier records`,
+    );
+  const labelOf = (identity: string) =>
+    report.roots.find((r) => r.provider === "codex" && r.identity === identity)?.label ?? "?";
+  const rekey = (report.rekey?.accounts ?? []).map(
+    (a) =>
+      `  ${labelOf(a.identity)}: re-keyed to scheme ${report.rekey?.scheme}: ${a.rollouts} rollouts, ${a.deleted} rows deleted, ${a.changed} changed, ${a.inserted} inserted, ${a.unchanged} unchanged, ${a.untouched} kept from deleted rollouts`,
   );
+  return [
+    line(header),
+    ...rows.map(line),
+    `wall ${report.wallMs.toFixed(0)} ms`,
+    ...extra,
+    ...codex,
+    ...rekey,
+  ].join("\n");
 }
 
 function describe(event: ChangedEvent, labels: ReadonlyMap<string, string>): string {

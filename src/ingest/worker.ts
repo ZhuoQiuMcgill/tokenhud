@@ -60,7 +60,7 @@ function start(workerOptions: WorkerOptions): void {
   if (imported?.status === "imported") post({ type: "imported", rows: imported.inserted });
   if (limitsOptions) limits = limitsService(live, limitsOptions, options.cachePath);
   void live.startLive().then(() => {
-    post({ type: "ready", roots: live.roots.map((r) => r.label) });
+    post({ type: "ready", roots: live.labels(live.roots) });
     if (!stopping) limits?.start();
   });
 }

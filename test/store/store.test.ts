@@ -434,11 +434,13 @@ describe("key-scheme guard", () => {
   }
 
   function withMigration(from: number, migrate: (db: Database) => void, fn: () => void): void {
+    const registered = KEY_SCHEME_MIGRATIONS.get(from);
     KEY_SCHEME_MIGRATIONS.set(from, migrate);
     try {
       fn();
     } finally {
-      KEY_SCHEME_MIGRATIONS.delete(from);
+      if (registered === undefined) KEY_SCHEME_MIGRATIONS.delete(from);
+      else KEY_SCHEME_MIGRATIONS.set(from, registered);
     }
   }
 
@@ -505,7 +507,9 @@ describe("key-scheme guard", () => {
 
   // test_ledger_without_a_migration_path_is_refused_untouched
   test("an older scheme without a migration is refused, untouched", () => {
-    const path = storeOnScheme(String(KEY_SCHEME - 1));
+    // Scheme 0 (a cc-usage pre-release) has no step to scheme 1 in tokenhud.
+    expect(KEY_SCHEME_MIGRATIONS.has(0)).toBe(false);
+    const path = storeOnScheme("0");
     const before = readFileSync(path);
     const error = caught(() => open(path));
     expect(error).toBeInstanceOf(SchemeRefused);

@@ -36,7 +36,7 @@ const big = (tasks: ReadTask[]) => tasks.map(() => POOL_MIN_BYTES);
 
 test("parse Workers return exactly what an inline read returns, in task order", async () => {
   const tasks = someTasks();
-  const inline = tasks.map(readTask);
+  const inline = tasks.map((task) => readTask(task));
   const pooled = await readAll(tasks, big(tasks), { poolSize: 3 });
   expect(pooled.map(withoutTime)).toEqual(inline.map(withoutTime));
   expect(pooled.at(-1)?.error).toBe("ENOENT");
@@ -48,7 +48,7 @@ describe("a parse Worker that does not reply", () => {
     ["throws", "worker-throws.ts", "failed"],
   ])("%s: its share is read here instead, and the next read works", async (_name, script, why) => {
     const tasks = someTasks();
-    const inline = tasks.map(readTask);
+    const inline = tasks.map((task) => readTask(task));
     const logs: string[] = [];
     const url = new URL(`./${script}`, import.meta.url).href;
     const pooled = await readAll(tasks, big(tasks), {
@@ -58,7 +58,10 @@ describe("a parse Worker that does not reply", () => {
     });
     expect(pooled.map(withoutTime)).toEqual(inline.map(withoutTime));
     expect(logs).toHaveLength(3);
-    for (const message of logs) expect(message).toContain(why);
+    for (const message of logs) {
+      expect(message).toContain(why);
+      expect(message).not.toContain("\n"); // one line, without Bun's code frame
+    }
     const again = await readAll(tasks, big(tasks), { poolSize: 3 });
     expect(again.map(withoutTime)).toEqual(inline.map(withoutTime));
   });
@@ -72,15 +75,15 @@ test("small jobs stay on the calling thread", async () => {
   expect(result?.entries).toHaveLength(1);
 });
 
-test("a provider without a reader yet (Codex, T5) is reported, not read", () => {
+test("every provider has a reader: a missing rollout is an error, not a crash", () => {
   const result = readTask({
     provider: "codex",
-    path: "/nowhere",
+    path: join(tempDir(), "missing.jsonl"),
     start: 0,
     tail: null,
     state: null,
   });
-  expect(result.error).toBe("ENOTSUP");
+  expect(result.error).toBe("ENOENT");
 });
 
 describe("workerUrl", () => {

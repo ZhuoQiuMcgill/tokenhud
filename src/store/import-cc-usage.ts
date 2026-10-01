@@ -34,11 +34,17 @@ import type { AccountRef, Store, UsageRow } from "./store.ts";
  *    is idempotent, so the next run picks it up.
  * 3. `PRAGMA quick_check` the accepted copy, refuse a layout or key scheme other than
  *    cc-usage v2.6.1's, and merge every row through the store's upsert rules (tier 0).
+ *    The rows are key scheme 1. Claude keys are the same under the store's scheme 2, and
+ *    the imported Codex accounts are marked for the Codex re-key, which the next full
+ *    ingest pass performs from their rollouts (scheme 1 also kept a child rollout's
+ *    replay of its parent; only the rollout can tell which rows those are).
  * 4. Delete the scratch dir. A copy left by a crash is swept by a later store open.
  */
 
 /** The record key scheme cc-usage v2.6.1 writes (its `parser.KEY_SCHEME`). */
 export const CC_USAGE_KEY_SCHEME = 1;
+/** The store scheme scheme-1 rows reach through the Codex re-key alone. */
+const REKEYED_SCHEME = 2;
 /** The ledger layout cc-usage v2.6.1 writes (its `ledger.SCHEMA_VERSION`). */
 const CC_USAGE_SCHEMA_VERSION = 2;
 /** Waits before each snapshot attempt; the first is immediate. */
@@ -80,6 +86,11 @@ export interface ImportSummary {
   merged: number;
   /** Rows the store already had at least as complete. */
   unchanged: number;
+  /**
+   * Rows left out because tokenhud removed their keys as not being usage (a Codex child
+   * rollout's replay of its parent, which cc-usage counted): `dropped_keys`.
+   */
+  tombstoned: number;
   /** Rows naming an account or model the ledger does not hold, or with impossible values. */
   skipped: number;
   /** Accounts and models copied (all of the ledger's, used by a row or not). */
@@ -102,10 +113,9 @@ export type ImportOutcome = ImportSummary | ImportDeferred;
  * one with the store; in every case but `imported` the store is unchanged.
  */
 export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
-  if (KEY_SCHEME !== CC_USAGE_KEY_SCHEME) {
-    // When tokenhud's key scheme moves on (T5), imported rows must first go through
-    // KEY_SCHEME_MIGRATIONS, as cc-usage's recovery migrates old rows. Until that
-    // exists, refuse rather than mix schemes.
+  if (KEY_SCHEME !== REKEYED_SCHEME) {
+    // A later scheme must say how cc-usage's rows reach it, as cc-usage's recovery
+    // migrates old rows; until it does, refuse rather than mix schemes.
     throw new SchemeRefused(
       `cannot import cc-usage key scheme v${CC_USAGE_KEY_SCHEME} into key scheme v${KEY_SCHEME}`,
     );
@@ -132,14 +142,22 @@ export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
       rows: rows.length,
       accounts: ledger.accounts.length,
     };
-    const { inserted, changed } = store.importRows(rows, ledger.accounts, ledger.models, record);
+    const codex = new Set(rows.filter((r) => r.provider === "codex").map((r) => r.identity));
+    const { inserted, changed, tombstoned } = store.importRows(
+      rows,
+      ledger.accounts,
+      ledger.models,
+      record,
+      [...codex],
+    );
     return {
       status: "imported",
       lineage: ledger.lineage,
       read: ledger.read,
       inserted,
       merged: changed - inserted,
-      unchanged: rows.length - changed,
+      unchanged: rows.length - changed - tombstoned,
+      tombstoned,
       skipped: ledger.read - rows.length,
       accounts: ledger.accounts.length,
       models: ledger.models.length,

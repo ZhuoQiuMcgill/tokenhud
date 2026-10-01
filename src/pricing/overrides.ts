@@ -127,8 +127,9 @@ export function loadPriceTable(overridesPath: string = pricingOverridesPath()): 
   warnings: readonly string[];
 } {
   const overrides = readOverrides(overridesPath);
-  const models = mergePricing(bundledPricing().models, overrides.models);
-  return { table: new PriceTable(models), warnings: overrides.warnings };
+  const bundled = bundledPricing();
+  const models = mergePricing(bundled.models, overrides.models);
+  return { table: new PriceTable(models, bundled.aliases), warnings: overrides.warnings };
 }
 
 // cc-usage's `_coerce` (cc_usage/pricing.py): a row needs a numeric input and output, and

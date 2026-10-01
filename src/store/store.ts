@@ -153,6 +153,40 @@ export interface StoreMeta {
   keyScheme: number | null;
   createdAt: string | null;
   imports: ImportRecord[];
+  /**
+   * Codex account identities whose rows were written under key scheme 1 (before the
+   * upgrade, or by an import from cc-usage) and still await the Codex re-key, which the
+   * next full ingest pass that reads the account's rollouts performs.
+   */
+  codexRekeyPending: string[];
+  /** The last Codex re-key's report per account (see `RekeyReport` in the ingest pass), or null. */
+  migrationReport: unknown;
+}
+
+/** Keys to remove as not being usage, and why (stored with their tombstones). */
+export interface Drop {
+  keys: readonly bigint[];
+  reason: string;
+}
+
+/**
+ * One write transaction, applied in this order:
+ * 1. `restore`: tombstones lifted (a rollout counts these keys as usage after all);
+ * 2. `drop`: rows deleted and their keys tombstoned (see `dropped_keys`);
+ * 3. `replace` rows take the given counts and tier outright (a value may go down), keeping
+ *    a stored row's account and timestamp and never trading a model for codex-unattributed;
+ * 4. `upsert` rows merge by the usual rules.
+ * A replace or upsert row whose key is tombstoned is skipped, and counted.
+ */
+export interface WriteBatch {
+  upsert?: readonly UsageRow[];
+  replace?: readonly UsageRow[];
+  drop?: Drop;
+  restore?: readonly bigint[];
+  /** Codex account identities whose re-key this write completes. */
+  rekeyed?: readonly string[];
+  /** Stored as `meta.migration_report` when given. */
+  migrationReport?: unknown;
 }
 
 export interface OpenOptions {
@@ -167,12 +201,32 @@ export interface OpenOptions {
  */
 export type KeySchemeMigration = (db: Database) => void;
 
+/** Meta keys of the Codex re-key (scheme 1 -> 2). */
+const CODEX_REKEY = "codex_rekey";
+const MIGRATION_REPORT = "migration_report";
+/** cc-usage's and tokenhud's provider name for Codex accounts. */
+const CODEX = "codex";
+
+/**
+ * Scheme 1 -> 2: Codex rows of child rollouts that replayed their parent's history must
+ * go, and only the rollouts can say which rows those are. So this step records every Codex
+ * account as pending, and the next full ingest pass re-keys each one whose rollouts it
+ * reads (`codexRekeyPending`), in one transaction with that pass's writes. Claude keys did
+ * not change.
+ */
+function markCodexRekey(db: Database): void {
+  const identities = db
+    .query<{ identity: string }, [string]>("SELECT identity FROM accounts WHERE provider = ?1")
+    .all(CODEX)
+    .map((a) => a.identity);
+  addRekeyPending(db, identities);
+}
+
 /**
  * `KEY_SCHEME_MIGRATIONS.get(n)` upgrades a store from key scheme n to n + 1, as
- * cc-usage's registry. Empty while `KEY_SCHEME` is 1; T5's Codex replay fix registers
- * the first entry. A store whose scheme has no path to `KEY_SCHEME` is refused.
+ * cc-usage's registry. A store whose scheme has no path to `KEY_SCHEME` is refused.
  */
-export const KEY_SCHEME_MIGRATIONS = new Map<number, KeySchemeMigration>();
+export const KEY_SCHEME_MIGRATIONS = new Map<number, KeySchemeMigration>([[1, markCodexRekey]]);
 
 /** Opens (creating if needed) the store at `path`. Throws a `StoreError`. */
 export function openStore(path: string, options: OpenOptions = {}): Store {
@@ -318,9 +372,7 @@ export class Store {
    * before touching the database, and `StoreError` for everything else.
    */
   upsert(rows: readonly UsageRow[]): number {
-    if (rows.length === 0) return 0;
-    validate(rows);
-    return writeTransaction(this.#db, () => merge(this.#db, rows, [], [])).changed;
+    return this.write({ upsert: rows }).changed;
   }
 
   /**
@@ -333,19 +385,82 @@ export class Store {
     accounts: readonly AccountRef[],
     models: readonly string[],
     record: ImportRecord,
-  ): { inserted: number; changed: number } {
+    rekey: readonly string[] = [],
+  ): { inserted: number; changed: number; tombstoned: number } {
     validate(rows);
     const db = this.#db;
     return writeTransaction(db, () => {
+      const live = untombstoned(db, rows);
       // Exact under the write lock: no other writer can insert in between.
       const before = countUsage(db);
-      const { changed } = merge(db, rows, accounts, models);
+      const { changed } = merge(db, live, accounts, models);
       const inserted = countUsage(db) - before;
       const imports = parseImports(getMeta(db, "imports"));
       imports.push(record);
       setMeta(db, "imports", JSON.stringify(imports));
-      return { inserted, changed };
+      addRekeyPending(db, rekey);
+      return { inserted, changed, tombstoned: rows.length - live.length };
     });
+  }
+
+  /**
+   * Applies `batch` in one transaction (see `WriteBatch`). Returns how many stored rows the
+   * drop removed, how many distinct keys `replace` and `upsert` inserted or changed, and how
+   * many of their rows were skipped as tombstoned.
+   */
+  write(batch: WriteBatch): { removed: number; changed: number; skipped: number } {
+    const replace = batch.replace ?? [];
+    const upsert = batch.upsert ?? [];
+    const drop = batch.drop?.keys ?? [];
+    const restore = batch.restore ?? [];
+    const rekeyed = batch.rekeyed ?? [];
+    const report = batch.migrationReport;
+    if (
+      replace.length + upsert.length + drop.length + restore.length + rekeyed.length === 0 &&
+      report === undefined
+    ) {
+      return { removed: 0, changed: 0, skipped: 0 };
+    }
+    validate(replace);
+    validate(upsert);
+    const db = this.#db;
+    return writeTransaction(db, () => {
+      liftTombstones(db, restore);
+      const removed = batch.drop === undefined ? 0 : dropKeys(db, batch.drop);
+      const liveReplace = untombstoned(db, replace);
+      const liveUpsert = untombstoned(db, upsert);
+      const skipped = replace.length - liveReplace.length + upsert.length - liveUpsert.length;
+      let changed = replaceRows(db, liveReplace);
+      if (liveUpsert.length > 0) changed += merge(db, liveUpsert, [], []).changed;
+      if (rekeyed.length > 0) {
+        const done = new Set(rekeyed);
+        setMeta(db, CODEX_REKEY, JSON.stringify(rekeyPending(db).filter((id) => !done.has(id))));
+      }
+      if (report !== undefined) setMeta(db, MIGRATION_REPORT, JSON.stringify(report));
+      return { removed, changed, skipped };
+    });
+  }
+
+  /** Every tombstoned key (see `dropped_keys`): few, and read once per ingest pass. */
+  droppedKeys(): Set<bigint> {
+    return guard(
+      () =>
+        new Set(
+          this.#db
+            .query<{ key: bigint }, []>("SELECT key FROM dropped_keys")
+            .all()
+            .map((r) => r.key),
+        ),
+    );
+  }
+
+  /** How many keys are tombstoned (see `dropped_keys`). */
+  tombstones(): number {
+    return guard(() =>
+      Number(
+        this.#db.query<{ n: bigint }, []>("SELECT count(*) AS n FROM dropped_keys").get()?.n ?? 0n,
+      ),
+    );
   }
 
   // ── reads ──────────────────────────────────────────────────────────────────────
@@ -394,6 +509,21 @@ export class Store {
     });
   }
 
+  /** Account id -> its number of stored rows (accounts without rows are absent). */
+  rowCounts(): Map<number, number> {
+    return guard(
+      () =>
+        new Map(
+          this.#db
+            .query<{ acct: bigint; n: bigint }, []>(
+              "SELECT acct, count(*) AS n FROM usage GROUP BY acct",
+            )
+            .all()
+            .map((r) => [Number(r.acct), Number(r.n)]),
+        ),
+    );
+  }
+
   /** Account id -> account (provider, identity, last label). */
   accounts(): Map<number, Account> {
     return guard(
@@ -431,6 +561,8 @@ export class Store {
         keyScheme: parseScheme(getMeta(db, "key_scheme")),
         createdAt: getMeta(db, "created_at"),
         imports: parseImports(getMeta(db, "imports")),
+        codexRekeyPending: rekeyPending(db),
+        migrationReport: parseJson(getMeta(db, MIGRATION_REPORT)),
       };
     });
   }
@@ -804,6 +936,23 @@ function merge(
   extraAccounts: readonly AccountRef[],
   extraModels: readonly string[],
 ): { changed: number } {
+  const { params, unattributed } = interned(db, rows, extraAccounts, extraModels);
+  params.sort(byKeyThenFirstFields);
+  const upsert = db.query<{ hit: bigint }, [...Params, number]>(UPSERT);
+  const changed = new Set<bigint>();
+  for (const p of params) {
+    if (upsert.get(...p, unattributed) !== null) changed.add(p[0]);
+  }
+  return { changed: changed.size };
+}
+
+/** Interns the rows' accounts and models (and the extra ones) and returns the rows as parameters. */
+function interned(
+  db: Database,
+  rows: readonly UsageRow[],
+  extraAccounts: readonly AccountRef[],
+  extraModels: readonly string[],
+): { params: Params[]; unattributed: number } {
   const accounts = internAccounts(db, [...extraAccounts, ...rows]);
   const models = internModels(db, [...extraModels, ...rows.map((row) => row.model)]);
   const unattributed = models.get(UNATTRIBUTED);
@@ -828,13 +977,78 @@ function merge(
       row.tier,
     ];
   });
+  return { params, unattributed };
+}
+
+// A replacing write (the Codex re-key): counts and tier as given, even lower; a stored
+// row keeps its account and timestamp, and a real model is never traded for
+// codex-unattributed (?12). RETURNING yields a row only for a row inserted or changed.
+const REPLACE = `INSERT INTO usage (key, acct, ts, model, inp, outp, cr, cc, e5, e1, tier)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+ON CONFLICT (key) DO UPDATE SET
+  inp = excluded.inp, outp = excluded.outp, cr = excluded.cr, cc = excluded.cc,
+  e5 = excluded.e5, e1 = excluded.e1, tier = excluded.tier,
+  model = CASE WHEN excluded.model = ?12 THEN usage.model ELSE excluded.model END
+WHERE usage.inp != excluded.inp
+   OR usage.outp != excluded.outp
+   OR usage.cr != excluded.cr
+   OR usage.cc != excluded.cc
+   OR usage.e5 IS NOT excluded.e5
+   OR usage.e1 IS NOT excluded.e1
+   OR usage.tier != excluded.tier
+   OR (excluded.model != ?12 AND usage.model != excluded.model)
+RETURNING 1 AS hit`;
+
+/** Writes `rows` with replace semantics; returns how many keys were inserted or changed. */
+function replaceRows(db: Database, rows: readonly UsageRow[]): number {
+  if (rows.length === 0) return 0;
+  const { params, unattributed } = interned(db, rows, [], []);
   params.sort(byKeyThenFirstFields);
-  const upsert = db.query<{ hit: bigint }, [...Params, number]>(UPSERT);
+  const replace = db.query<{ hit: bigint }, [...Params, number]>(REPLACE);
   const changed = new Set<bigint>();
   for (const p of params) {
-    if (upsert.get(...p, unattributed) !== null) changed.add(p[0]);
+    if (replace.get(...p, unattributed) !== null) changed.add(p[0]);
   }
-  return { changed: changed.size };
+  return changed.size;
+}
+
+/** Deletes the rows of `drop.keys` and tombstones the keys; returns how many rows existed. */
+function dropKeys(db: Database, drop: Drop): number {
+  const tombstone = db.query(
+    "INSERT INTO dropped_keys (key, reason, at) VALUES (?1, ?2, ?3) ON CONFLICT (key) DO NOTHING",
+  );
+  const at = Date.now();
+  let removed = 0;
+  for (let start = 0; start < drop.keys.length; start += IN_BATCH) {
+    const batch = drop.keys.slice(start, start + IN_BATCH);
+    for (const key of batch) tombstone.run(key, drop.reason, at);
+    const stmt = db.prepare<{ hit: bigint }, bigint[]>(
+      `DELETE FROM usage WHERE key IN (${batch.map(() => "?").join(", ")}) RETURNING 1 AS hit`,
+    );
+    try {
+      removed += stmt.all(...batch).length;
+    } finally {
+      stmt.finalize();
+    }
+  }
+  return removed;
+}
+
+function liftTombstones(db: Database, keys: readonly bigint[]): void {
+  const lift = db.query("DELETE FROM dropped_keys WHERE key = ?1");
+  for (const key of keys) lift.run(key);
+}
+
+/** `rows` without those whose key is tombstoned. */
+function untombstoned(db: Database, rows: readonly UsageRow[]): readonly UsageRow[] {
+  if (rows.length === 0) return rows;
+  const dead = new Set(
+    db
+      .query<{ key: bigint }, []>("SELECT key FROM dropped_keys")
+      .all()
+      .map((r) => r.key),
+  );
+  return dead.size === 0 ? rows : rows.filter((row) => !dead.has(row.key));
 }
 
 /** One string per (provider, identity), as stored. */
@@ -971,6 +1185,28 @@ function setMeta(db: Database, key: string, value: string): void {
   db.query(
     "INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT (k) DO UPDATE SET v = excluded.v",
   ).run(key, value);
+}
+
+function parseJson(raw: string | null): unknown {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** The Codex accounts awaiting the re-key; anything unreadable counts as none. */
+function rekeyPending(db: Database): string[] {
+  const value = parseJson(getMeta(db, CODEX_REKEY));
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+}
+
+function addRekeyPending(db: Database, identities: readonly string[]): void {
+  if (identities.length === 0) return;
+  const pending = new Set(rekeyPending(db));
+  for (const id of identities) pending.add(id);
+  setMeta(db, CODEX_REKEY, JSON.stringify([...pending]));
 }
 
 function parseScheme(raw: string | null): number | null {
