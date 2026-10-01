@@ -99,11 +99,16 @@ export interface DoctorReport {
     note: string | null;
   };
   /**
-   * Per enabled Claude account (by label; paths stay out of the report): the tokenhud
-   * plugin ("enabled", "installed" but switched off, or null) and a user-scope MCP server
-   * running `tokenhud mcp`, read from that config dir's settings files.
+   * Whether Claude Code can start `tokenhud mcp`, and per enabled Claude account (by label;
+   * paths stay out of the report) the tokenhud plugin ("enabled", "installed" but switched
+   * off, or null) and a user-scope MCP server running `tokenhud mcp`, read from that config
+   * dir's settings files.
    */
   claude_code: {
+    /** `tokenhud` resolves on PATH: the plugin and `claude mcp add` start it from there. */
+    tokenhud_on_path: boolean;
+    /** Native Windows found an npm `.cmd` shim, which Claude Code can't start directly. */
+    npm_shim: boolean;
     accounts: Array<{ label: string; plugin: "enabled" | "installed" | null; mcp: boolean }>;
   };
 }
@@ -289,7 +294,11 @@ function gather(q: UsageQueries, db: Database | null, path: string, zone: Zone):
 /** Each enabled Claude account's tokenhud install. Reads settings files only. */
 function claudeCodeSection(env: Env, home: string): DoctorReport["claude_code"] {
   const roots = discoverClaudeRoots(loadConfig(configPath(env, home)), { home, env });
+  const path = env.PATH ?? env.Path;
+  const found = Bun.which("tokenhud", path === undefined ? {} : { PATH: path });
   return {
+    tokenhud_on_path: found !== null,
+    npm_shim: process.platform === "win32" && found !== null && !/\.exe$/i.test(found),
     accounts: roots
       .filter((root) => root.enabled)
       .map((root) => ({ label: root.label, ...detectInstall(root) })),
@@ -509,6 +518,16 @@ export function renderDoctor(r: DoctorReport): string {
   }
 
   out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");
+  const cc = r.claude_code;
+  if (!cc.tokenhud_on_path) {
+    line("tokenhud", "not on PATH: the plugin and the MCP server run `tokenhud mcp`");
+    more("from PATH, so install tokenhud first");
+  } else if (cc.npm_shim) {
+    line("tokenhud", "on PATH as an npm shim, which Claude Code can't start on Windows:");
+    more("add the server with `claude mcp add -s user tokenhud -- cmd /c tokenhud mcp`");
+  } else {
+    line("tokenhud", "on PATH");
+  }
   const missing = r.claude_code.accounts.filter((a) => a.plugin !== "enabled" && !a.mcp);
   for (const a of r.claude_code.accounts) {
     const parts: string[] = [];
