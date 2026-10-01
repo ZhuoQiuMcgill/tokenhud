@@ -231,11 +231,12 @@ describe("the source tree", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("no test snapshot exists to hold a credential", () => {
+  test("no test snapshot holds a credential, and the limits tests keep none", () => {
     const snapshots = files(join(ROOT, "test")).filter((path) =>
       /__snapshots__|\.snap$/.test(path),
     );
     for (const path of snapshots) expectClean(readFileSync(path, "utf8"));
-    expect(snapshots.map(rel)).toEqual([]);
+    // The TUI's frame snapshots (T10) are allowed; tests near credentials take none.
+    expect(snapshots.map(rel).filter((path) => path.startsWith("test/limits/"))).toEqual([]);
   });
 });
