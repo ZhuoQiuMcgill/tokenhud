@@ -38,8 +38,8 @@ describe("schema v2", () => {
     const path = join(tempDir(), "tokenhud.db");
     track(openStore(path)).close();
     const db = new Database(path, { readonly: true });
-    expect(SCHEMA_VERSION).toBe(2);
-    expect(scalar(db, "PRAGMA user_version")).toBe(2);
+    expect(SCHEMA_VERSION).toBe(3);
+    expect(scalar(db, "PRAGMA user_version")).toBe(3);
     expect(scalar(db, "SELECT sql FROM sqlite_master WHERE name = 'usage_long'")).toBe(
       `CREATE INDEX usage_long ON usage (ts) WHERE ${LONG_CONTEXT_PREDICATE}`,
     );
@@ -53,12 +53,13 @@ describe("schema v2", () => {
     store.close();
     const v1 = new Database(path);
     v1.exec("DROP INDEX usage_long");
+    v1.exec("DROP TABLE limit_events");
     v1.exec("PRAGMA user_version = 1");
     v1.close();
 
     track(openStore(path)).close();
     const db = new Database(path, { readonly: true });
-    expect(scalar(db, "PRAGMA user_version")).toBe(2);
+    expect(scalar(db, "PRAGMA user_version")).toBe(3);
     const plan = db
       .query<{ detail: string }, []>(
         `EXPLAIN QUERY PLAN SELECT ts FROM usage WHERE ${LONG_CONTEXT_PREDICATE} AND ts >= 0`,

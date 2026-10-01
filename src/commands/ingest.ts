@@ -6,7 +6,10 @@ import { startIngestWorker, type WorkerOptions } from "../ingest/client.ts";
 import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
 import type { ChangedEvent, PassReport, RootStats } from "../ingest/pass.ts";
+import { ccUsageLimitsPath } from "../limits/cache.ts";
+import { Limits } from "../limits/index.ts";
 import { storePath } from "../paths.ts";
+import { discoverClaudeRoots, discoverCodexRoots } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
 
 // `tokenhud ingest`: a developer command, deliberately left out of --help. It runs the
@@ -14,7 +17,7 @@ import { StoreError } from "../store/errors.ts";
 // Output is content-free: account labels and counts, never paths or transcript text.
 
 const USAGE = `usage: tokenhud ingest [--db <path>] [--cache <path>] [--config <path>]
-                       [--once] [--stats] [--no-import]
+                       [--once] [--stats] [--no-import] [--limits <path>]
 
   --db <path>      usage store (default: ~/.config/tokenhud/tokenhud.db)
   --cache <path>   read-position cache (default: ~/.config/tokenhud/cache.db)
@@ -22,7 +25,9 @@ const USAGE = `usage: tokenhud ingest [--db <path>] [--cache <path>] [--config <
                    (default: ~/.config/tokenhud/config.json)
   --once           run one pass, print its stats and exit (else: watch, print each change)
   --stats          per-account stats (with --once), or a line per pass (watching)
-  --no-import      skip the first-run import of cc-usage's history`;
+  --no-import      skip the first-run import of cc-usage's history (and limits)
+  --limits <path>  watching: also fetch subscription limits into this limits.json and
+                   print each account's windows (utilisation and source only)`;
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -33,6 +38,7 @@ function engineOptions(values: {
   cache?: string;
   config?: string;
   "no-import"?: boolean;
+  limits?: string;
 }): WorkerOptions {
   const env = process.env;
   const home = homedir();
@@ -47,13 +53,32 @@ function engineOptions(values: {
         : `warn: cc-usage's config was imported but not saved: ${start.saveError}\n`,
     );
   }
-  return {
+  const options: WorkerOptions = {
     storePath: values.db ?? storePath(env, home),
     cachePath: values.cache ?? cachePath(env, home),
     config: start.config,
     discover: { home, env: { ...env } },
     importLedger: values["no-import"] ? null : join(ccUsageDir(env, home), "ledger.sqlite3"),
   };
+  if (values.limits !== undefined) {
+    options.limits = {
+      limitsPath: values.limits,
+      ccUsageLimits: values["no-import"] ? null : ccUsageLimitsPath(env, home),
+    };
+  }
+  return options;
+}
+
+/** One account's limits as a content-free line: label, windows, source. */
+function limitsLine(limits: Limits, account: string): string {
+  const a = limits.getLimits(account);
+  if (a === null) return `limits ? (${account.slice(0, 8)})`;
+  const windows = a.windows
+    .map((w) => `${w.label} ${Math.round(w.utilization * 100)}%`)
+    .join(" · ");
+  const state = a.account.signed_in ? "" : " · not signed in here";
+  const error = a.error === null ? "" : ` · ${a.error}`;
+  return `limits ${a.account.label} (${a.account.provider}): ${windows || "no windows"} [${a.source ?? "none"}]${state}${error}`;
 }
 
 const MB = 1024 * 1024;
@@ -168,8 +193,25 @@ async function once(options: WorkerOptions, stats: boolean): Promise<number> {
 
 async function watchMode(options: WorkerOptions, stats: boolean): Promise<number> {
   const labels = new Map<string, string>();
+  const limits =
+    options.limits === undefined
+      ? null
+      : new Limits({
+          limitsPath: options.limits.limitsPath,
+          roots: () => {
+            const claude = discoverClaudeRoots(options.config, options.discover);
+            return [...claude, ...discoverCodexRoots(options.config, options.discover, claude)];
+          },
+          db: null,
+          spend: null,
+        });
   const worker = startIngestWorker(options, (message) => {
     switch (message.type) {
+      case "limits":
+        for (const id of message.accounts) {
+          if (limits !== null) process.stdout.write(`${limitsLine(limits, id)}\n`);
+        }
+        break;
       case "changed":
         process.stdout.write(`${describe(message, labels)}\n`);
         break;
@@ -211,6 +253,7 @@ export async function runIngest(args: readonly string[]): Promise<number> {
     once?: boolean;
     stats?: boolean;
     "no-import"?: boolean;
+    limits?: string;
     help?: boolean;
   };
   try {
@@ -223,6 +266,7 @@ export async function runIngest(args: readonly string[]): Promise<number> {
         once: { type: "boolean" },
         stats: { type: "boolean" },
         "no-import": { type: "boolean" },
+        limits: { type: "string" },
         help: { type: "boolean", short: "h" },
       },
       strict: true,

@@ -7,8 +7,8 @@ afterEach(cleanup);
 
 const CLI = join(import.meta.dir, "..", "..", "src", "cli.ts");
 
-/** Runs the CLI with HOME and XDG_CONFIG_HOME inside `dir`, and no Windows-side search. */
-function run(dir: string, ...args: string[]) {
+/** HOME and XDG_CONFIG_HOME inside `dir`, and no Windows-side search. */
+function envFor(dir: string): Record<string, string> {
   const env: Record<string, string> = {
     PATH: process.env.PATH ?? "",
     HOME: join(dir, "home"),
@@ -17,10 +17,15 @@ function run(dir: string, ...args: string[]) {
     TOKENHUD_WSL_USERS: "",
   };
   if (process.env.SYSTEMROOT) env.SYSTEMROOT = process.env.SYSTEMROOT;
+  return env;
+}
+
+/** Runs the CLI in `envFor(dir)`. */
+function run(dir: string, ...args: string[]) {
   const proc = Bun.spawnSync([process.execPath, CLI, ...args], {
     stdout: "pipe",
     stderr: "pipe",
-    env,
+    env: envFor(dir),
   });
   return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
 }
@@ -71,6 +76,48 @@ describe("tokenhud ingest", () => {
       /^read 0 of 1 files \(0\.0 MB\), 0 records: 0 new, 0 changed, in \d+ ms\n$/,
     );
   });
+
+  // Network-free: the only Claude root has no credential file, and there is no ~/.codex.
+  (process.platform === "win32" ? test.skip : test)(
+    "--limits fetches limits after the first pass and prints them content-free",
+    async () => {
+      const dir = tempDir();
+      makeRoot(join(dir, "home"), ".claude");
+      const out = join(dir, "out");
+      const proc = Bun.spawn(
+        [
+          process.execPath,
+          CLI,
+          "ingest",
+          "--no-import",
+          "--db",
+          join(out, "t.db"),
+          "--cache",
+          join(out, "c.db"),
+          "--limits",
+          join(out, "limits.json"),
+        ],
+        { stdout: "pipe", stderr: "pipe", env: envFor(dir) },
+      );
+      let stdout = "";
+      const decoder = new TextDecoder();
+      const reader = proc.stdout.getReader();
+      const deadline = performance.now() + 10_000;
+      while (!stdout.includes("limits personal") && performance.now() < deadline) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        stdout += decoder.decode(value);
+      }
+      reader.releaseLock();
+      proc.kill("SIGINT");
+      expect(await proc.exited).toBe(0);
+      expect(stdout).toContain(
+        "limits personal (claude): no windows [none] · not signed in here · no Claude credentials in this config dir\n",
+      );
+      expect(stdout).not.toContain(dir);
+      expect(existsSync(join(out, "limits.json"))).toBe(true);
+    },
+  );
 
   test("the first run creates tokenhud's config from cc-usage's, once; --config moves it", () => {
     const dir = tempDir();
