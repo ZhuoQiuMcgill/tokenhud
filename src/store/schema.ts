@@ -187,10 +187,30 @@ export const LONG_CONTEXT_INDEX_MIN = 272_000;
 export const LONG_CONTEXT_PREDICATE = `inp + cr > ${LONG_CONTEXT_INDEX_MIN}`;
 const LONG_CONTEXT_INDEX = `CREATE INDEX usage_long ON usage (ts) WHERE ${LONG_CONTEXT_PREDICATE}`;
 
+// ── limit events ─────────────────────────────────────────────────────────────────
+// When a subscription-limit window reached 100 %, passed 80 % (weekly windows) and became
+// usable again, recorded by the limits module (src/limits/events.ts) as captures cross
+// those thresholds. A window *instance* is one reset period, named by `resets_at`, and an
+// event is recorded once per instance. Times are epoch ms; `acct` is `accounts.id`;
+// `window` is the window's kind ("session", "weekly_all", "codex_primary", ...) and
+// `label` how it was shown when recorded ("5-HOUR", "FABLE WEEKLY"). `resumed_at` is set
+// on a `reached` event by the `resumed` event that ends it.
+
+const LIMIT_EVENTS_TABLE = `CREATE TABLE limit_events (
+  id INTEGER PRIMARY KEY,
+  acct INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  window TEXT NOT NULL,
+  label TEXT NOT NULL,
+  resets_at INTEGER NOT NULL,
+  at INTEGER NOT NULL,
+  resumed_at INTEGER
+)`;
+
 // ── schema versions (PRAGMA user_version) ────────────────────────────────────────
 // SCHEMA_MIGRATIONS[n] upgrades a store at schema version n to n + 1, inside the write
-// transaction that also records the new version. Later tasks append entries (such as a
-// `limit_events` table); never edit a shipped one.
+// transaction that also records the new version. Later tasks append entries; never edit a
+// shipped one.
 
 type SchemaMigration = (db: Database) => void;
 
@@ -207,6 +227,12 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   },
   // v2: the long-context partial index (T6).
   (db) => db.exec(LONG_CONTEXT_INDEX),
+  // v3: subscription-limit events (T8).
+  (db) => {
+    db.exec(LIMIT_EVENTS_TABLE);
+    db.exec("CREATE INDEX limit_events_at ON limit_events (at)");
+    db.exec("CREATE INDEX limit_events_acct ON limit_events (acct, window, resets_at)");
+  },
 ];
 
 export const SCHEMA_VERSION = SCHEMA_MIGRATIONS.length;

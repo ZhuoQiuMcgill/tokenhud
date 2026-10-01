@@ -1,0 +1,203 @@
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { ccUsageDir } from "../config.ts";
+import { configDir } from "../paths.ts";
+import { type Capture, freshest, parseCapture } from "./capture.ts";
+
+/**
+ * The last-good limits of every account, `~/.config/tokenhud/limits.json`. Its
+ * `providers` map holds captures in exactly the shape of cc-usage's `provider-limits.json`,
+ * keyed by account identity (the root's `sha256(resolved path)[:32]`) instead of
+ * `claude:<label>`; `status` holds each account's fetch state, so the back-off, the Claude
+ * rate limit and the history-only check hold across the TUI's Worker and every MCP server
+ * process that reads and writes this file. It never holds a credential or a raw response.
+ *
+ * Every write re-reads the file and merges into it (a capture is replaced only by a
+ * fresher one), then replaces it atomically, so processes that share it lose at most a
+ * status update in a race, never a capture or the file.
+ */
+
+type Env = Readonly<Record<string, string | undefined>>;
+
+export function limitsPath(env: Env = process.env, home: string = homedir()): string {
+  return join(configDir(env, home), "limits.json");
+}
+
+/** cc-usage's limits cache, imported once, read-only. */
+export function ccUsageLimitsPath(env: Env = process.env, home: string = homedir()): string {
+  return join(ccUsageDir(env, home), "provider-limits.json");
+}
+
+/** An account's fetch state. Times are epoch ms. */
+export interface AccountStatus {
+  /** False for a history-only account: shown, never fetched (or rarely, see `history_only`). */
+  signed_in: boolean;
+  /**
+   * Why the account is history-only: "config" (listed in `history_only_roots`: never
+   * fetched) or "detected" (no credential file, or a sign-in that could not be refreshed or
+   * was refused: checked again daily, or as soon as the credential file changes). Null when
+   * signed in.
+   */
+  history_only: "config" | "detected" | null;
+  /** When `history_only` was last decided. */
+  checked_at: number | null;
+  /** The credential file's mtime then; null when it was missing. */
+  cred_mtime: number | null;
+  /** Consecutive failed fetches (drives the back-off). */
+  errors: number;
+  /** The last failure's message (never holds a credential); null after a success. */
+  last_error: string | null;
+  last_attempt_at: number | null;
+  /** No scheduled fetch before this: the 5-minute cadence, or the back-off after errors. */
+  next_at: number | null;
+}
+
+export function initialStatus(): AccountStatus {
+  return {
+    signed_in: true,
+    history_only: null,
+    checked_at: null,
+    cred_mtime: null,
+    errors: 0,
+    last_error: null,
+    last_attempt_at: null,
+    next_at: null,
+  };
+}
+
+export interface LimitsFile {
+  /** Account identity -> its last-good capture. */
+  providers: Record<string, Capture>;
+  /** Account identity -> its fetch state. */
+  status: Record<string, AccountStatus>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const numberOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+function parseStatus(value: unknown): AccountStatus | null {
+  if (!isRecord(value)) return null;
+  const status = initialStatus();
+  if (typeof value.signed_in === "boolean") status.signed_in = value.signed_in;
+  if (value.history_only === "config" || value.history_only === "detected") {
+    status.history_only = value.history_only;
+  }
+  status.checked_at = numberOrNull(value.checked_at);
+  status.cred_mtime = numberOrNull(value.cred_mtime);
+  const errors = numberOrNull(value.errors);
+  status.errors = errors !== null && errors >= 0 ? Math.trunc(errors) : 0;
+  status.last_error = typeof value.last_error === "string" ? value.last_error : null;
+  status.last_attempt_at = numberOrNull(value.last_attempt_at);
+  status.next_at = numberOrNull(value.next_at);
+  return status;
+}
+
+/** The cache at `path`; empty when it is missing or unreadable. Never throws. */
+export function loadLimitsCache(path: string): LimitsFile {
+  const file: LimitsFile = { providers: {}, status: {} };
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return file;
+  }
+  if (!isRecord(data)) return file;
+  if (isRecord(data.providers)) {
+    for (const [id, raw] of Object.entries(data.providers)) {
+      const capture = parseCapture(raw);
+      if (capture !== null) file.providers[id] = capture;
+    }
+  }
+  if (isRecord(data.status)) {
+    for (const [id, raw] of Object.entries(data.status)) {
+      const status = parseStatus(raw);
+      if (status !== null) file.status[id] = status;
+    }
+  }
+  return file;
+}
+
+/** Writes `file` atomically (a per-process temp file, then a rename). Throws on failure. */
+export function saveLimitsCache(file: LimitsFile, path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+    renameSync(tmp, path);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
+/** One account's change to the shared file. */
+export interface CacheUpdate {
+  capture?: Capture | null;
+  status?: AccountStatus;
+}
+
+/**
+ * Re-reads the file, applies `updates` (a capture replaces the stored one only when it is
+ * fresher), and writes it back. Returns the merged file.
+ */
+export function updateLimitsCache(
+  path: string,
+  updates: ReadonlyMap<string, CacheUpdate>,
+): LimitsFile {
+  const file = loadLimitsCache(path);
+  for (const [id, update] of updates) {
+    if (update.capture) {
+      const best = freshest([file.providers[id], update.capture]);
+      if (best !== null) file.providers[id] = best;
+    }
+    if (update.status) file.status[id] = update.status;
+  }
+  saveLimitsCache(file, path);
+  return file;
+}
+
+/** An account as cc-usage named it: its labels are the ones in cc-usage's ledger. */
+export interface KnownAccount {
+  provider: string;
+  identity: string;
+  label: string;
+}
+
+/**
+ * The captures of cc-usage's `provider-limits.json` (read-only), keyed by identity: its
+ * keys are `claude:<label>` and `codex:<label>`, matched against accounts by provider and
+ * label. Pass the store's accounts first (they carry cc-usage's labels, imported from its
+ * ledger), then the discovered roots. Unknown labels and bare legacy keys are skipped, as
+ * cc-usage's own loader skips the latter. Captures are marked `via: "cc-usage"`.
+ */
+export function importCcUsageLimits(
+  path: string,
+  accounts: readonly KnownAccount[],
+): Record<string, Capture> {
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return {};
+  }
+  const providers = isRecord(data) ? data.providers : null;
+  if (!isRecord(providers)) return {};
+  const out: Record<string, Capture> = {};
+  for (const [name, raw] of Object.entries(providers)) {
+    const colon = name.indexOf(":");
+    if (colon < 0) continue;
+    const provider = name.slice(0, colon);
+    const label = name.slice(colon + 1);
+    const account = accounts.find((a) => a.provider === provider && a.label === label);
+    const capture = parseCapture(raw);
+    if (account === undefined || capture === null || capture.source !== provider) continue;
+    capture.via = "cc-usage";
+    out[account.identity] ??= capture;
+  }
+  return out;
+}

@@ -426,7 +426,7 @@ describe("doctor", () => {
     for (const text of [
       "rows          16  (claude 13 · codex 3)",
       "personal (claude) 10 rows",
-      "schema        v2 · key scheme 1",
+      "schema        v3 · key scheme 1",
       "rollups       consistent (quick check)",
       "long context  indexed",
       "overrides",
@@ -439,7 +439,7 @@ describe("doctor", () => {
     const doctorJson = run(env, "doctor", "--json");
     onlyConfigPaths(env, doctorJson.stdout);
     const report = JSON.parse(doctorJson.stdout);
-    expect(report.store).toMatchObject({ exists: true, rows: 16, models: 5, schema_version: 2 });
+    expect(report.store).toMatchObject({ exists: true, rows: 16, models: 5, schema_version: 3 });
     expect(report.store.rollups).toEqual({ triggers_intact: true, counts_agree: true });
     expect(report.store.imports).toHaveLength(1);
     expect(report.pricing.overrides.models).toBe(2);
