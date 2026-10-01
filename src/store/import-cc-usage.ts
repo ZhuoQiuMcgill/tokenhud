@@ -1,16 +1,7 @@
 import { Database } from "bun:sqlite";
-import {
-  closeSync,
-  copyFileSync,
-  mkdirSync,
-  mkdtempSync,
-  openSync,
-  readSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { closeSync, copyFileSync, openSync, readSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { classify, guard, SchemeRefused, StoreCorrupt, StoreError } from "./errors.ts";
+import { classify, SchemeRefused, StoreCorrupt, StoreError } from "./errors.ts";
 import { KEY_SCHEME } from "./key.ts";
 import type { AccountRef, Store, UsageRow } from "./store.ts";
 
@@ -28,7 +19,7 @@ import type { AccountRef, Store, UsageRow } from "./store.ts";
  * the import reads a snapshot instead:
  *
  * 1. Copy `ledger.sqlite3` and, if present, `ledger.sqlite3-wal` into a private scratch
- *    dir (`tmp/` beside the tokenhud store). Copying only reads the source. The -shm is
+ *    dir (in `.tokenhud-tmp/` beside the store). Copying only reads the source. The -shm is
  *    not copied: SQLite rebuilds the index from the WAL, so rows not yet checkpointed are
  *    included.
  * 2. The frozen Python app may write while we copy, so copy both files twice in a row and
@@ -119,10 +110,7 @@ export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
       `cannot import cc-usage key scheme v${CC_USAGE_KEY_SCHEME} into key scheme v${KEY_SCHEME}`,
     );
   }
-  const scratch = guard(() => {
-    mkdirSync(store.scratchDir, { recursive: true });
-    return mkdtempSync(join(store.scratchDir, "import-cc-usage-"));
-  });
+  const scratch = store.newScratchDir();
   let source: Database | undefined;
   try {
     const copy = snapshot(ledgerPath, scratch);

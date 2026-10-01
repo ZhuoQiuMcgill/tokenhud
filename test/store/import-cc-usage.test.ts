@@ -183,9 +183,9 @@ describe("importing the fixture ledger", () => {
     for (const r of big) expect(keys.has(BigInt(r.key))).toBe(true);
   });
 
-  test("scratch copies go in the store's tmp dir and are removed", () => {
+  test("scratch copies go in the store's .tokenhud-tmp dir and are removed", () => {
     const store = freshStore();
-    expect(store.scratchDir).toBe(join(store.path, "..", "tmp"));
+    expect(store.scratchDir).toBe(join(store.path, "..", ".tokenhud-tmp"));
     imported(importCcUsage(store, ledgerCopy()));
     expect(existsSync(store.scratchDir)).toBe(true);
     expect(scratchLeft(store)).toEqual([]);

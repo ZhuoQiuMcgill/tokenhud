@@ -4,10 +4,13 @@ import { createHash } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
+  lstatSync,
+  lutimesSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -680,21 +683,91 @@ describe("lifecycle", () => {
     expect(caught(() => store.meta)).toBeInstanceOf(StoreUnavailable);
     expect(caught(() => store.rebuildRollups())).toBeInstanceOf(StoreUnavailable);
   });
+});
 
-  test("opening sweeps import scratch copies left for over an hour", () => {
-    const path = storePath();
-    const scratch = join(path, "..", "tmp");
-    const stale = join(scratch, "import-cc-usage-old");
-    const fresh = join(scratch, "import-cc-usage-new");
-    for (const dir of [stale, fresh]) {
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "ledger-0a.sqlite3"), "copy");
+describe("scratch sweep", () => {
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+
+  /** Makes `path` (a directory with one file, or a file) and backdates it two hours. */
+  function oldEntry(path: string, kind: "dir" | "file"): void {
+    if (kind === "dir") {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, "inside.txt"), "keep");
+    } else {
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, "keep");
     }
-    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
-    utimesSync(stale, twoHoursAgo, twoHoursAgo);
+    utimesSync(path, twoHoursAgo, twoHoursAgo);
+  }
+
+  /** Links `path` to the directory `target`; a junction on Windows needs no privilege. */
+  function link(target: string, path: string): void {
+    symlinkSync(target, path, process.platform === "win32" ? "junction" : "dir");
+    try {
+      lutimesSync(path, twoHoursAgo, twoHoursAgo); // an old link, should the sweep look
+    } catch {
+      // not every platform can date a link; the sweep must skip it either way
+    }
+  }
+
+  test("removes only tokenhud's own stale scratch directories", () => {
+    const path = storePath();
+    const dir = join(path, "..");
+    const scratch = join(dir, ".tokenhud-tmp");
+    // The user's own old things in a generic tmp/ beside the store: never ours.
+    oldEntry(join(dir, "tmp", "notes.txt"), "file");
+    oldEntry(join(dir, "tmp", "project"), "dir");
+    oldEntry(join(dir, "tmp", "import-cc-usage-lookalike"), "dir");
+    // Inside our scratch dir, anything not named and shaped like ours stays too.
+    oldEntry(join(scratch, "notes.txt"), "file");
+    oldEntry(join(scratch, "other-dir"), "dir");
+    oldEntry(join(scratch, "import-cc-usage-plain-file"), "file");
+    // Our own: a stale one goes, a fresh one (an import in progress) stays.
+    oldEntry(join(scratch, "import-cc-usage-stale"), "dir");
+    mkdirSync(join(scratch, "import-cc-usage-fresh"));
+    utimesSync(scratch, twoHoursAgo, twoHoursAgo);
+
     const store = open(path);
     expect(store.scratchDir).toBe(scratch);
-    expect(readdirSync(scratch)).toEqual(["import-cc-usage-new"]);
+    expect(readdirSync(join(dir, "tmp")).sort()).toEqual([
+      "import-cc-usage-lookalike",
+      "notes.txt",
+      "project",
+    ]);
+    expect(readFileSync(join(dir, "tmp", "project", "inside.txt"), "utf8")).toBe("keep");
+    expect(readdirSync(scratch).sort()).toEqual([
+      "import-cc-usage-fresh",
+      "import-cc-usage-plain-file",
+      "notes.txt",
+      "other-dir",
+    ]);
+  });
+
+  test("a symlink named like a scratch directory is not followed or removed", () => {
+    const path = storePath();
+    const scratch = join(path, "..", ".tokenhud-tmp");
+    const elsewhere = tempDir();
+    oldEntry(join(elsewhere, "precious"), "dir");
+    utimesSync(elsewhere, twoHoursAgo, twoHoursAgo);
+    mkdirSync(scratch, { recursive: true });
+    link(elsewhere, join(scratch, "import-cc-usage-link"));
+
+    open(path).close();
+    expect(lstatSync(join(scratch, "import-cc-usage-link")).isSymbolicLink()).toBe(true);
+    expect(readdirSync(elsewhere)).toEqual(["precious"]);
+    expect(readFileSync(join(elsewhere, "precious", "inside.txt"), "utf8")).toBe("keep");
+  });
+
+  test("a scratch dir that is itself a symlink is neither swept nor written to", () => {
+    const path = storePath();
+    const elsewhere = tempDir();
+    oldEntry(join(elsewhere, "import-cc-usage-old"), "dir");
+    link(elsewhere, join(path, "..", ".tokenhud-tmp"));
+
+    const store = open(path);
+    expect(readdirSync(elsewhere)).toEqual(["import-cc-usage-old"]);
+    expect(caught(() => store.newScratchDir())).toBeInstanceOf(StoreUnavailable);
+    expect(readdirSync(elsewhere)).toEqual(["import-cc-usage-old"]);
   });
 });
 

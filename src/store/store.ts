@@ -1,7 +1,10 @@
 import { Database } from "bun:sqlite";
 import {
   closeSync,
+  type Dirent,
+  lstatSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readdirSync,
   readSync,
@@ -55,7 +58,11 @@ const SQLITE_MAGIC = "SQLite format 3\0";
 // The database header is the first 100 bytes; application_id is a big-endian u32 at 68.
 const HEADER_BYTES = 100;
 const APPLICATION_ID_OFFSET = 68;
-// Import scratch copies live in `tmp/` beside the store; leftovers this old are swept.
+// Import scratch copies live in their own directories, named SCRATCH_PREFIX + random, in
+// a dot-directory beside the store that only tokenhud uses. A store open sweeps such
+// directories once they are this old (a crash left them); nothing else is ever touched.
+const SCRATCH_DIR = ".tokenhud-tmp";
+const SCRATCH_PREFIX = "import-cc-usage-";
 const SCRATCH_MAX_AGE_MS = 60 * 60 * 1000;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
@@ -148,7 +155,7 @@ export function openStore(path: string, options: OpenOptions = {}): Store {
 
 export class Store {
   readonly path: string;
-  /** Where imports keep their scratch copies: `tmp/` beside the store file. */
+  /** Where imports keep their scratch copies: `.tokenhud-tmp/` beside the store file. */
   readonly scratchDir: string;
   /** Whether opening this store ran a key-scheme migration (a backup is due at once). */
   readonly keySchemeMigrated: boolean;
@@ -197,6 +204,22 @@ export class Store {
       db.close();
       throw error;
     }
+  }
+
+  /**
+   * A new, empty scratch directory for an import, inside `scratchDir`. Refuses to work
+   * through a `scratchDir` that is a symlink, so scratch copies only ever land in a
+   * directory tokenhud made.
+   */
+  newScratchDir(): string {
+    const dir = this.scratchDir;
+    return guard(() => {
+      mkdirSync(dir, { recursive: true });
+      if (!lstatSync(dir).isDirectory()) {
+        throw new StoreUnavailable(`${dir} is not a plain directory; leaving it alone`);
+      }
+      return mkdtempSync(join(dir, SCRATCH_PREFIX));
+    });
   }
 
   /** Closes the connection. Later calls on this store throw `StoreUnavailable`. */
@@ -426,22 +449,31 @@ function classifyFsError(error: unknown, path: string): StoreUnavailable {
 }
 
 function scratchDirOf(storePath: string): string {
-  return join(dirname(storePath), "tmp");
+  return join(dirname(storePath), SCRATCH_DIR);
 }
 
-/** Deletes import scratch copies left by a crash, once they are an hour old. Best effort. */
+/**
+ * Deletes import scratch directories left by a crash, once they are an hour old. Only
+ * real directories named like ours, directly inside our own scratch dir, are candidates:
+ * a symlink (to the scratch dir or in it) is never followed, and any other file or
+ * directory is left alone, whatever its age. Best effort.
+ */
 function sweepScratch(dir: string): void {
-  let names: string[];
+  let entries: Dirent[];
   try {
-    names = readdirSync(dir);
+    if (!lstatSync(dir).isDirectory()) return;
+    entries = readdirSync(dir, { withFileTypes: true });
   } catch {
     return; // no scratch dir yet
   }
   const cutoff = Date.now() - SCRATCH_MAX_AGE_MS;
-  for (const name of names) {
-    const entry = join(dir, name);
+  for (const entry of entries) {
+    // Dirent types come from lstat: a symlink is not a directory here.
+    if (!entry.name.startsWith(SCRATCH_PREFIX) || !entry.isDirectory()) continue;
+    const path = join(dir, entry.name);
     try {
-      if (statSync(entry).mtimeMs < cutoff) rmSync(entry, { recursive: true, force: true });
+      // rm does not follow symlinks inside the directory it removes.
+      if (lstatSync(path).mtimeMs < cutoff) rmSync(path, { recursive: true, force: true });
     } catch {
       // in use or already gone; the next open tries again
     }
