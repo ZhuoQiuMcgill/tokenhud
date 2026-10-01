@@ -52,15 +52,29 @@ function readHolder(path: string): Holder | null {
   }
 }
 
+/**
+ * Whether `error` means another process has the file right now. On Windows, opening or
+ * deleting a file that another process has open, or is deleting (a "delete pending"
+ * file), fails with EPERM or EBUSY instead of EEXIST or success: that is contention, to
+ * retry, never a failure. Elsewhere those codes are real permission errors.
+ */
+export function isContention(
+  error: unknown,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return platform === "win32" && (code === "EPERM" || code === "EBUSY");
+}
+
+/** How long a release keeps retrying a lease file another process has open (Windows). */
+const RELEASE_RETRY_MS = 500;
+
 function create(path: string, holder: Holder): boolean {
   let fd: number;
   try {
     fd = openSync(path, "wx");
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    // Windows answers EPERM, not EEXIST, while another process is deleting the lock file
-    // (a delete pending). Either way it is held for now; the caller retries.
-    if (code === "EEXIST" || (process.platform === "win32" && code === "EPERM")) return false;
+    if ((error as NodeJS.ErrnoException).code === "EEXIST" || isContention(error)) return false;
     throw error;
   }
   try {
@@ -98,6 +112,25 @@ function takeOver(path: string, judged: Holder | null, nonce: string): boolean {
 }
 
 /**
+ * Deletes the lease file while it still names `nonce`. A file another process is reading
+ * at that moment (Windows refuses then) is retried for a moment, so the next holder
+ * doesn't wait out the time-to-live. Never throws.
+ */
+function release(path: string, nonce: string): void {
+  const deadline = Date.now() + RELEASE_RETRY_MS;
+  for (;;) {
+    try {
+      const held = JSON.parse(readFileSync(path, "utf8")) as { nonce?: unknown };
+      if (held.nonce === nonce) rmSync(path, { force: true });
+      return;
+    } catch (error) {
+      if (!isContention(error) || Date.now() > deadline) return; // gone, damaged, or not ours
+      Bun.sleepSync(2);
+    }
+  }
+}
+
+/**
  * Takes the lease at `path`, or returns null when another live process holds it. A lease
  * older than `ttlMs` (or unreadable for that long) is stale and taken over.
  */
@@ -107,16 +140,7 @@ export function tryLease(path: string, ttlMs: number, now: () => number = Date.n
   for (let attempt = 0; attempt < 3; attempt++) {
     const holder: Holder = { pid: process.pid, nonce, at: now() };
     if (create(path, holder)) {
-      return {
-        path,
-        release() {
-          try {
-            if (readHolder(path)?.nonce === nonce) rmSync(path, { force: true });
-          } catch {
-            // already gone
-          }
-        },
-      };
+      return { path, release: () => release(path, nonce) };
     }
     const current = readHolder(path);
     let since: number;
