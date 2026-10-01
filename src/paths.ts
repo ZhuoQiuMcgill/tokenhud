@@ -17,3 +17,11 @@ export function configDir(env: Env = process.env, home: string = homedir()): str
 export function pricingOverridesPath(env: Env = process.env, home: string = homedir()): string {
   return join(configDir(env, home), "pricing.overrides.json");
 }
+
+/**
+ * The default usage store, `<config dir>/tokenhud.db`. Callers pass the path to
+ * `openStore`; import scratch copies go in `tmp/` beside it.
+ */
+export function storePath(env: Env = process.env, home: string = homedir()): string {
+  return join(configDir(env, home), "tokenhud.db");
+}

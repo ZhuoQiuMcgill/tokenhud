@@ -14,7 +14,8 @@
     "lint": "biome check",
     "format": "biome format --write",
     "test": "bun test",
-    "build": "bun scripts/build.ts"
+    "build": "bun scripts/build.ts",
+    "bench:store": "bun test/store/bench.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
