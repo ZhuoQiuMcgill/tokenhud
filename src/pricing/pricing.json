@@ -25,7 +25,7 @@
     "claude-opus-5": { "input": 5, "output": 25, "fast": { "input": 10, "output": 50 } },
     "claude-opus-4-8": { "input": 5, "output": 25, "fast": { "input": 10, "output": 50 } },
     "claude-opus-4-7": { "input": 5, "output": 25 },
-    "claude-opus-4-6": { "input": 5, "output": 25 },
+    "claude-opus-4-6": { "input": 5, "output": 25, "fast": { "input": 5, "output": 25 } },
     "claude-opus-4-5": { "input": 5, "output": 25 },
     "claude-sonnet-5-5": { "input": 2, "output": 10 },
     "claude-sonnet-5": { "input": 2, "output": 10 },
@@ -40,7 +40,14 @@
       "long_context_threshold": 272000,
       "long_context_input_multiplier": 2,
       "long_context_output_multiplier": 1.5,
-      "fast": { "input": 20, "output": 100, "cache_read": 2, "cache_write": 25 }
+      "fast": {
+        "input": 20,
+        "output": 100,
+        "cache_read": 2,
+        "cache_write": 25,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5
+      }
     },
     "gpt-6.1-sol": {
       "input": 2,
@@ -50,7 +57,14 @@
       "long_context_threshold": 272000,
       "long_context_input_multiplier": 2,
       "long_context_output_multiplier": 1.5,
-      "fast": { "input": 4, "output": 20, "cache_read": 0.2, "cache_write": 5 }
+      "fast": {
+        "input": 4,
+        "output": 20,
+        "cache_read": 0.2,
+        "cache_write": 5,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5
+      }
     },
     "gpt-6-sol": {
       "input": 2,
@@ -60,7 +74,14 @@
       "long_context_threshold": 272000,
       "long_context_input_multiplier": 2,
       "long_context_output_multiplier": 1.5,
-      "fast": { "input": 4, "output": 20, "cache_read": 0.4, "cache_write": 5 }
+      "fast": {
+        "input": 4,
+        "output": 20,
+        "cache_read": 0.4,
+        "cache_write": 5,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5
+      }
     },
     "gpt-6-luna": {
       "input": 0.1,
@@ -70,7 +91,14 @@
       "long_context_threshold": 272000,
       "long_context_input_multiplier": 2,
       "long_context_output_multiplier": 1.5,
-      "fast": { "input": 0.2, "output": 1, "cache_read": 0.02, "cache_write": 0.25 }
+      "fast": {
+        "input": 0.2,
+        "output": 1,
+        "cache_read": 0.02,
+        "cache_write": 0.25,
+        "long_context_input_multiplier": 2,
+        "long_context_output_multiplier": 1.5
+      }
     },
     "gpt-5.6-sol": {
       "periods": [
@@ -88,7 +116,27 @@
           }
         },
         {
-          "from": "2026-08-21T00:00:00Z",
+          "from": "2026-08-05T07:00:00Z",
+          "card": {
+            "input": 5,
+            "output": 30,
+            "cache_read": 0.5,
+            "cache_write": 6.25,
+            "long_context_threshold": 272000,
+            "long_context_input_multiplier": 2,
+            "long_context_output_multiplier": 1.5,
+            "fast": {
+              "input": 10,
+              "output": 60,
+              "cache_read": 1,
+              "cache_write": 12.5,
+              "long_context_input_multiplier": 2,
+              "long_context_output_multiplier": 1.5
+            }
+          }
+        },
+        {
+          "from": "2026-08-21T07:00:00Z",
           "card": {
             "input": 4,
             "output": 20,
@@ -97,7 +145,14 @@
             "long_context_threshold": 272000,
             "long_context_input_multiplier": 2,
             "long_context_output_multiplier": 1.5,
-            "fast": { "input": 8, "output": 40, "cache_read": 0.8, "cache_write": 10 }
+            "fast": {
+              "input": 8,
+              "output": 40,
+              "cache_read": 0.8,
+              "cache_write": 10,
+              "long_context_input_multiplier": 2,
+              "long_context_output_multiplier": 1.5
+            }
           }
         }
       ]
@@ -118,7 +173,7 @@
           }
         },
         {
-          "from": "2026-07-30T00:00:00Z",
+          "from": "2026-07-30T07:00:00Z",
           "card": {
             "input": 2,
             "output": 12,
@@ -128,6 +183,26 @@
             "long_context_input_multiplier": 2,
             "long_context_output_multiplier": 1.5,
             "fast": { "input": 4, "output": 24, "cache_read": 0.4, "cache_write": 5 }
+          }
+        },
+        {
+          "from": "2026-08-05T07:00:00Z",
+          "card": {
+            "input": 2,
+            "output": 12,
+            "cache_read": 0.2,
+            "cache_write": 2.5,
+            "long_context_threshold": 272000,
+            "long_context_input_multiplier": 2,
+            "long_context_output_multiplier": 1.5,
+            "fast": {
+              "input": 4,
+              "output": 24,
+              "cache_read": 0.4,
+              "cache_write": 5,
+              "long_context_input_multiplier": 2,
+              "long_context_output_multiplier": 1.5
+            }
           }
         }
       ]
@@ -148,7 +223,7 @@
           }
         },
         {
-          "from": "2026-07-30T00:00:00Z",
+          "from": "2026-07-30T07:00:00Z",
           "card": {
             "input": 0.2,
             "output": 1.2,
@@ -158,6 +233,26 @@
             "long_context_input_multiplier": 2,
             "long_context_output_multiplier": 1.5,
             "fast": { "input": 0.4, "output": 2.4, "cache_read": 0.04, "cache_write": 0.5 }
+          }
+        },
+        {
+          "from": "2026-08-05T07:00:00Z",
+          "card": {
+            "input": 0.2,
+            "output": 1.2,
+            "cache_read": 0.02,
+            "cache_write": 0.25,
+            "long_context_threshold": 272000,
+            "long_context_input_multiplier": 2,
+            "long_context_output_multiplier": 1.5,
+            "fast": {
+              "input": 0.4,
+              "output": 2.4,
+              "cache_read": 0.04,
+              "cache_write": 0.5,
+              "long_context_input_multiplier": 2,
+              "long_context_output_multiplier": 1.5
+            }
           }
         }
       ]

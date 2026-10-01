@@ -167,6 +167,44 @@ describe("a bad overrides file never crashes", () => {
     ]);
   });
 
+  // The T2 review's case. From about 40k levels deep, JSON.stringify in an error message
+  // overflowed the stack and crashed loadPriceTable at startup; below that, the warning
+  // embedded the whole value (80 KB at 40k). JSON.parse itself copes with 400k.
+  const nested = (depth: number) => `${"[".repeat(depth)}1${"]".repeat(depth)}`;
+  test.each([
+    ["a rate", 40_000, (deep: string) => `{"models":{"x":{"input":${deep},"output":1}}}`],
+    ["a rate", 400_000, (deep: string) => `{"models":{"x":{"input":${deep},"output":1}}}`],
+    [
+      "a fast card",
+      400_000,
+      (deep: string) => `{"models":{"x":{"input":1,"output":1,"fast":${deep}}}}`,
+    ],
+    [
+      "a period",
+      400_000,
+      (deep: string) => `{"models":{"x":{"periods":[{"from":${deep},"card":{}}]}}}`,
+    ],
+  ])("a value in %s nested %i deep is skipped with a short warning", (_, depth, wrap) => {
+    write(wrap(nested(depth)));
+    const warnings = bundledOnly();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toStartWith(`${path}: skipped "x": models.x`);
+    expect((warnings[0] as string).length).toBeLessThan(path.length + 200);
+  });
+
+  test("a document nested 1,000,000 deep warns and uses bundled prices only", () => {
+    write(`{"models":{"x":${"[".repeat(1_000_000)}${"]".repeat(1_000_000)}}}`);
+    const warnings = bundledOnly();
+    expect(warnings).toHaveLength(1);
+  });
+
+  test("a leading byte-order mark is ignored", () => {
+    write(`\uFEFF${JSON.stringify({ models: { "claude-opus-4-8": { input: 4, output: 20 } } })}`);
+    const { table, warnings } = loadPriceTable(path);
+    expect(warnings).toEqual([]);
+    expect(table.rates("claude-opus-4-8", "standard", t)).toEqual({ input: 4, output: 20 });
+  });
+
   test("readOverrides never throws", () => {
     expect(readOverrides(join(dir, "nope", "x.json"))).toEqual({ models: {}, warnings: [] });
   });

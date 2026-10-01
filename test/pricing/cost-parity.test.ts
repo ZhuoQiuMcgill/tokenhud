@@ -2,7 +2,7 @@
 // fixture comes from scripts/gen-cost-parity.py, which runs cc-usage's own Python code.
 
 import { describe, expect, test } from "bun:test";
-import { computeCost, type TokenCounts } from "../../src/pricing/cost.ts";
+import { computeCost, type Rates, type TokenCounts } from "../../src/pricing/cost.ts";
 import parity from "../fixtures/pricing/cost-parity.json";
 import { bundledTable, CC_USAGE_MODELS, CC_USAGE_V261_INSTANT } from "./helpers.ts";
 
@@ -34,6 +34,28 @@ describe("cost parity with cc-usage v2.6.1", () => {
       if (rates === undefined) throw new Error(`fixture: no rates for ${model(c)}`);
       const got = computeCost(tokens(c), rates);
       if (got !== c[7]) mismatches.push(`${JSON.stringify(c)} -> ${got}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  // Random cards with odd decimal rates and non-power-of-two multipliers. The generator
+  // kept each case only if regrouping some cost term changes its result, and checked that
+  // every regrouping it knows (input and output rates, sum order, cache read, derived
+  // cache-read rate, cache write, aggregate creation, 5m and 1h buckets) is caught by at
+  // least 30 of them. The bundled rates are too round to catch most of those.
+  test("computeCost equals compute_cost exactly on order-sensitive random cards", () => {
+    const cards = parity.cards as Rates[];
+    const cardCases = parity.card_cases as Case[];
+    expect(cardCases.length).toBeGreaterThanOrEqual(200);
+    for (const caught of Object.values(parity.card_cases_catching)) {
+      expect(caught).toBeGreaterThanOrEqual(30);
+    }
+    const mismatches: string[] = [];
+    for (const c of cardCases) {
+      const card = cards[c[0]];
+      if (card === undefined) throw new Error(`fixture: no card at index ${c[0]}`);
+      const got = computeCost(tokens(c), card);
+      if (got !== c[7]) mismatches.push(`${JSON.stringify(card)} ${JSON.stringify(c)} -> ${got}`);
     }
     expect(mismatches).toEqual([]);
   });

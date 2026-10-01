@@ -7,18 +7,27 @@ import { normalizeModel } from "./normalize.ts";
 export type Tier = "standard" | "fast";
 
 /**
- * Fast (Anthropic) or priority/fast (OpenAI) rates. Long-context settings are not stated
- * here: the standard card's apply. A missing `cache_read` derives from the fast input at
- * the standard card's own cache-read ratio (see table.ts).
+ * Fast (Anthropic) or priority/fast (OpenAI) rates. A missing `cache_read` derives from
+ * the fast input at the standard card's own cache-read ratio (see table.ts).
+ *
+ * Long context is never inherited, so no long-context fast price is ever extrapolated:
+ * - the threshold is always the standard card's;
+ * - a fast card has a long-context price only if it states both multipliers, which apply
+ *   to its own rates above that threshold;
+ * - without them, a fast record above the threshold is "unpriced-tier";
+ * - a model with no threshold (every Claude model) has no long-context tier at all, so its
+ *   fast card covers the whole context window.
  */
 export interface FastCard {
   readonly input: number;
   readonly output: number;
   readonly cache_read?: number;
   readonly cache_write?: number;
+  readonly long_context_input_multiplier?: number;
+  readonly long_context_output_multiplier?: number;
 }
 
-export interface RateCard extends Rates {
+export interface RateCard extends Omit<Rates, "long_context_unpriced"> {
   readonly fast?: FastCard;
 }
 
@@ -77,7 +86,13 @@ const CARD_KEYS: ReadonlySet<string> = new Set([
   ...OPTIONAL_RATE_FIELDS,
   "fast",
 ]);
-const FAST_KEYS: ReadonlySet<string> = new Set(["input", "output", "cache_read", "cache_write"]);
+const FAST_OPTIONAL_FIELDS = [
+  "cache_read",
+  "cache_write",
+  "long_context_input_multiplier",
+  "long_context_output_multiplier",
+] as const;
+const FAST_KEYS: ReadonlySet<string> = new Set(["input", "output", ...FAST_OPTIONAL_FIELDS]);
 
 // Python's float() decimal syntax, minus the inf/nan spellings and digit underscores. JS
 // Number() alone would also take hex, octal and binary literals.
@@ -87,6 +102,20 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 function fail(path: string, message: string): never {
   throw new PricingSchemaError(`${path}: ${message}`);
+}
+
+/**
+ * A short description of a bad value for an error message. It never recurses: a user file
+ * can nest a value deeper than JSON.stringify's stack allows, and must still only warn.
+ */
+export function describeValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.length > 40 ? `"${value.slice(0, 40)}…"` : `"${value}"`;
+  }
+  if (Array.isArray(value)) return "an array";
+  if (value === null) return "null";
+  if (typeof value === "object") return "an object";
+  return String(value);
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,7 +146,7 @@ export function toRate(value: unknown, coerce: boolean): number | undefined {
 
 function rate(value: unknown, path: string, opts: ParseOptions): number {
   const n = toRate(value, opts.coerce);
-  if (n === undefined) fail(path, `expected a non-negative number, got ${JSON.stringify(value)}`);
+  if (n === undefined) fail(path, `expected a non-negative number, got ${describeValue(value)}`);
   return n;
 }
 
@@ -128,11 +157,14 @@ function parseFastCard(raw: unknown, path: string, opts: ParseOptions): FastCard
     input: rate(raw.input, `${path}.input`, opts),
     output: rate(raw.output, `${path}.output`, opts),
   };
-  if (raw.cache_read !== undefined) {
-    card.cache_read = rate(raw.cache_read, `${path}.cache_read`, opts);
+  for (const key of FAST_OPTIONAL_FIELDS) {
+    if (raw[key] !== undefined) card[key] = rate(raw[key], `${path}.${key}`, opts);
   }
-  if (raw.cache_write !== undefined) {
-    card.cache_write = rate(raw.cache_write, `${path}.cache_write`, opts);
+  if (
+    (card.long_context_input_multiplier === undefined) !==
+    (card.long_context_output_multiplier === undefined)
+  ) {
+    fail(path, "state both long-context multipliers, or neither (no long-context price)");
   }
   return card;
 }
@@ -148,6 +180,15 @@ export function parseRateCard(raw: unknown, path: string, opts: ParseOptions): R
     if (raw[key] !== undefined) card[key] = rate(raw[key], `${path}.${key}`, opts);
   }
   if (raw.fast !== undefined) card.fast = parseFastCard(raw.fast, `${path}.fast`, opts);
+  if (
+    card.fast?.long_context_input_multiplier !== undefined &&
+    card.long_context_threshold === undefined
+  ) {
+    fail(
+      `${path}.fast`,
+      "long-context multipliers need a long_context_threshold on the standard card",
+    );
+  }
   return card;
 }
 
@@ -190,12 +231,12 @@ function parseDated(raw: Record<string, unknown>, path: string, opts: ParseOptio
     if (typeof rawFrom === "string") {
       const parsed = parseIsoUtc(rawFrom);
       if (parsed === undefined) {
-        fail(`${at}.from`, `expected an ISO-8601 UTC time, got "${rawFrom}"`);
+        fail(`${at}.from`, `expected an ISO-8601 UTC time, got ${describeValue(rawFrom)}`);
       }
       from = rawFrom;
       fromMs = parsed;
     } else if (rawFrom !== null) {
-      fail(`${at}.from`, `expected null or an ISO-8601 UTC time, got ${JSON.stringify(rawFrom)}`);
+      fail(`${at}.from`, `expected null or an ISO-8601 UTC time, got ${describeValue(rawFrom)}`);
     } else if (i !== 0) {
       // "Since always" only makes sense before every dated period.
       fail(`${at}.from`, "only the first period may have a null 'from'");

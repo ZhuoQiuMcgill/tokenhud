@@ -67,6 +67,84 @@ describe("rate cards", () => {
   });
 });
 
+describe("fast long context", () => {
+  const standard = {
+    input: 5,
+    output: 30,
+    long_context_threshold: 272000,
+    long_context_input_multiplier: 2,
+    long_context_output_multiplier: 1.5,
+  };
+
+  test("a fast card may state its own long-context multipliers", () => {
+    const card = {
+      ...standard,
+      fast: {
+        input: 10,
+        output: 60,
+        long_context_input_multiplier: 2,
+        long_context_output_multiplier: 1.5,
+      },
+    };
+    expect(parse(card)).toEqual(card);
+    // Omitting them is valid: it means the fast tier has no long-context price.
+    expect(parse({ ...standard, fast: { input: 10, output: 60 } })).toEqual({
+      ...standard,
+      fast: { input: 10, output: 60 },
+    });
+  });
+
+  test("needs both multipliers, and a standard threshold to apply above", () => {
+    rejects(
+      { ...standard, fast: { input: 10, output: 60, long_context_input_multiplier: 2 } },
+      /m\.fast: state both long-context multipliers, or neither/,
+    );
+    rejects(
+      {
+        input: 5,
+        output: 30,
+        fast: {
+          input: 10,
+          output: 60,
+          long_context_input_multiplier: 2,
+          long_context_output_multiplier: 1.5,
+        },
+      },
+      /m\.fast: long-context multipliers need a long_context_threshold/,
+    );
+    // A fast card never carries its own threshold, and the resolved-only marker isn't a field.
+    rejects({ ...standard, fast: { input: 10, output: 60, long_context_threshold: 1 } }, /m\.fast/);
+    rejects({ ...standard, long_context_unpriced: true }, /unknown field "long_context_unpriced"/);
+  });
+});
+
+describe("error messages", () => {
+  test("describe a bad value briefly, without recursing into it", () => {
+    let deep: unknown = 1;
+    for (let i = 0; i < 100_000; i++) deep = [deep];
+    const message = (raw: unknown) => {
+      try {
+        parse(raw, lenient);
+      } catch (error) {
+        return (error as Error).message;
+      }
+      throw new Error("expected a rejection");
+    };
+    expect(message({ input: deep, output: 1 })).toBe(
+      "m.input: expected a non-negative number, got an array",
+    );
+    expect(message({ input: { nested: deep }, output: 1 })).toEndWith("got an object");
+    expect(message({ input: "x".repeat(10_000), output: 1 })).toBe(
+      `m.input: expected a non-negative number, got "${"x".repeat(40)}…"`,
+    );
+    expect(message({ input: null, output: 1 })).toEndWith("got null");
+    expect(message({ input: true, output: 1 })).toEndWith("got true");
+    expect(message({ periods: [{ from: "y".repeat(500), card: { input: 1, output: 1 } }] })).toBe(
+      `m.periods[0].from: expected an ISO-8601 UTC time, got "${"y".repeat(40)}…"`,
+    );
+  });
+});
+
 describe("dated pricing", () => {
   const card = { input: 1, output: 2 };
 

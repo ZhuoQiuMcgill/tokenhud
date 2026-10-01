@@ -53,23 +53,36 @@ function standardRates(card: RateCard): Rates {
 // at 0.05x input) reads at 0.05x of its fast input too. A standard card without a stated
 // rate reads at the default 0.1x, which computeCost derives from the fast input unaided.
 // Cache writes need no derivation: without `cache_write`, computeCost charges the 1.25x
-// and 2x write multipliers on the fast input. Long-context settings are the standard
-// card's.
+// and 2x write multipliers on the fast input.
+//
+// Long context: the threshold is the standard card's, but the multipliers must be the fast
+// card's own. Without them the fast tier has no long-context price, and computeCost
+// returns "unpriced-tier" above the threshold rather than extrapolate one.
 function fastRates(card: RateCard): Rates | undefined {
   const fast = card.fast;
   if (fast === undefined) return undefined;
-  const { fast: _fast, cache_read, cache_write: _write, ...longContext } = card;
   const rates: { -readonly [K in keyof Rates]: Rates[K] } = {
-    ...longContext,
     input: fast.input,
     output: fast.output,
   };
   if (fast.cache_read !== undefined) rates.cache_read = fast.cache_read;
   // A free standard input gives no ratio to scale by; the default 0.1x then applies.
-  else if (cache_read !== undefined && card.input > 0) {
-    rates.cache_read = fast.input * (cache_read / card.input);
+  else if (card.cache_read !== undefined && card.input > 0) {
+    rates.cache_read = fast.input * (card.cache_read / card.input);
   }
   if (fast.cache_write !== undefined) rates.cache_write = fast.cache_write;
+  if (card.long_context_threshold !== undefined) {
+    rates.long_context_threshold = card.long_context_threshold;
+    if (
+      fast.long_context_input_multiplier !== undefined &&
+      fast.long_context_output_multiplier !== undefined
+    ) {
+      rates.long_context_input_multiplier = fast.long_context_input_multiplier;
+      rates.long_context_output_multiplier = fast.long_context_output_multiplier;
+    } else {
+      rates.long_context_unpriced = true;
+    }
+  }
   return Object.freeze(rates);
 }
 
@@ -112,6 +125,8 @@ export class PriceTable {
    * The rates for `model` at `tier`, in effect at `atMs`. "unpriced" when the model isn't
    * in the table or `atMs` falls before its first period; "unpriced-tier" when the model
    * has no card for that tier then. A fast request is never silently priced as standard.
+   * Fast rates without a long-context price carry `long_context_unpriced`, and computeCost
+   * turns a record above the threshold into "unpriced-tier".
    */
   rates(model: string | null | undefined, tier: Tier, atMs: number): Rates | Unpriced {
     const periods = this.#periods(model);
@@ -143,19 +158,21 @@ export class PriceTable {
     const unpriced = new Map<string, UnpricedUsage>();
     for (const record of records) {
       const tokens = record.input + record.output + record.cacheRead + record.cacheCreation;
-      const rates = this.rates(record.model, record.tier, record.atMs);
-      if (typeof rates !== "string") {
+      // The cost, not just the rates: a fast long-context record can be unpriced on a
+      // priced card.
+      const reason = this.cost(record);
+      if (typeof reason !== "string") {
         pricedTokens += tokens;
         continue;
       }
       unpricedTokens += tokens;
       const model = normalizeModel(record.model);
-      const key = `${model}\0${record.tier}\0${rates}`;
+      const key = `${model}\0${record.tier}\0${reason}`;
       const seen = unpriced.get(key);
       unpriced.set(key, {
         model,
         tier: record.tier,
-        reason: rates,
+        reason,
         tokens: (seen?.tokens ?? 0) + tokens,
       });
     }

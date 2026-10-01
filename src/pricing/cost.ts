@@ -26,6 +26,11 @@ export interface Rates {
   readonly long_context_threshold?: number;
   readonly long_context_input_multiplier?: number;
   readonly long_context_output_multiplier?: number;
+  /**
+   * Set only on resolved fast rates whose fast card states no long-context price: a
+   * request above the threshold then has no price ("unpriced-tier"). Never in pricing.json.
+   */
+  readonly long_context_unpriced?: true;
 }
 
 /**
@@ -70,13 +75,15 @@ export function cacheReadRate(card: Rates, inputMult = 1): number {
  *
  * Long context applies when `input + cacheRead` is strictly above the card's threshold. It
  * scales input, cache reads and cache writes by the input multiplier, and output by the
- * output multiplier.
+ * output multiplier. On a card marked `long_context_unpriced`, such a record is
+ * "unpriced-tier" instead: no long-context price is ever extrapolated.
  */
 export function computeCost(tokens: TokenCounts, card: Rates | Unpriced): number | Unpriced {
   if (typeof card === "string") return card;
 
   const threshold = card.long_context_threshold;
   const longContext = threshold !== undefined && tokens.input + tokens.cacheRead > threshold;
+  if (longContext && card.long_context_unpriced) return "unpriced-tier";
   const inputMult = longContext ? (card.long_context_input_multiplier ?? 1) : 1;
   const outputMult = longContext ? (card.long_context_output_multiplier ?? 1) : 1;
 

@@ -11,11 +11,13 @@
 //   live_YYYYMMDDhhmmss.md        https://developers.openai.com/api/docs/pricing.md
 //   changelog_YYYYMMDDhhmmss.md   https://developers.openai.com/api/docs/changelog.md
 //
-// Rules (docs/tasks/T2-pricing.md §3):
-// - a price seen to change between two captures takes effect at the earliest capture that
-//   shows the new price, unless an official announcement gives the date (ANNOUNCEMENTS);
+// Rules (docs/tasks/T2-pricing.md §3, and the T2 review rulings):
+// - a change seen between two captures takes effect at the earliest capture that shows it,
+//   unless an official announcement gives the date (ANNOUNCEMENTS);
 // - the first known card also applies to everything before the first capture;
-// - "Priority" is the fast tier: the page renamed it "Fast" on 2026-07-30.
+// - "Priority" is the fast tier: the page renamed it "Fast" on 2026-07-30;
+// - a long-context price is only ever read off the page, per tier, per capture. A tier
+//   whose table shows no long-context price for a model gets none.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -38,19 +40,35 @@ const MODELS = [
   "gpt-5.2",
 ];
 
-// Official announcements that date a price change more precisely than the captures do.
-// Each quote must appear verbatim in the changelog capture under the given date. The
-// changelog gives a date but no time or zone; it is taken as 00:00 UTC (an assumption,
-// recorded in SOURCES.md).
-const ANNOUNCEMENTS = [
+type Change = "price" | "fast-long-context" | "standard-long-context";
+
+// Official announcements that date a change more precisely than the captures do. Each
+// quote must appear verbatim in the changelog capture under the given date, and must match
+// the kind of change the captures show. The changelog gives a date but no time or zone; it
+// is read as 00:00 America/Los_Angeles, where OpenAI is based (see SOURCES.md).
+const ANNOUNCEMENTS: ReadonlyArray<{
+  models: readonly string[];
+  date: string;
+  change: Change;
+  quote: string;
+}> = [
   {
     models: ["gpt-5.6-terra", "gpt-5.6-luna"],
     date: "2026-07-30",
+    change: "price",
     quote: "Starting July 30, GPT-5.6 Luna costs 80% less, while GPT-5.6 Terra costs 20% less.",
+  },
+  {
+    models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    date: "2026-08-05",
+    change: "fast-long-context",
+    quote:
+      "Fast mode now supports long-context requests for GPT-5.6 Sol, GPT-5.6 Terra, and GPT-5.6 Luna.",
   },
   {
     models: ["gpt-5.6-sol"],
     date: "2026-08-21",
+    change: "price",
     quote: "GPT-5.6 Sol now costs $4 per million input tokens and $20 per million output tokens",
   },
 ];
@@ -66,16 +84,28 @@ interface Prices {
   cache_read?: number;
   cache_write?: number;
 }
-type TierPrices = Partial<Record<Tier, Prices>>;
+// What one capture shows for one model and tier. `long` is the long-context prices, null
+// when the table shows none for the model, and undefined when this capture doesn't show
+// the row at all (later captures collapse all but the newest models).
+interface Observed {
+  short: Prices;
+  long?: Prices | null;
+}
+type TierObservations = Partial<Record<Tier, Observed>>;
 interface Capture {
   file: string;
   at: string; // ISO-8601 UTC
-  models: Map<string, TierPrices>;
+  models: Map<string, TierObservations>;
 }
-interface LongContext {
-  long_context_threshold: number;
-  long_context_input_multiplier: number;
-  long_context_output_multiplier: number;
+interface Multipliers {
+  input: number;
+  output: number;
+}
+interface State {
+  standard: Prices;
+  fast: Prices | undefined;
+  standardLong: Multipliers | null;
+  fastLong: Multipliers | null;
 }
 
 const TIERS: Record<string, Tier | undefined> = {
@@ -91,6 +121,26 @@ function captureTime(file: string): string {
   return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`;
 }
 
+// 00:00 in Los Angeles on `day`, as an ISO-8601 UTC time: 07:00Z in summer, 08:00Z in
+// winter.
+function pacificMidnight(day: string): string {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  const local = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  for (const hour of [7, 8]) {
+    const at = new Date(Date.UTC(y, m - 1, d, hour));
+    if (local.format(at) === `${day}, 00:00`) return at.toISOString().replace(".000Z", "Z");
+  }
+  throw new Error(`${day}: no Pacific midnight found`);
+}
+
 function readText(path: string): string {
   const bytes = readFileSync(path);
   const gzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
@@ -102,22 +152,6 @@ function modelName(cell: unknown): string | undefined {
   return typeof cell === "string" ? cell.split(" (")[0]?.trim() : undefined;
 }
 
-function addPrices(
-  into: Map<string, TierPrices>,
-  model: string,
-  tier: Tier,
-  prices: Prices,
-  where: string,
-) {
-  const held = into.get(model) ?? {};
-  const before = held[tier];
-  if (before !== undefined && !samePrices(before, prices)) {
-    throw new Error(`${where}: ${model} ${tier} listed twice with different prices`);
-  }
-  held[tier] = prices;
-  into.set(model, held);
-}
-
 function samePrices(a: Prices | undefined, b: Prices | undefined): boolean {
   if (a === undefined || b === undefined) return a === b;
   return (
@@ -126,6 +160,35 @@ function samePrices(a: Prices | undefined, b: Prices | undefined): boolean {
     a.cache_read === b.cache_read &&
     a.cache_write === b.cache_write
   );
+}
+
+function sameMultipliers(a: Multipliers | null, b: Multipliers | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.input === b.input && a.output === b.output;
+}
+
+function observe(
+  into: Map<string, TierObservations>,
+  model: string,
+  tier: Tier,
+  seen: Observed,
+  where: string,
+) {
+  const held = into.get(model) ?? {};
+  const before = held[tier];
+  if (before !== undefined) {
+    const longDiffers =
+      before.long !== undefined &&
+      seen.long !== undefined &&
+      !(before.long === seen.long || samePrices(before.long ?? undefined, seen.long ?? undefined));
+    if (!samePrices(before.short, seen.short) || longDiffers) {
+      throw new Error(`${where}: ${model} ${tier} listed twice with different prices`);
+    }
+  }
+  // null ("no long-context price") is an observation; only undefined means "not shown".
+  const long = seen.long !== undefined ? seen.long : before?.long;
+  held[tier] = long === undefined ? { short: seen.short } : { short: seen.short, long };
+  into.set(model, held);
 }
 
 function prices(
@@ -152,6 +215,13 @@ function prices(
   return p;
 }
 
+// Long-context prices from four cells, or null when the page shows "-" for all of them.
+function longPrices(cells: readonly unknown[], where: string): Prices | null {
+  if (cells.every((c) => c === "-")) return null;
+  const [input, cached, write, output] = cells;
+  return prices(input, cached, write, output, where);
+}
+
 // ---- HTML captures: the tables are Astro islands whose props carry the price rows ----
 
 function decodeEntities(text: string): string {
@@ -162,6 +232,11 @@ function decodeEntities(text: string): string {
     return { quot: '"', amp: "&", lt: "<", gt: ">", apos: "'" }[lower] ?? "";
   });
 }
+
+const cellText = (html: string) =>
+  decodeEntities(html.replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
 
 // Astro serialises island props as [type, payload]: 0 is a plain value (an object's own
 // values serialised again), 1 an array of serialised values. The pricing islands use no
@@ -184,8 +259,26 @@ function headingLabel(heading: unknown): string | undefined {
   return undefined;
 }
 
-function parseHtml(file: string, text: string): Map<string, TierPrices> {
-  const models = new Map<string, TierPrices>();
+// The flagship island's server-rendered table, which holds what its props don't: the
+// long-context columns. Rows are [model, 4 short-context cells] when the table has no
+// long-context columns (Priority/Fast until 2026-08-05), else [model, 4 short, 4 long].
+// Later captures render only the newest few rows; the rest appear after hydration.
+function renderedRows(text: string, from: number): Map<string, string[]> {
+  const start = text.indexOf("<table", from);
+  const table = text.slice(start, text.indexOf("</table>", start));
+  const rows = new Map<string, string[]>();
+  for (const tr of table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
+    const cells = [...(tr[1] ?? "").matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) =>
+      cellText(m[1] ?? ""),
+    );
+    const model = modelName(cells[0]);
+    if (model !== undefined && MODELS.includes(model)) rows.set(model, cells.slice(1));
+  }
+  return rows;
+}
+
+function parseHtml(file: string, text: string): Map<string, TierObservations> {
+  const models = new Map<string, TierObservations>();
   const panes = [...text.matchAll(/data-content-switcher-pane="true" data-value="([^"]+)"/g)];
   for (const island of text.matchAll(/<astro-island\b([^>]*)>/g)) {
     const attr = / props="([^"]*)"/.exec(island[1] ?? "");
@@ -200,30 +293,47 @@ function parseHtml(file: string, text: string): Map<string, TierPrices> {
     if (typeof props.tier === "string" && Array.isArray(props.rows)) {
       const tier = TIERS[props.tier];
       if (tier === undefined) continue;
+      const rendered = renderedRows(text, island.index ?? 0);
       for (const row of props.rows) {
         const model = Array.isArray(row) ? modelName(row[0]) : undefined;
         if (model === undefined || !MODELS.includes(model)) continue;
+        const at = `${where} ${model}`;
         const cells = (row as unknown[]).slice(1);
         const [input, cached, a, b] = cells;
-        const p =
+        const short =
           cells.length === 4
-            ? prices(input, cached, a, b, `${where} ${model}`)
+            ? prices(input, cached, a, b, at)
             : cells.length === 3
-              ? prices(input, cached, undefined, a, `${where} ${model}`)
+              ? prices(input, cached, undefined, a, at)
               : undefined;
-        if (p === undefined) throw new Error(`${where}: ${model} row has ${cells.length} cells`);
-        addPrices(models, model, tier, p, where);
+        if (short === undefined) throw new Error(`${at}: row has ${cells.length} cells`);
+
+        let long: Prices | null | undefined;
+        const shown = rendered.get(model);
+        if (shown !== undefined) {
+          const [ri, rc, rw, ro] = shown;
+          if (!samePrices(prices(ri, rc, rw, ro, at), short)) {
+            throw new Error(`${at}: rendered row disagrees with the island's props`);
+          }
+          if (shown.length === 4) long = null;
+          else if (shown.length === 8) long = longPrices(shown.slice(4), at);
+          else throw new Error(`${at}: rendered row has ${shown.length} cells`);
+        }
+        observe(models, model, tier, long === undefined ? { short } : { short, long }, where);
       }
       continue;
     }
 
     // "Specialized models" (gpt-5.3-codex): grouped by category, columns named by the
-    // headings, tier taken from the tab pane the island sits in. Grouped tables without a
-    // Category column, such as the Cyber models table, repeat flagship rows and are
-    // skipped.
+    // headings, tier taken from the tab pane the island sits in. It has no long-context
+    // columns. Grouped tables without a Category column, such as the Cyber models table,
+    // repeat flagship rows and are skipped.
     const headings = Array.isArray(props.headings) ? props.headings.map(headingLabel) : [];
     if (headings[0] !== "Category" || headings[1] !== "Model" || !Array.isArray(props.groups)) {
       continue;
+    }
+    if (headings.some((h) => h?.startsWith("Long context"))) {
+      throw new Error(`${where}: a specialized table with long-context columns`);
     }
     const pane = panes.filter((p) => (p.index ?? 0) < (island.index ?? 0)).at(-1)?.[1];
     const tier = pane === undefined ? undefined : TIERS[pane];
@@ -236,14 +346,14 @@ function parseHtml(file: string, text: string): Map<string, TierPrices> {
         const model = modelName(row[column("Model")]);
         if (model === undefined || !MODELS.includes(model)) continue;
         const cell = (name: string) => (column(name) < 0 ? undefined : row[column(name)]);
-        const p = prices(
+        const short = prices(
           cell("Input"),
           cell("Cached input"),
           cell("Cache writes"),
           cell("Output"),
           `${where} ${model}`,
         );
-        addPrices(models, model, tier, p, where);
+        observe(models, model, tier, { short, long: null }, where);
       }
     }
   }
@@ -263,8 +373,7 @@ function tableRows(lines: string[], start: number): { rows: string[][]; end: num
 }
 
 function parseMarkdown(file: string, text: string) {
-  const models = new Map<string, TierPrices>();
-  const longContext = new Map<string, Partial<Record<Tier, Prices>>>();
+  const models = new Map<string, TierObservations>();
   const lines = text.split("\n");
   let heading = "";
   let label: string | undefined;
@@ -296,64 +405,44 @@ function parseMarkdown(file: string, text: string) {
         cell("Short context output", "Output"),
         where,
       );
-      addPrices(models, model, tier, short, file);
-      const longInput = cell("Long context input");
-      if (longInput !== undefined && longInput !== "-") {
-        const long = prices(
-          longInput,
-          cell("Long context cached input"),
-          cell("Long context cache writes"),
-          cell("Long context output"),
-          where,
-        );
-        longContext.set(model, { ...longContext.get(model), [tier]: long });
-      }
+      const long =
+        col("Long context input") < 0
+          ? null
+          : longPrices(
+              [
+                cell("Long context input"),
+                cell("Long context cached input"),
+                cell("Long context cache writes"),
+                cell("Long context output"),
+              ],
+              where,
+            );
+      observe(models, model, tier, { short, long }, file);
     }
   }
   const threshold = /Long context: >(\d+)K input tokens/.exec(text);
   if (!threshold) throw new Error(`${file}: no long-context threshold note`);
-  return { models, longContext, threshold: Number(threshold[1]) * 1000 };
+  return { models, threshold: Number(threshold[1]) * 1000 };
 }
 
-// Long-context settings come from the live page, the only capture with machine-readable
-// long-context columns. A multiplier is the long price over the short one, which must
-// agree for every column it applies to.
-function longContextSettings(
-  model: string,
-  short: TierPrices,
-  long: Partial<Record<Tier, Prices>> | undefined,
-  threshold: number,
-): { settings?: LongContext; note?: string } {
-  if (long?.standard === undefined || short.standard === undefined) return {};
+// A long-context multiplier is the long price over the short one. It must be the same for
+// input, cached input and cache writes, so a pair of multipliers reproduces every column.
+function multipliers(short: Prices, long: Prices | null, where: string): Multipliers | null {
+  if (long === null) return null;
   const round = (x: number) => Math.round(x * 1e6) / 1e6;
-  const inMult = round(long.standard.input / short.standard.input);
-  const outMult = round(long.standard.output / short.standard.output);
+  const m = { input: round(long.input / short.input), output: round(long.output / short.output) };
   const close = (a: number | undefined, b: number | undefined) =>
     a === b || (a !== undefined && b !== undefined && Math.abs(a - b) <= 1e-9 * Math.max(1, a));
-  for (const tier of ["standard", "fast"] as const) {
-    const s = short[tier];
-    const l = long[tier];
-    if (s === undefined || l === undefined) continue;
-    const scale = (x: number | undefined) => (x === undefined ? undefined : x * inMult);
-    if (
-      !close(l.input, s.input * inMult) ||
-      !close(l.cache_read, scale(s.cache_read)) ||
-      !close(l.cache_write, scale(s.cache_write)) ||
-      !close(l.output, s.output * outMult)
-    ) {
-      throw new Error(`${model} ${tier}: long-context prices don't follow one multiplier pair`);
-    }
+  const scale = (x: number | undefined) => (x === undefined ? undefined : x * m.input);
+  if (
+    !close(long.input, short.input * m.input) ||
+    !close(long.cache_read, scale(short.cache_read)) ||
+    !close(long.cache_write, scale(short.cache_write)) ||
+    !close(long.output, short.output * m.output)
+  ) {
+    throw new Error(`${where}: long-context prices don't follow one multiplier pair`);
   }
-  const settings = {
-    long_context_threshold: threshold,
-    long_context_input_multiplier: inMult,
-    long_context_output_multiplier: outMult,
-  };
-  const note =
-    short.fast !== undefined && long.fast === undefined
-      ? `${model}: the page lists no long-context Fast price; the standard multipliers are applied`
-      : undefined;
-  return note === undefined ? { settings } : { settings, note };
+  return m;
 }
 
 // ---- changelog ----
@@ -375,75 +464,142 @@ function announcementDate(changelog: string, quote: string): string | undefined 
 
 interface Period {
   from: string | null;
-  prices: TierPrices;
+  state: State;
   first: Capture;
   last: Capture;
+  change?: Change;
   evidence?: string;
+}
+
+// Per capture, the model's state. A long-context observation a capture doesn't show is
+// carried forward from the previous capture, or back from the first that shows one.
+function statesFor(model: string, captures: Capture[]): Array<[Capture, State]> {
+  const seen = captures.filter((c) => c.models.has(model));
+  if (seen.length === 0) throw new Error(`${model}: in no capture`);
+  const longFor = (tier: Tier): Array<Prices | null | undefined> => {
+    const list = seen.map((c) => c.models.get(model)?.[tier]?.long);
+    for (let i = 1; i < list.length; i++) if (list[i] === undefined) list[i] = list[i - 1];
+    for (let i = list.length - 2; i >= 0; i--) if (list[i] === undefined) list[i] = list[i + 1];
+    return list;
+  };
+  const standardLong = longFor("standard");
+  const fastLong = longFor("fast");
+  return seen.map((capture, i) => {
+    const found = capture.models.get(model) as TierObservations;
+    const where = `${capture.file} ${model}`;
+    if (found.standard === undefined) throw new Error(`${where}: no standard price`);
+    const sLong = standardLong[i];
+    const fLong = fastLong[i];
+    if (sLong === undefined)
+      throw new Error(`${model}: no capture shows its standard long context`);
+    if (found.fast !== undefined && fLong === undefined) {
+      throw new Error(`${model}: no capture shows its fast long context`);
+    }
+    return [
+      capture,
+      {
+        standard: found.standard.short,
+        fast: found.fast?.short,
+        standardLong: multipliers(found.standard.short, sLong, `${where} standard`),
+        fastLong:
+          found.fast === undefined
+            ? null
+            : multipliers(found.fast.short, fLong ?? null, `${where} fast`),
+      },
+    ];
+  });
+}
+
+function changeOf(a: State, b: State): Change[] {
+  const changes: Change[] = [];
+  if (!samePrices(a.standard, b.standard) || !samePrices(a.fast, b.fast)) changes.push("price");
+  if (!sameMultipliers(a.fastLong, b.fastLong)) changes.push("fast-long-context");
+  if (!sameMultipliers(a.standardLong, b.standardLong)) changes.push("standard-long-context");
+  return changes;
 }
 
 function periodsFor(model: string, captures: Capture[], changelog: string): Period[] {
   const periods: Period[] = [];
-  for (const capture of captures) {
-    const found = capture.models.get(model);
-    if (found === undefined) {
-      if (periods.length > 0) throw new Error(`${capture.file}: ${model} disappeared`);
-      continue;
-    }
-    if (found.standard === undefined) {
-      throw new Error(`${capture.file}: ${model} has no standard price`);
-    }
+  for (const [capture, state] of statesFor(model, captures)) {
     const current = periods.at(-1);
     if (current === undefined) {
-      periods.push({ from: null, prices: found, first: capture, last: capture });
+      periods.push({ from: null, state, first: capture, last: capture });
       continue;
     }
-    if ((current.prices.fast === undefined) !== (found.fast === undefined)) {
+    if ((current.state.fast === undefined) !== (state.fast === undefined)) {
       throw new Error(`${capture.file}: ${model}'s fast price appeared or disappeared`);
     }
-    if (
-      samePrices(current.prices.standard, found.standard) &&
-      samePrices(current.prices.fast, found.fast)
-    ) {
+    const changes = changeOf(current.state, state);
+    if (changes.length === 0) {
       current.last = capture;
       continue;
     }
+    if (changes.length > 1) {
+      throw new Error(`${capture.file}: ${model} changed ${changes.join(" and ")} at once`);
+    }
+    const change = changes[0] as Change;
     const lastOld = current.last;
     const matches = ANNOUNCEMENTS.filter(
       (a) =>
         a.models.includes(model) &&
+        a.change === change &&
         a.date >= lastOld.at.slice(0, 10) &&
-        `${a.date}T00:00:00Z` <= capture.at,
+        pacificMidnight(a.date) <= capture.at,
     );
     if (matches.length > 1) throw new Error(`${model}: several announcements match ${capture.at}`);
     const announcement = matches[0];
     let from = capture.at;
-    let evidence = `price first shown by ${capture.file} (${capture.at}); previous capture ${lastOld.file} (${lastOld.at}) shows the old price`;
+    let evidence = `first shown by ${capture.file} (${capture.at}); previous capture ${lastOld.file} (${lastOld.at}) shows the old state`;
     if (announcement !== undefined) {
       const dated = announcementDate(changelog, announcement.quote);
       if (dated !== announcement.date) {
         throw new Error(`changelog: "${announcement.quote}" not found under ${announcement.date}`);
       }
-      from = `${announcement.date}T00:00:00Z`;
+      from = pacificMidnight(announcement.date);
       evidence = `${CHANGELOG_URL} (${announcement.date}): "${announcement.quote}"; ${evidence}`;
     }
-    periods.push({ from, prices: found, first: capture, last: capture, evidence });
+    periods.push({ from, state, first: capture, last: capture, change, evidence });
   }
-  if (periods.length === 0) throw new Error(`${model}: in no capture`);
   return periods;
 }
 
 // ---- output ----
 
-function card(found: TierPrices, longContext: LongContext | undefined) {
-  const { standard, fast } = found;
-  if (standard === undefined) throw new Error("unreachable: periods always have a standard price");
+function card(state: State, threshold: number) {
+  const { standard, fast, standardLong, fastLong } = state;
+  if (fastLong !== null && standardLong === null) {
+    throw new Error("a long-context fast price needs a long-context standard price");
+  }
+  const cache = (p: Prices) => ({
+    ...(p.cache_read === undefined ? {} : { cache_read: p.cache_read }),
+    ...(p.cache_write === undefined ? {} : { cache_write: p.cache_write }),
+  });
   return {
     input: standard.input,
     output: standard.output,
-    ...(standard.cache_read === undefined ? {} : { cache_read: standard.cache_read }),
-    ...(standard.cache_write === undefined ? {} : { cache_write: standard.cache_write }),
-    ...longContext,
-    ...(fast === undefined ? {} : { fast }),
+    ...cache(standard),
+    ...(standardLong === null
+      ? {}
+      : {
+          long_context_threshold: threshold,
+          long_context_input_multiplier: standardLong.input,
+          long_context_output_multiplier: standardLong.output,
+        }),
+    ...(fast === undefined
+      ? {}
+      : {
+          fast: {
+            input: fast.input,
+            output: fast.output,
+            ...cache(fast),
+            ...(fastLong === null
+              ? {}
+              : {
+                  long_context_input_multiplier: fastLong.input,
+                  long_context_output_multiplier: fastLong.output,
+                }),
+          },
+        }),
   };
 }
 
@@ -477,6 +633,13 @@ function formatJson(value: unknown, indent = "", prefix = "", suffix = ""): stri
   return [`${indent}${prefix}${open}`, ...body, `${indent}${close}${suffix}`].join("\n");
 }
 
+const showPrices = (p: Prices | undefined) =>
+  p === undefined
+    ? "none"
+    : `$${p.input}/$${p.output} (cached $${p.cache_read ?? "-"}, writes $${p.cache_write ?? "-"})`;
+const showLong = (m: Multipliers | null) =>
+  m === null ? "no long-context price" : `long context ${m.input}x/${m.output}x`;
+
 function main() {
   const { values, positionals } = parseArgs({
     args: Bun.argv.slice(2),
@@ -491,7 +654,7 @@ function main() {
 
   const files = readdirSync(dir).sort((a, b) => captureTime(a).localeCompare(captureTime(b)));
   const captures: Capture[] = [];
-  let live: ReturnType<typeof parseMarkdown> | undefined;
+  let threshold: number | undefined;
   let liveAt = "";
   let changelog = "";
   for (const file of files) {
@@ -499,51 +662,43 @@ function main() {
     if (/^(s|wb)_\d{14}(\.html)?$/.test(file)) {
       captures.push({ file, at: captureTime(file), models: parseHtml(file, text) });
     } else if (/^live_\d{14}\.md$/.test(file)) {
-      live = parseMarkdown(file, text);
+      const live = parseMarkdown(file, text);
+      threshold = live.threshold;
       liveAt = captureTime(file);
       captures.push({ file, at: liveAt, models: live.models });
     } else if (/^changelog_\d{14}\.md$/.test(file)) {
       changelog = text;
     }
   }
-  if (live === undefined) throw new Error(`${dir}: no live_*.md capture`);
+  if (threshold === undefined) throw new Error(`${dir}: no live_*.md capture`);
   if (changelog === "") throw new Error(`${dir}: no changelog_*.md capture`);
-  const latest = live;
 
   const out = [`OpenAI captures: ${captures.length}, ${captures[0]?.at} to ${liveAt}`, ""];
   const boundaries = [
-    "| Model | Effective from | Change (standard; fast) | Evidence |",
+    "| Model | Effective from | Change | Evidence |",
     "| --- | --- | --- | --- |",
   ];
   const entries: Record<string, unknown> = {};
-  const show = (p: Prices | undefined) =>
-    p === undefined
-      ? "none"
-      : `$${p.input}/$${p.output} (cached $${p.cache_read ?? "-"}, writes $${p.cache_write ?? "-"})`;
   for (const model of MODELS) {
     const periods = periodsFor(model, captures, changelog);
-    const lastPrices = periods.at(-1)?.prices ?? {};
-    const lc = longContextSettings(
-      model,
-      lastPrices,
-      latest.longContext.get(model),
-      latest.threshold,
-    );
-    if (lc.note) out.push(`note: ${lc.note}`);
     for (const [i, p] of periods.entries()) {
+      const { standard, fast, standardLong, fastLong } = p.state;
       out.push(
-        `${model} from ${p.from ?? "the start"}: standard ${show(p.prices.standard)}; fast ${show(p.prices.fast)}; ` +
-          `seen ${p.first.file} .. ${p.last.file}`,
+        `${model} from ${p.from ?? "the start"}: standard ${showPrices(standard)}, ${showLong(standardLong)}; ` +
+          `fast ${showPrices(fast)}, ${showLong(fastLong)}; seen ${p.first.file} .. ${p.last.file}`,
       );
       const previous = periods[i - 1];
-      if (previous !== undefined) {
-        boundaries.push(
-          `| ${model} | ${p.from} | ${show(previous.prices.standard)} -> ${show(p.prices.standard)}; ` +
-            `${show(previous.prices.fast)} -> ${show(p.prices.fast)} | ${p.evidence} |`,
-        );
-      }
+      if (previous === undefined) continue;
+      const what =
+        p.change === "price"
+          ? `${showPrices(previous.state.standard)} -> ${showPrices(standard)}; ` +
+            `fast ${showPrices(previous.state.fast)} -> ${showPrices(fast)}`
+          : p.change === "fast-long-context"
+            ? `fast: ${showLong(previous.state.fastLong)} -> ${showLong(fastLong)}`
+            : `standard: ${showLong(previous.state.standardLong)} -> ${showLong(standardLong)}`;
+      boundaries.push(`| ${model} | ${p.from} | ${what} | ${p.evidence} |`);
     }
-    const cards = periods.map((p) => ({ from: p.from, card: card(p.prices, lc.settings) }));
+    const cards = periods.map((p) => ({ from: p.from, card: card(p.state, threshold) }));
     entries[model] = cards.length === 1 ? cards[0]?.card : { periods: cards };
   }
   console.log([...out, "", ...boundaries].join("\n"));

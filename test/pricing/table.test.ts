@@ -17,19 +17,25 @@ function card(model: string, tier: Tier, iso: string): number[] | string {
   return [r.input, r.output, r.cache_read ?? Number.NaN, r.cache_write ?? Number.NaN];
 }
 
+// OpenAI's changelog dates changes without a time or zone; tokenhud reads each date as
+// 00:00 America/Los_Angeles, which is 07:00Z in summer (PDT). See SOURCES.md.
 describe("dated OpenAI periods", () => {
-  // The changelog dates this cut Aug 21 ("GPT-5.6 Sol now costs $4 ... and $20 ..."). The
-  // first capture showing it is 2026-08-22T10:30:53Z; the 2026-08-21T10:30:49Z capture
-  // still showed $5/$30. The announcement wins (task §3), at 00:00 UTC. See SOURCES.md.
-  test("gpt-5.6-sol: $5/$30 (fast $10/$60) until the 2026-08-21 cut", () => {
-    for (const iso of ["2026-07-09T00:00:00Z", "2026-08-20T23:59:59.999Z"]) {
+  // Changelog, Aug 21: "GPT-5.6 Sol now costs $4 ... and $20 ...". The first capture
+  // showing it is 2026-08-22T10:30:53Z; the page still showed $5/$30 at 2026-08-21T10:30:49Z
+  // (page-update lag). The announcement wins (task §3).
+  test("gpt-5.6-sol: $5/$30 (fast $10/$60) until 2026-08-21T07:00Z", () => {
+    for (const iso of [
+      "2026-07-09T00:00:00Z",
+      "2026-08-21T06:59:00Z",
+      "2026-08-21T06:59:59.999Z",
+    ]) {
       expect(card("gpt-5.6-sol", "standard", iso)).toEqual([5, 30, 0.5, 6.25]);
       expect(card("gpt-5.6-sol", "fast", iso)).toEqual([10, 60, 1, 12.5]);
     }
   });
 
-  test("gpt-5.6-sol: $4/$20 (fast $8/$40) from 2026-08-21T00:00Z", () => {
-    for (const iso of ["2026-08-21T00:00:00Z", "2026-08-21T23:59:00Z", "2026-08-23T00:00:00Z"]) {
+  test("gpt-5.6-sol: $4/$20 (fast $8/$40) from 2026-08-21T07:00Z", () => {
+    for (const iso of ["2026-08-21T07:00:00Z", "2026-08-21T23:59:00Z", "2026-08-23T00:00:00Z"]) {
       expect(card("gpt-5.6-sol", "standard", iso)).toEqual([4, 20, 0.4, 5]);
       expect(card("gpt-5.6-sol", "fast", iso)).toEqual([8, 40, 0.8, 10]);
     }
@@ -38,22 +44,22 @@ describe("dated OpenAI periods", () => {
 
   // "Starting July 30, GPT-5.6 Luna costs 80% less, while GPT-5.6 Terra costs 20% less."
   // Captures: old price 2026-07-28T10:30:58Z, new 2026-07-30T19:51:07Z.
-  test("gpt-5.6-terra: $2.50/$15 (fast $5/$30) -> $2/$12 (fast $4/$24) on 2026-07-30", () => {
-    expect(card("gpt-5.6-terra", "standard", "2026-07-29T23:59:59.999Z")).toEqual([
-      2.5, 15, 0.25, 3.125,
-    ]);
-    expect(card("gpt-5.6-terra", "fast", "2026-07-29T23:59:59.999Z")).toEqual([5, 30, 0.5, 6.25]);
-    expect(card("gpt-5.6-terra", "standard", "2026-07-30T00:00:00Z")).toEqual([2, 12, 0.2, 2.5]);
-    expect(card("gpt-5.6-terra", "fast", "2026-07-30T00:00:00Z")).toEqual([4, 24, 0.4, 5]);
+  test("gpt-5.6-terra: $2.50/$15 (fast $5/$30) -> $2/$12 (fast $4/$24) at 2026-07-30T07:00Z", () => {
+    const before = "2026-07-30T06:59:59.999Z";
+    const after = "2026-07-30T07:00:00Z";
+    expect(card("gpt-5.6-terra", "standard", before)).toEqual([2.5, 15, 0.25, 3.125]);
+    expect(card("gpt-5.6-terra", "fast", before)).toEqual([5, 30, 0.5, 6.25]);
+    expect(card("gpt-5.6-terra", "standard", after)).toEqual([2, 12, 0.2, 2.5]);
+    expect(card("gpt-5.6-terra", "fast", after)).toEqual([4, 24, 0.4, 5]);
   });
 
-  test("gpt-5.6-luna: $1/$6 (fast $2/$12) -> $0.20/$1.20 (fast $0.40/$2.40) on 2026-07-30", () => {
-    expect(card("gpt-5.6-luna", "standard", "2026-07-29T23:59:59.999Z")).toEqual([1, 6, 0.1, 1.25]);
-    expect(card("gpt-5.6-luna", "fast", "2026-07-29T23:59:59.999Z")).toEqual([2, 12, 0.2, 2.5]);
-    expect(card("gpt-5.6-luna", "standard", "2026-07-30T00:00:00Z")).toEqual([
-      0.2, 1.2, 0.02, 0.25,
-    ]);
-    expect(card("gpt-5.6-luna", "fast", "2026-07-30T00:00:00Z")).toEqual([0.4, 2.4, 0.04, 0.5]);
+  test("gpt-5.6-luna: $1/$6 (fast $2/$12) -> $0.20/$1.20 (fast $0.40/$2.40) at 2026-07-30T07:00Z", () => {
+    const before = "2026-07-30T06:59:59.999Z";
+    const after = "2026-07-30T07:00:00Z";
+    expect(card("gpt-5.6-luna", "standard", before)).toEqual([1, 6, 0.1, 1.25]);
+    expect(card("gpt-5.6-luna", "fast", before)).toEqual([2, 12, 0.2, 2.5]);
+    expect(card("gpt-5.6-luna", "standard", after)).toEqual([0.2, 1.2, 0.02, 0.25]);
+    expect(card("gpt-5.6-luna", "fast", after)).toEqual([0.4, 2.4, 0.04, 0.5]);
   });
 
   test("the first known card applies before the first capture (2026-07-16)", () => {
@@ -64,12 +70,85 @@ describe("dated OpenAI periods", () => {
     expect(card("gpt-6-astra", "standard", "2026-01-01T00:00:00Z")).toEqual([10, 50, 1, 12.5]);
     expect(card("gpt-6-astra", "fast", "2026-01-01T00:00:00Z")).toEqual([20, 100, 2, 25]);
   });
+});
 
-  test("a fast long-context request scales the fast card by the standard multipliers", () => {
-    const fast = table.rates("gpt-5.6-sol", "fast", at("2026-09-01T00:00:00Z"));
-    const tokens = { ...NO_CACHE, input: 300_000, output: 1_000_000 };
-    // Fast $8 in / $40 out; above 272K that is $16 / $60, as the live page lists.
-    expect(computeCost(tokens, fast)).toBe((300_000 * 16) / 1e6 + (1_000_000 * 60) / 1e6);
+// Fast long context is priced only where the page lists a price: never extrapolated.
+describe("fast long context", () => {
+  const THRESHOLD = 272_000;
+  const cost = (model: string, tier: Tier, iso: string, input: number, cacheRead = 0) =>
+    table.cost({
+      ...NO_CACHE,
+      input,
+      cacheRead,
+      output: 10_000,
+      model,
+      tier,
+      atMs: at(iso),
+    });
+
+  test.each(["gpt-5.5", "gpt-5.4"])("%s fast lists no long-context price", (model) => {
+    const t = "2026-09-15T00:00:00Z";
+    expect(cost(model, "fast", t, THRESHOLD)).toBeNumber();
+    expect(cost(model, "fast", t, THRESHOLD + 1)).toBe("unpriced-tier");
+    // Cached input counts towards the threshold too.
+    expect(cost(model, "fast", t, 100_000, THRESHOLD - 99_999)).toBe("unpriced-tier");
+    // Standard long context stays priced.
+    expect(cost(model, "standard", t, THRESHOLD + 1)).toBeNumber();
+  });
+
+  // Changelog, Aug 5: "Fast mode now supports long-context requests for GPT-5.6 Sol, GPT-5.6
+  // Terra, and GPT-5.6 Luna." Captures up to 2026-08-01 show no long-context Fast columns.
+  test.each([
+    ["gpt-5.6-sol", 10, 60],
+    ["gpt-5.6-terra", 4, 24],
+    ["gpt-5.6-luna", 0.4, 2.4],
+  ])("%s fast long context is priced from 2026-08-05T07:00Z only", (model, input, output) => {
+    const before = "2026-08-05T06:59:59.999Z";
+    const after = "2026-08-05T07:00:00Z";
+    expect(cost(model, "fast", before, THRESHOLD)).toBeNumber();
+    expect(cost(model, "fast", before, THRESHOLD + 1)).toBe("unpriced-tier");
+    expect(cost(model, "standard", before, THRESHOLD + 1)).toBeNumber();
+    // From Aug 5, the page's long-context Fast columns: 2x input, 1.5x output. Expected
+    // values follow the engine's operation order: tokens * (rate / 1e6).
+    expect(cost(model, "fast", after, THRESHOLD + 1)).toBe(
+      (THRESHOLD + 1) * ((input * 2) / 1e6) + 10_000 * ((output * 1.5) / 1e6),
+    );
+  });
+
+  test("GPT-6 fast long context is priced, as the page lists", () => {
+    for (const model of ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]) {
+      expect(cost(model, "fast", "2026-10-01T00:00:00Z", THRESHOLD + 1)).toBeNumber();
+    }
+    // Astra fast $20 in / $100 out; above 272K, $40 / $150.
+    expect(cost("gpt-6-astra", "fast", "2026-10-01T00:00:00Z", 300_000)).toBe(
+      300_000 * (40 / 1e6) + 10_000 * (150 / 1e6),
+    );
+  });
+
+  test("models without a long-context tier price fast requests at any size", () => {
+    expect(cost("gpt-5.4-mini", "fast", "2026-10-01T00:00:00Z", 900_000)).toBeNumber();
+    // Claude: "Fast mode pricing applies across the full context window".
+    expect(cost("claude-opus-5-5", "fast", "2026-10-01T00:00:00Z", 900_000)).toBe(
+      900_000 * (8 / 1e6) + 10_000 * (40 / 1e6),
+    );
+  });
+
+  test("coverage counts such records as unpriced-tier", () => {
+    const record = (input: number): UsageRecord => ({
+      ...NO_CACHE,
+      input,
+      output: 0,
+      model: "gpt-5.5",
+      tier: "fast",
+      atMs: at("2026-09-15T00:00:00Z"),
+    });
+    expect(table.coverage([record(1_000), record(THRESHOLD + 1)])).toEqual({
+      pricedTokens: 1_000,
+      unpricedTokens: THRESHOLD + 1,
+      unpriced: [
+        { model: "gpt-5.5", tier: "fast", reason: "unpriced-tier", tokens: THRESHOLD + 1 },
+      ],
+    });
   });
 });
 
@@ -115,15 +194,30 @@ describe("tier fallback", () => {
   const t = at("2026-10-01T00:00:00Z");
 
   test("fast without a fast card is unpriced-tier, never the standard price", () => {
-    for (const model of [
-      "claude-opus-4-7",
-      "claude-opus-4-6",
-      "claude-sonnet-4-6",
-      "claude-haiku-4-5",
-    ]) {
+    for (const model of ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
       expect(table.rates(model, "fast", t)).toBe("unpriced-tier");
       expect(table.rates(model, "standard", t)).not.toBeString();
     }
+  });
+
+  // Anthropic: fast mode is not available "on Claude Opus 4.6 (requests run at standard
+  // speed and are billed at standard rates)".
+  test("Opus 4.6 fast requests are billed at its standard rates", () => {
+    expect(table.rates("claude-opus-4-6", "fast", t)).toEqual(
+      table.rates("claude-opus-4-6", "standard", t),
+    );
+    const usage = {
+      input: 12_345,
+      output: 6_789,
+      cacheRead: 1_000_003,
+      cacheCreation: 40_007,
+      ephemeral5m: 30_001,
+      ephemeral1h: 10_006,
+    };
+    const fast = table.cost({ ...usage, model: "claude-opus-4-6", tier: "fast", atMs: t });
+    const standard = table.cost({ ...usage, model: "claude-opus-4-6", tier: "standard", atMs: t });
+    expect(fast).toBeNumber();
+    expect(fast).toBe(standard);
   });
 
   test("unknown and missing models are unpriced at either tier", () => {
@@ -275,7 +369,7 @@ describe("bundled pricing.json", () => {
         expect({ id, from, line }).toEqual({ id, from, line: expect.any(String) });
       }
     }
-    expect(boundaries).toBe(3);
+    expect(boundaries).toBe(6);
   });
 });
 

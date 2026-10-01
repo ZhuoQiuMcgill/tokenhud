@@ -58,15 +58,16 @@ function byNormalisedId<T>(entries: Iterable<[string, T]>): {
 }
 
 /**
- * Parses an overrides file's text. A file that isn't JSON, or has no "models" object,
- * yields no overrides and a warning. An invalid entry is skipped with a warning, and the
- * bundled definition stays in force for that model; valid entries still apply, as with
- * cc-usage's editable pricing.json. Numeric strings such as "2.5" are accepted.
+ * Parses an overrides file's text. It never throws. A file that isn't JSON, or has no
+ * "models" object, yields no overrides and a warning. An invalid entry is skipped with a
+ * warning, and the bundled definition stays in force for that model; valid entries still
+ * apply, as with cc-usage's editable pricing.json. Numeric strings such as "2.5" are
+ * accepted, and so is a leading byte-order mark (Windows editors write one).
  */
 export function parseOverrides(text: string, source: string): LoadedOverrides {
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(text.startsWith("\uFEFF") ? text.slice(1) : text);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return {
@@ -87,8 +88,13 @@ export function parseOverrides(text: string, source: string): LoadedOverrides {
     try {
       models[id] = parseModelPricing(value, `models.${key}`, { coerce: true });
     } catch (error) {
-      if (!(error instanceof PricingSchemaError)) throw error;
-      warnings.push(`${source}: skipped "${key}": ${error.message}`);
+      // The validator throws PricingSchemaError. Anything else (none is known) still only
+      // skips the entry: a user's file must never stop tokenhud from starting.
+      const reason =
+        error instanceof PricingSchemaError
+          ? error.message
+          : `invalid (${error instanceof Error ? error.name : "unexpected error"})`;
+      warnings.push(`${source}: skipped "${key}": ${reason}`);
     }
   }
   return { models, warnings };
