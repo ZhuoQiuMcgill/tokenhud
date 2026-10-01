@@ -1,0 +1,17 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude Code local session/agent workspace (not part of the tool)
+.claude/
+
+# Internal product/process docs — not shipped
+docs/
