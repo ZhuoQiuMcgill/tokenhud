@@ -141,6 +141,36 @@ export class PriceTable {
     return "unpriced";
   }
 
+  /**
+   * Every instant at which some model's card changes, ascending. The query layer prices
+   * hourly sums per card, so it splits ranges here.
+   */
+  boundaries(): number[] {
+    const at = new Set<number>();
+    for (const periods of this.#models.values()) {
+      for (const { fromMs } of periods) if (Number.isFinite(fromMs)) at.add(fromMs);
+    }
+    return [...at].sort((a, b) => a - b);
+  }
+
+  /** The lowest long-context threshold on any card, or undefined when no card has one. */
+  minLongContextThreshold(): number | undefined {
+    let min: number | undefined;
+    for (const periods of this.#models.values()) {
+      for (const { standard } of periods) {
+        const threshold = standard.long_context_threshold;
+        if (threshold !== undefined && (min === undefined || threshold < min)) min = threshold;
+      }
+    }
+    return min;
+  }
+
+  /** Whether any card of `model` has a long-context tier (fast cards share the standard threshold). */
+  hasLongContext(model: string | null | undefined): boolean {
+    const periods = this.#periods(model);
+    return periods?.some((p) => p.standard.long_context_threshold !== undefined) ?? false;
+  }
+
   /** The standard card in effect now, for the UI's $/M columns. */
   displayRates(model: string | null | undefined, nowMs: number = Date.now()): Rates | "unpriced" {
     const rates = this.rates(model, "standard", nowMs);

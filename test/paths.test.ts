@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { configDir, pricingOverridesPath, storePath } from "../src/paths.ts";
+import { ccUsageDir, configDir, pricingOverridesPath, storePath } from "../src/paths.ts";
 
 const home = join("/", "home", "someone");
 
@@ -44,5 +44,18 @@ describe("storePath", () => {
     expect(storePath({ XDG_CONFIG_HOME: join("relative", "cfg") }, home)).toBe(
       join(home, ".config", "tokenhud", "tokenhud.db"),
     );
+  });
+});
+
+describe("ccUsageDir", () => {
+  test("is ~/.config/cc-usage by default", () => {
+    expect(ccUsageDir({}, home)).toBe(join(home, ".config", "cc-usage"));
+    expect(ccUsageDir({ XDG_CONFIG_HOME: "" }, home)).toBe(join(home, ".config", "cc-usage"));
+  });
+
+  test("follows any XDG_CONFIG_HOME, relative too, as cc-usage did", () => {
+    const xdg = join("/", "srv", "cfg");
+    expect(ccUsageDir({ XDG_CONFIG_HOME: xdg }, home)).toBe(join(xdg, "cc-usage"));
+    expect(ccUsageDir({ XDG_CONFIG_HOME: "cfg" }, home)).toBe(join("cfg", "cc-usage"));
   });
 });

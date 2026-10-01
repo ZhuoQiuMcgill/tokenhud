@@ -161,6 +161,49 @@ export function openStore(path: string, options: OpenOptions = {}): Store {
   return Store.open(path, options);
 }
 
+/**
+ * Opens the store at `path` for reading only, for `tokenhud json`, `doctor` and the MCP
+ * server: it never migrates, repairs or writes, so they answer from the store exactly as
+ * it is while the TUI or an import writes. Null when there is no store yet (no file, or
+ * an empty one). A foreign file or a store from a newer tokenhud is refused with a
+ * `StoreError`; an older schema is read as it is (the query layer only needs v1's
+ * tables). The connection uses `safeIntegers`, as every store connection must.
+ */
+export function openStoreReader(path: string, options: OpenOptions = {}): Database | null {
+  refuseForeign(path);
+  let size: number;
+  try {
+    size = statSync(path).size;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw classifyFsError(error, path);
+  }
+  if (size === 0) return null;
+  const db = guard(() => new Database(path, { readonly: true, safeIntegers: true, strict: true }));
+  try {
+    guard(() => db.exec(`PRAGMA busy_timeout = ${options.busyTimeoutMs ?? BUSY_TIMEOUT_MS}`));
+    const version = pragmaInt(db, "user_version");
+    if (version > SCHEMA_VERSION) {
+      throw new StoreUnavailable(
+        `store schema v${version} is newer than this tokenhud understands (v${SCHEMA_VERSION})`,
+      );
+    }
+    if (version === 0) throw new StoreUnavailable("the store was never initialised");
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
+
+/** An empty store in memory, so queries can answer "nothing yet" before a store exists. */
+export function emptyStoreDatabase(): Database {
+  const db = new Database(":memory:", { safeIntegers: true, strict: true });
+  for (const migrate of SCHEMA_MIGRATIONS) migrate(db);
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+  return db;
+}
+
 export class Store {
   readonly path: string;
   /** Where imports keep their scratch copies: `.tokenhud-tmp/` beside the store file. */

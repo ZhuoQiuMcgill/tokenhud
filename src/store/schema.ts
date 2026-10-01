@@ -176,6 +176,17 @@ export function rollupMatchesUsage(db: Database): boolean {
   return row?.ok === 1n;
 }
 
+// ── long context ─────────────────────────────────────────────────────────────────
+// Rows above a long-context threshold are priced at multiplied rates, so sums can't price
+// them. This partial index finds them, by time, without reading every row. It holds rows
+// above the lowest threshold in the bundled price table (OpenAI's 272k), which the real
+// data has almost none of. A query must spell its predicate exactly as below for SQLite
+// to use it; a price card with a lower threshold makes the query layer scan instead.
+
+export const LONG_CONTEXT_INDEX_MIN = 272_000;
+export const LONG_CONTEXT_PREDICATE = `inp + cr > ${LONG_CONTEXT_INDEX_MIN}`;
+const LONG_CONTEXT_INDEX = `CREATE INDEX usage_long ON usage (ts) WHERE ${LONG_CONTEXT_PREDICATE}`;
+
 // ── schema versions (PRAGMA user_version) ────────────────────────────────────────
 // SCHEMA_MIGRATIONS[n] upgrades a store at schema version n to n + 1, inside the write
 // transaction that also records the new version. Later tasks append entries (such as a
@@ -194,6 +205,8 @@ export const SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
     ).run(crypto.randomUUID(), String(KEY_SCHEME), new Date().toISOString());
     db.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
   },
+  // v2: the long-context partial index (T6).
+  (db) => db.exec(LONG_CONTEXT_INDEX),
 ];
 
 export const SCHEMA_VERSION = SCHEMA_MIGRATIONS.length;
