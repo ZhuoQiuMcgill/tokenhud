@@ -19,6 +19,9 @@ bun run check    # typecheck (tsc), lint and format check (Biome), tests (bun te
 bun run build    # standalone binary for this machine at dist/tokenhud
 ```
 
+`tokenhud json` output for scripts and agents is documented in
+[docs-public/JSON.md](docs-public/JSON.md) (schema 1).
+
 `bun run format` rewrites files in the project style. `bun run build --target=<bun target>`
 cross-compiles; for example, `--target=bun-windows-x64` writes `dist/tokenhud.exe`.
 

@@ -1,0 +1,142 @@
+# `tokenhud json` and `doctor --json`: output reference (schema 1)
+
+`tokenhud json` prints usage and cost as JSON for scripts and agents. The TypeScript types in
+[`src/query/types.ts`](../src/query/types.ts) (`Json*`) are the source of truth;
+`doctor --json` is `DoctorReport` in [`src/commands/doctor.ts`](../src/commands/doctor.ts).
+
+## The schema-1 contract
+
+Every document carries `"schema": 1`. While it does:
+- the fields documented here keep their names, types and meaning;
+- new fields may be added, so consumers should ignore fields they don't know;
+- any change that would break a consumer comes with a new `schema` number instead.
+
+## Conventions
+
+- Every document starts with `schema` (1), `generated_at` (ISO-8601 UTC) and `warnings`
+  (problems that did not stop the answer, e.g. a malformed `pricing.overrides.json`).
+- Instants are ISO-8601 strings in the query's zone, e.g. `2026-09-28T00:00:00.000-04:00`.
+  Ranges are half-open: `from` inclusive, `to` exclusive.
+- Money is USD (`cost_usd`), rounded to 1e-6. Token counts are integers.
+- Unpriced tokens are never $0: they are counted in `coverage` and listed in `unpriced`.
+- The store is read as it is (read-only connection, no ingest). Without a store yet, every
+  query answers zeros.
+- Exit codes: 0 ok (document on stdout); 2 bad arguments; 1 store error. On 1 and 2,
+  stderr holds `{"schema":1,"error":{"code":"bad_argument"|"store_error","message":"…"}}`
+  and stdout is empty.
+
+## Arguments
+
+```
+tokenhud json usage    [--period P] [--group-by G] [--account A]... [--provider X]... [--tz ZONE]
+tokenhud json models   [--period P] [--account A]... [--provider X]... [--tz ZONE]
+tokenhud json accounts [--period P] [--tz ZONE]
+```
+
+| Option | Values |
+|---|---|
+| `--period` | `today`, `this_week` (Monday 00:00), `this_month` (the 1st), `all` (default: the store's first to last row), `1h`, `5h`, `24h` (rolling, ending now inclusive), `custom` |
+| `--since`, `--until` | A custom period. `YYYY-MM-DD` is local midnight in `--tz`; as `--until` it includes that day. Otherwise an ISO-8601 instant with `Z` or an offset. Nothing before 1970. `--until` defaults to now. Either one implies `--period custom`. |
+| `--group-by` | `model`, `account`, `day`, `week`, `month` (`usage` only) |
+| `--account` | A label (case-insensitive) or an id; repeatable |
+| `--provider` | `claude` or `codex`; repeatable |
+| `--tz` | An IANA zone; default the system zone (`TZ` is honoured) |
+
+## Shared pieces
+
+```jsonc
+// usage: the aggregate of a set of rows
+{
+  "tokens": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "total": 0 },
+  "records": 0,              // usage rows (API responses)
+  "cost_usd": 0,             // priced tokens only, estimated included
+  "estimated_cost_usd": 0,   // part of cost_usd from an estimated price (none yet)
+  "coverage": {
+    "priced_tokens": 0, "unpriced_tokens": 0, "unpriced_tier_tokens": 0,
+    "estimated_tokens": 0,   // subset of priced_tokens
+    "priced_pct": 100        // 0-100, two decimals; 100 with no tokens
+  }
+}
+// period
+{ "name": "this_week" | "custom" | …, "from": "…" | null, "to": "…" | null, "tz": "America/Toronto" }
+// account
+{ "id": 1, "label": "personal", "provider": "claude" }
+```
+
+`unpriced-tier` tokens belong to a priced model at a tier it has no price for (e.g. a fast
+request on a model without a fast card) or to a long-context row whose tier has no
+long-context price.
+
+## `json usage`
+
+```jsonc
+{
+  "schema": 1, "generated_at": "…", "warnings": [],
+  "query": "usage",
+  "period": { … },
+  "filter": { "accounts": [account] | null, "providers": ["codex"] | null },
+  "group_by": "day" | null,
+  "totals": { …usage, "unpriced": [{ "model": "codex-unattributed", "tier": "standard", "reason": "unpriced" | "unpriced-tier", "tokens": 0 }] },
+  "groups": [ … ]   // [] without --group-by
+}
+```
+
+Group shapes (each also carries every `usage` field):
+
+| `group_by` | Extra fields | Order |
+|---|---|---|
+| `model` | `model` (normalised id), `tier` (`standard`/`fast`), `share` (of total cost), `status` (`priced`, `unpriced`, `unpriced-tier`, `partial`), `rates` | most cost first |
+| `account` | `account`, `share` | most cost first; idle accounts included |
+| `day`, `week`, `month` | `key` (`YYYY-MM-DD`; a week is keyed by its Monday; `YYYY-MM`), `from`, `to`, `top_model` | chronological; empty groups included; the first and last are clipped to the period |
+
+`rates` is the tier's card in effect now, USD per 1M tokens, or null when unpriced:
+`{ "input", "output", "cache_read", "cache_write", "long_context": { "threshold", "input_multiplier", "output_multiplier" } | null }`.
+`cache_write` is the card's own rate, else the 5-minute rate (1.25x input).
+
+## `json models`
+
+`{ schema, generated_at, warnings, "query": "models", period, filter, totals, "models": [model group] }`
+
+## `json accounts`
+
+`{ schema, generated_at, warnings, "query": "accounts", period, "accounts": [{ …account, …usage, "share", "first_seen", "last_seen" }] }`
+
+`first_seen`/`last_seen` are the account's first and last rows of all time (null if none).
+
+## `doctor --json`
+
+```jsonc
+{
+  "schema": 1, "generated_at": "…",
+  "store": {
+    "path", "exists", "error",            // error: why the store couldn't be read, else null
+    "size_bytes",                          // database plus WAL
+    "schema_version", "key_scheme", "created_at",
+    "rows", "rows_by_provider": { "claude": 0 },
+    "accounts": [{ "id", "label", "provider", "rows", "first_seen", "last_seen" }],
+    "models",                              // distinct models with rows
+    "first_seen", "last_seen",
+    "imports": [{ "at", "source", "lineage", "rows", "accounts" }],
+    "migration_report",                    // a record of key-scheme migrations, or null
+    "rollups": { "triggers_intact", "counts_agree" } | null,
+    "long_context_index"
+  },
+  "pricing": {
+    "bundled": { "anthropic": { "url", "checked" }, "openai": { … } },
+    "overrides": { "path", "exists", "models", "warnings": [] },
+    "priced_pct", "priced_tokens", "unpriced_tokens", "unpriced_tier_tokens",
+    "estimated_tokens", "estimated_cost_usd",
+    "unpriced": [{ "model", "tier", "tokens" }],
+    "unpriced_tier": [{ "model", "tier", "tokens" }]
+  },
+  "cc_usage": {
+    "dir", "ledger",                       // ledger: whether ledger.sqlite3 exists
+    "last_import": { … } | null,
+    "rows_only_in_cc_usage": 0 | null,     // null: see note
+    "note": null | "…"
+  }
+}
+```
+
+Doctor prints config paths only (the store, the overrides file, cc-usage's directory);
+never transcript, prompt or credential paths.
