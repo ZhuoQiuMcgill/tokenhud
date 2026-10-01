@@ -1,0 +1,9 @@
+[install]
+# `bun add` writes exact versions, so new dependencies are pinned by default.
+exact = true
+
+[test]
+# Tests may live anywhere under src/ or test/. The gitignored docs/ tree holds spike code
+# with its own *.test.* files and dependencies, which must never run as part of this
+# project; dist/ holds build output. Bun already skips node_modules/.
+pathIgnorePatterns = ["docs/**", "dist/**"]
