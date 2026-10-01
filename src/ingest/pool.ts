@@ -1,7 +1,8 @@
 import { availableParallelism } from "node:os";
+import { clearParentStreams } from "../sources/codex.ts";
 import type { ParseRequest } from "./parse-worker.ts";
 import type { Log } from "./pass.ts";
-import { type ReadResult, type ReadTask, readTask } from "./read.ts";
+import { type ReadContext, type ReadResult, type ReadTask, readTask } from "./read.ts";
 import { workerUrl } from "./worker-url.ts";
 
 /**
@@ -28,7 +29,7 @@ type Reply = { type: "results"; id: number; results: ReadResult[] };
  * when the Worker reports one or closes without replying (which would otherwise leave the
  * pass, and every pass queued behind it, waiting for ever).
  */
-function runOn(url: string, tasks: ReadTask[]): Promise<ReadResult[]> {
+function runOn(url: string, tasks: ReadTask[], context: ReadContext): Promise<ReadResult[]> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(url);
     let settled = false;
@@ -44,12 +45,14 @@ function runOn(url: string, tasks: ReadTask[]): Promise<ReadResult[]> {
     };
     worker.onerror = (event) => {
       send({ type: "stop" });
-      settle(() => reject(new Error(`a parse Worker failed (${event.message})`)));
+      // Bun's message carries a multi-line code frame; its first line says what failed.
+      const reason = (event.message ?? "").split("\n", 1)[0]?.trim() || "an error";
+      settle(() => reject(new Error(`a parse Worker failed (${reason})`)));
     };
     worker.addEventListener("close", () =>
       settle(() => reject(new Error("a parse Worker exited without replying"))),
     );
-    send({ type: "read", id: 0, tasks });
+    send({ type: "read", id: 0, tasks, context });
   });
 }
 
@@ -59,6 +62,7 @@ export interface PoolOptions {
   log?: Log;
   /** The Worker script (tests substitute one that fails). */
   workerUrl?: string;
+  context?: ReadContext;
 }
 
 /**
@@ -72,9 +76,13 @@ export async function readAll(
   bytes: readonly number[],
   options: PoolOptions = {},
 ): Promise<ReadResult[]> {
+  const context = options.context ?? {};
+  const inline = (task: ReadTask) => readTask(task, context);
+  // A parent rollout read for an earlier pass may have grown or been rewritten since.
+  clearParentStreams();
   const total = bytes.reduce((a, b) => a + b, 0);
   const workers = Math.min(options.poolSize ?? defaultPoolSize(), tasks.length);
-  if (workers <= 1 || total < POOL_MIN_BYTES) return tasks.map(readTask);
+  if (workers <= 1 || total < POOL_MIN_BYTES) return tasks.map(inline);
   const order = tasks.map((_, i) => i).sort((a, b) => (bytes[b] ?? 0) - (bytes[a] ?? 0));
   const bins: number[][] = Array.from({ length: workers }, () => []);
   const load = new Array<number>(workers).fill(0);
@@ -90,13 +98,13 @@ export async function readAll(
       const batch = bin.map((i) => tasks[i] as ReadTask);
       let results: ReadResult[];
       try {
-        results = await runOn(options.workerUrl ?? WORKER_URL, batch);
+        results = await runOn(options.workerUrl ?? WORKER_URL, batch, context);
       } catch (error) {
         options.log?.(
           "warn",
           `${(error as Error).message}; reading its ${batch.length} transcript(s) here instead`,
         );
-        results = batch.map(readTask);
+        results = batch.map(inline);
       }
       results.forEach((result, k) => {
         out[bin[k] as number] = result;

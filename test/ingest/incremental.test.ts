@@ -142,7 +142,8 @@ describe("test_accounts.py", () => {
     );
     expect(byLabel).toEqual({ work: 100, company: 200 });
     const identities = new Set([...storedRows(engine.store).values()].map((r) => r.identity));
-    expect(identities).toEqual(new Set(engine.roots.slice(1).map((r) => r.identity)));
+    const claude = engine.roots.filter((r) => r.provider === "claude");
+    expect(identities).toEqual(new Set(claude.slice(1).map((r) => r.identity)));
   });
 });
 

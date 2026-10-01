@@ -426,7 +426,7 @@ describe("doctor", () => {
     for (const text of [
       "rows          16  (claude 13 · codex 3)",
       "personal (claude) 10 rows",
-      "schema        v3 · key scheme 1",
+      "schema        v3 · key scheme 2",
       "rollups       consistent (quick check)",
       "long context  indexed",
       "overrides",

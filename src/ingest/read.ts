@@ -1,11 +1,13 @@
 import { closeSync, openSync, readSync } from "node:fs";
 import { emptyStats, type FileEntry, type ReadStats, readClaudeFile } from "../sources/claude.ts";
+import { type CodexLimitSnapshot, type ParentLookup, readCodexFile } from "../sources/codex.ts";
 import type { Provider } from "../sources/roots.ts";
 
 /**
  * Reading one transcript from a cursor, the same in a parse Worker and inline. Provider
  * neutral: each provider's reader turns new complete lines into per-key `FileEntry`s and
- * may carry state between reads (Codex counters, T5); Claude has none.
+ * may carry state between reads (Codex: counters, model, tier and replay progress; Claude
+ * has none).
  */
 
 export interface ReadTask {
@@ -18,15 +20,24 @@ export interface ReadTask {
   state: string | null;
 }
 
+/** What every task of one pass shares: a Codex session id -> its rollouts (to find parents). */
+export interface ReadContext {
+  codexSessions?: Readonly<Record<string, readonly string[]>>;
+}
+
 export interface ReadResult {
   path: string;
   /** Offset after the last complete line. */
   offset: number;
   tail: string | null;
   state: string | null;
-  /** True when the tail check failed and the file was read again from the start. */
+  /** True when the file was read again from the start (its tail or state did not check out). */
   restarted: boolean;
   entries: FileEntry[];
+  /** Keys that must not stay in the store (a Codex child's inherited usage). */
+  drop: bigint[];
+  /** The newest Codex rate-limit snapshot in the bytes read. */
+  limits: CodexLimitSnapshot | null;
   stats: ReadStats;
   ms: number;
   /** An error code (ENOENT, EACCES, ...) when the file could not be read; nothing else is set. */
@@ -50,35 +61,40 @@ export function tailHash(path: string, offset: number): string | null {
   }
 }
 
-const READERS: Partial<
-  Record<
-    Provider,
-    (path: string, start: number) => { offset: number; entries: FileEntry[]; stats: ReadStats }
-  >
-> = {
-  claude: (path, start) => readClaudeFile(path, start),
-};
-
-/** Whether tokenhud can read this provider's transcripts yet (Codex arrives in T5). */
-export function canRead(provider: Provider): boolean {
-  return READERS[provider] !== undefined;
+interface Read {
+  offset: number;
+  entries: FileEntry[];
+  stats: ReadStats;
+  state: string | null;
+  drop: bigint[];
+  limits: CodexLimitSnapshot | null;
+  restarted: boolean;
 }
 
+type Reader = (path: string, start: number, state: string | null, context: ReadContext) => Read;
+
+/** The first rollout of `sessionId` that is not `child` itself. */
+function parentLookup(context: ReadContext): ParentLookup {
+  return (sessionId, child) =>
+    context.codexSessions?.[sessionId]?.find((path) => path !== child) ?? null;
+}
+
+const READERS: Record<Provider, Reader> = {
+  claude: (path, start) => ({
+    ...readClaudeFile(path, start),
+    state: null,
+    drop: [],
+    limits: null,
+    restarted: false,
+  }),
+  codex: (path, start, state, context) =>
+    readCodexFile(path, start, state, { parents: parentLookup(context) }),
+};
+
 /** Reads `task`; never throws (an I/O error comes back as `error`). */
-export function readTask(task: ReadTask): ReadResult {
+export function readTask(task: ReadTask, context: ReadContext = {}): ReadResult {
   const t0 = performance.now();
   const reader = READERS[task.provider];
-  const base = {
-    path: task.path,
-    tail: null,
-    state: task.state,
-    restarted: false,
-    entries: [],
-    ms: 0,
-  };
-  if (reader === undefined) {
-    return { ...base, offset: task.start, stats: emptyStats(), error: "ENOTSUP" };
-  }
   try {
     let start = task.start;
     let restarted = false;
@@ -88,22 +104,30 @@ export function readTask(task: ReadTask): ReadResult {
       start = 0;
       restarted = true;
     }
-    const read = reader(task.path, start);
+    const read = reader(task.path, start, restarted ? null : task.state, context);
     return {
       path: task.path,
       offset: read.offset,
       tail: tailHash(task.path, read.offset),
-      state: restarted ? null : task.state,
-      restarted,
+      state: read.state,
+      restarted: restarted || read.restarted,
       entries: read.entries,
+      drop: read.drop,
+      limits: read.limits,
       stats: read.stats,
       ms: performance.now() - t0,
     };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "EIO";
     return {
-      ...base,
+      path: task.path,
       offset: task.start,
+      tail: null,
+      state: task.state,
+      restarted: false,
+      entries: [],
+      drop: [],
+      limits: null,
       stats: emptyStats(),
       error: code,
       ms: performance.now() - t0,

@@ -27,7 +27,7 @@ export interface FastCard {
   readonly long_context_output_multiplier?: number;
 }
 
-export interface RateCard extends Omit<Rates, "long_context_unpriced"> {
+export interface RateCard extends Omit<Rates, "long_context_unpriced" | "estimated"> {
   readonly fast?: FastCard;
 }
 
@@ -50,10 +50,30 @@ export interface Source {
   readonly checked: string;
 }
 
+/** One period of an alias: from `from` (ISO-8601 UTC; null = since always), it is priced as `model`. */
+export interface AliasPeriod {
+  readonly from: string | null;
+  readonly model: string;
+}
+
+/**
+ * A model id whose provider does not say which model serves it, priced as an *estimate*
+ * from a published statement of what it ran on, period by period. Every rate it resolves
+ * to carries `estimated: true`.
+ */
+export interface EstimatedAlias {
+  readonly estimated: true;
+  /** The official statement the timeline rests on (https). */
+  readonly source: string;
+  readonly periods: readonly AliasPeriod[];
+}
+
 export interface PriceTableFile {
   readonly version: 2;
   readonly sources: Readonly<Record<string, Source>>;
   readonly models: Readonly<Record<string, ModelPricing>>;
+  /** Bundled only; absent means none. */
+  readonly aliases: Readonly<Record<string, EstimatedAlias>>;
 }
 
 export class PricingSchemaError extends Error {
@@ -255,11 +275,62 @@ export function parseModelPricing(raw: unknown, path: string, opts: ParseOptions
   return parseRateCard(raw, path, opts);
 }
 
+/**
+ * Validates `raw` as the estimated alias `id`: periods sorted strictly by `from`, each
+ * naming a model of `models` that has a card in effect when the period starts.
+ */
+function parseAlias(
+  raw: unknown,
+  id: string,
+  models: Readonly<Record<string, ModelPricing>>,
+): EstimatedAlias {
+  const path = `pricing.json.aliases.${id}`;
+  if (id === "" || normalizeModel(id) !== id) fail(path, "alias keys must be normalised ids");
+  if (models[id] !== undefined) fail(path, "a model with its own prices cannot be an alias");
+  if (!isRecord(raw)) fail(path, "expected an object");
+  checkKeys(raw, new Set(["estimated", "source", "periods"]), path);
+  if (raw.estimated !== true)
+    fail(`${path}.estimated`, "only estimated aliases exist: expected true");
+  if (typeof raw.source !== "string" || !raw.source.startsWith("https://")) {
+    fail(`${path}.source`, "expected an https URL");
+  }
+  const list = raw.periods;
+  if (!Array.isArray(list) || list.length === 0)
+    fail(`${path}.periods`, "expected a non-empty array");
+  let previous = Number.NEGATIVE_INFINITY;
+  const periods = list.map((item, i): AliasPeriod => {
+    const at = `${path}.periods[${i}]`;
+    if (!isRecord(item)) fail(at, "expected an object");
+    checkKeys(item, new Set(["from", "model"]), at);
+    let fromMs = Number.NEGATIVE_INFINITY;
+    if (typeof item.from === "string") {
+      const parsed = parseIsoUtc(item.from);
+      if (parsed === undefined) fail(`${at}.from`, "expected an ISO-8601 UTC time");
+      fromMs = parsed;
+    } else if (item.from !== null || i !== 0) {
+      fail(`${at}.from`, "expected an ISO-8601 UTC time (only the first period may be null)");
+    }
+    if (i > 0 && fromMs <= previous)
+      fail(`${at}.from`, "periods must be sorted by 'from', strictly");
+    previous = fromMs;
+    const target = typeof item.model === "string" ? models[item.model] : undefined;
+    if (target === undefined) fail(`${at}.model`, "expected a model of this table");
+    const firstFrom = isDated(target) ? target.periods[0]?.from : null;
+    const startsMs =
+      firstFrom === null || firstFrom === undefined
+        ? Number.NEGATIVE_INFINITY
+        : (parseIsoUtc(firstFrom) as number);
+    if (startsMs > fromMs) fail(`${at}.model`, "the model has no card when this period starts");
+    return { from: item.from as string | null, model: item.model as string };
+  });
+  return { estimated: true, source: raw.source, periods };
+}
+
 /** Validates the bundled table. Strict: numbers only, and keys already normalised. */
 export function parsePriceTableFile(raw: unknown): PriceTableFile {
   const opts = { coerce: false };
   if (!isRecord(raw)) fail("pricing.json", "expected an object");
-  checkKeys(raw, new Set(["version", "sources", "models"]), "pricing.json");
+  checkKeys(raw, new Set(["version", "sources", "models", "aliases"]), "pricing.json");
   if (raw.version !== 2) fail("pricing.json.version", "expected 2");
 
   if (!isRecord(raw.sources)) fail("pricing.json.sources", "expected an object");
@@ -285,5 +356,13 @@ export function parsePriceTableFile(raw: unknown): PriceTableFile {
     if (key === "" || normalizeModel(key) !== key) fail(path, "model keys must be normalised ids");
     models[key] = parseModelPricing(value, path, opts);
   }
-  return { version: 2, sources, models };
+
+  const aliases: Record<string, EstimatedAlias> = {};
+  if (raw.aliases !== undefined) {
+    if (!isRecord(raw.aliases)) fail("pricing.json.aliases", "expected an object");
+    for (const [id, value] of Object.entries(raw.aliases)) {
+      if (!id.startsWith("_")) aliases[id] = parseAlias(value, id, models);
+    }
+  }
+  return { version: 2, sources, models, aliases };
 }

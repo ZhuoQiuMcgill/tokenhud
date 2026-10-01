@@ -31,6 +31,11 @@ export interface Rates {
    * request above the threshold then has no price ("unpriced-tier"). Never in pricing.json.
    */
   readonly long_context_unpriced?: true;
+  /**
+   * Set only on rates resolved through an estimated alias (`codex-auto-review`): the
+   * provider does not say which model served the request. Never in a pricing.json card.
+   */
+  readonly estimated?: true;
 }
 
 /**

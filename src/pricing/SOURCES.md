@@ -143,6 +143,33 @@ cards state multipliers only where the page lists long-context Fast prices:
 - **gpt-5.5 and gpt-5.4**: the live page shows "-" in all four long-context Fast cells.
   There is no long-context Fast price, at any time.
 
+## Estimated aliases
+
+`pricing.json` → `aliases` holds model ids whose provider does not say which model served
+a request. Such an id is priced as the model its alias timeline names at the time, and
+every rate found through it carries `estimated: true`, so a caller can label the cost an
+estimate. Only the bundled table has aliases; a user override that prices the alias id
+itself wins and is not an estimate. An override of a target model (gpt-5.4 or
+gpt-5.6-luna) is used by the alias too.
+
+| Alias | Period | Priced as | Evidence |
+| --- | --- | --- | --- |
+| codex-auto-review | until 2026-07-30T07:00:00Z | gpt-5.4 | OpenAI on X, 2026-07-30T17:17Z (https://x.com/OpenAI/status/2082878180478910571): "We're also upgrading Auto-review in the ChatGPT app and Codex CLI from GPT-5.4 to GPT-5.6 Luna." The same post from @OpenAIDevs (https://x.com/OpenAIDevs/status/2082878497043923265, 17:18Z): "We're upgrading auto review in the ChatGPT app and Codex CLI from GPT-5.4 to GPT-5.6 Luna." |
+| codex-auto-review | from 2026-07-30T07:00:00Z | gpt-5.6-luna | Same posts. They accompany the Jul 30 price announcement (changelog: "Starting July 30, GPT-5.6 Luna costs 80% less"), also published as https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/ (that page refused automated fetches, HTTP 403, so its wording was not read here). |
+
+Rulings, not facts:
+- **The switch time.** The posts say "upgrading", on 2026-07-30. As with announced price
+  dates above, the switch is placed at 00:00 America/Los_Angeles (07:00Z), the same instant
+  as Luna's price cut. Auto-review usage between 07:00Z and the rollout of the upgrade is
+  then priced as Luna although it may have run on GPT-5.4.
+- **No start date.** The posts say only what auto-review ran on before the switch. The
+  gpt-5.4 period therefore has no start (`from: null`).
+- **Routing.** Auto-review is server-routed; OpenAI may route some requests elsewhere.
+  That is why the rates are marked as estimates.
+
+The post texts were read on 2026-10-01 through X's public embed endpoint
+(`cdn.syndication.twimg.com/tweet-result`).
+
 ## Not modelled
 
 These are deliberately absent; the task leaves them out of scope. Usage priced here is

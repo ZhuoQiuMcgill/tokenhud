@@ -147,4 +147,63 @@ describe("tokenhud ingest", () => {
     expect(second.stdout).toMatch(/^job \(claude\)\s+1\s+1/m);
     expect(JSON.parse(readFileSync(own, "utf8")).theme).toBe("light");
   });
+
+  test("--stats reports Codex replay skips and tiers under the account's label", () => {
+    const dir = tempDir();
+    const sessions = join(dir, "home", ".codex", "sessions");
+    mkdirSync(sessions, { recursive: true });
+    const token = (ts: string, total: number[], last: number[]) =>
+      JSON.stringify({
+        timestamp: ts,
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: {
+              input_tokens: total[0],
+              cached_input_tokens: 0,
+              output_tokens: total[1],
+            },
+            last_token_usage: {
+              input_tokens: last[0],
+              cached_input_tokens: 0,
+              output_tokens: last[1],
+            },
+          },
+        },
+      });
+    const child = [
+      JSON.stringify({
+        timestamp: "2026-07-10T08:00:00Z",
+        type: "session_meta",
+        payload: {
+          id: "00000000-0000-4000-8000-000000000002",
+          forked_from_id: "00000000-0000-4000-8000-000000000099",
+        },
+      }),
+      token("2026-07-10T08:00:00.100Z", [100, 10], [100, 10]),
+      token("2026-07-10T08:00:00.200Z", [300, 20], [200, 10]),
+      token("2026-07-10T08:01:00Z", [350, 25], [50, 5]),
+    ];
+    writeFileSync(
+      join(sessions, "rollout-2026-07-10T08-00-00-00000000-0000-4000-8000-000000000002.jsonl"),
+      `${child.join("\n")}\n`,
+    );
+    const out = run(
+      dir,
+      "ingest",
+      "--once",
+      "--stats",
+      "--no-import",
+      "--db",
+      join(dir, "t.db"),
+      "--cache",
+      join(dir, "c.db"),
+    );
+    expect(out.code).toBe(0);
+    expect(out.stdout).toMatch(/^codex \(codex\)\s+1\s+1/m);
+    expect(out.stdout).toContain(
+      "codex: 2 inherited (replayed) events skipped, 0 stored rows removed; 0 fast-tier records, 1 tiers from config.toml",
+    );
+  });
 });

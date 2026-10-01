@@ -293,5 +293,15 @@
       "cache_read": 0.175,
       "fast": { "input": 3.5, "output": 28, "cache_read": 0.35 }
     }
+  },
+  "aliases": {
+    "codex-auto-review": {
+      "estimated": true,
+      "source": "https://x.com/OpenAI/status/2082878180478910571",
+      "periods": [
+        { "from": null, "model": "gpt-5.4" },
+        { "from": "2026-07-30T07:00:00Z", "model": "gpt-5.6-luna" }
+      ]
+    }
   }
 }

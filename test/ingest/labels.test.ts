@@ -79,3 +79,16 @@ test("a new account takes its derived label", async () => {
   await engine.fullPass();
   expect(labelOf(engine, rootIdentity(root, home))).toBe("claude-win");
 });
+
+test("pass reports and the ready list name an account by its stored label", async () => {
+  const { users, root, file, home } = windowsRoot();
+  const engine = openEngine([], { discover: { home, env: {}, wslUsersDir: users } });
+  imported(engine, root, home);
+  appendFileSync(file, claudeLine("3", "3", 300));
+  const report = await engine.fullPass();
+  const identity = rootIdentity(root, home);
+  expect(report?.roots.find((r) => r.identity === identity)?.label).toBe("win");
+  const windows = engine.roots.filter((r) => r.identity === identity);
+  expect(windows[0]?.label).toBe("claude-win"); // the root's own, derived label
+  expect(engine.labels(windows)).toEqual(["win"]);
+});

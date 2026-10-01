@@ -1,12 +1,20 @@
 import { type Counts, mergeCounts } from "../sources/claude.ts";
+import {
+  type CodexLimitSnapshot,
+  codexSessionId,
+  newerLimits,
+  TIER_UNKNOWN,
+} from "../sources/codex.ts";
+import { configFallbackTier, type SpeedTier } from "../sources/codex-config.ts";
 import { comparePyPaths } from "../sources/pypath.ts";
 import type { Root } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
+import { KEY_SCHEME } from "../store/key.ts";
 import { type Store, type StoredRow, UNATTRIBUTED, type UsageRow } from "../store/store.ts";
 import type { Cursor, CursorCache } from "./cursors.ts";
 import { type FileStat, statFiles } from "./files.ts";
 import { readAll } from "./pool.ts";
-import { canRead, type ReadResult, type ReadTask } from "./read.ts";
+import type { ReadResult, ReadTask } from "./read.ts";
 
 /**
  * One ingest pass: stat the given transcripts, read what changed since each file's cursor
@@ -17,6 +25,13 @@ import { canRead, type ReadResult, type ReadTask } from "./read.ts";
  * it sees with a timestamp fixes an event's timestamp, so results are applied in that order
  * whichever Worker read them. And the store commits before the cursors move: a crash in
  * between only means the same bytes are read again, which the store's max-merge absorbs.
+ *
+ * Codex adds three things. A Codex record whose rollout named no tier gets its root's
+ * fallback tier (`config.toml`). Keys a rollout reports as inherited usage are removed
+ * from the store. And a Codex account awaiting the scheme-2 re-key (`rekey`) has every
+ * rollout read from the start, whatever its cursor; in the pass's one write, the scheme-1
+ * rows of those rollouts are deleted and their scheme-2 records written with replace
+ * semantics, and the account's re-key is recorded with a report.
  */
 
 export type LogLevel = "info" | "warn" | "error";
@@ -31,7 +46,7 @@ export interface PassFile {
 
 export interface ChangedEvent {
   type: "changed";
-  /** Identities of the accounts whose rows were inserted or raised. */
+  /** Identities of the accounts whose rows were inserted, raised or removed. */
   accounts: string[];
   /** The span of those rows' timestamps (epoch ms, inclusive). */
   fromTs: number;
@@ -39,6 +54,7 @@ export interface ChangedEvent {
 }
 
 export interface RootStats {
+  /** The account's label in the store (the root's own label until it has rows). */
   label: string;
   provider: string;
   identity: string;
@@ -53,9 +69,15 @@ export interface RootStats {
   unkeyed: number;
   /** Distinct events this pass produced. */
   records: number;
-  /** Rows the store did not have, and stored rows this pass raised. */
+  /** Rows the store did not have, and stored rows this pass raised (or, re-keying, replaced). */
   inserted: number;
   changed: number;
+  /** Codex: events judged inherited from a parent rollout, and stored rows removed for that. */
+  inherited: number;
+  removed: number;
+  /** Codex: records at the fast tier, and records whose tier came from config.toml. */
+  fast: number;
+  tierFromConfig: number;
   /** Events the store cannot hold (negative or oversized counts, a ts before 1970). */
   unstorable: number;
   /** Files that could not be read (vanished or unreadable mid-pass). */
@@ -64,12 +86,35 @@ export interface RootStats {
   readMs: number;
 }
 
+/** What the Codex re-key did to one account's stored rows. */
+export interface RekeyAccountReport {
+  identity: string;
+  /** Rollouts read. */
+  rollouts: number;
+  /** Rows of inherited usage deleted. */
+  deleted: number;
+  /** Rows whose counts, tier or model were replaced, and rows newly written. */
+  changed: number;
+  inserted: number;
+  unchanged: number;
+  /** Rows left as they were because no rollout on disk produces their key. */
+  untouched: number;
+}
+
+export interface RekeyReport {
+  scheme: number;
+  at: string;
+  accounts: RekeyAccountReport[];
+}
+
 export interface PassReport {
   roots: RootStats[];
   wallMs: number;
   event: ChangedEvent | null;
   /** Set when the store write failed; nothing was stored and no cursor moved. */
   storeError: string | null;
+  /** The accounts this pass re-keyed, or null. */
+  rekey: RekeyReport | null;
 }
 
 export interface PassContext {
@@ -77,6 +122,12 @@ export interface PassContext {
   cursors: CursorCache;
   poolSize: number;
   log: Log;
+  /** Codex session id -> its rollouts, to find a child rollout's parent. This pass's files are added. */
+  codexSessions?: Readonly<Record<string, readonly string[]>>;
+  /** A Codex root's fallback tier; by default read from its config.toml once per pass. */
+  codexTier?: (root: Root) => SpeedTier;
+  /** Codex account identities to re-key in this pass (a full pass over their roots). */
+  rekey?: ReadonlySet<string>;
 }
 
 interface Event {
@@ -102,6 +153,10 @@ function newRootStats(root: Root): RootStats {
     records: 0,
     inserted: 0,
     changed: 0,
+    inherited: 0,
+    removed: 0,
+    fast: 0,
+    tierFromConfig: 0,
     unstorable: 0,
     errors: 0,
     readMs: 0,
@@ -137,6 +192,20 @@ function raises(stored: StoredRow, row: UsageRow, unattributedId: number | undef
   );
 }
 
+/** Whether replacing `stored` with `row` changes it: the store's replace condition. */
+function differs(stored: StoredRow, row: UsageRow, modelId: number | undefined): boolean {
+  return (
+    row.inp !== stored.inp ||
+    row.outp !== stored.outp ||
+    row.cr !== stored.cr ||
+    row.cc !== stored.cc ||
+    row.e5 !== stored.e5 ||
+    row.e1 !== stored.e1 ||
+    row.tier !== stored.tier ||
+    (row.model !== UNATTRIBUTED && modelId !== stored.model)
+  );
+}
+
 function toRow(
   key: bigint,
   account: { provider: string; identity: string; label: string },
@@ -157,6 +226,25 @@ function toRow(
   };
 }
 
+/** Codex session id -> rollouts in Python path order: `base`'s, plus those among `files`. */
+export function codexSessionIndex(
+  files: readonly PassFile[],
+  base: Readonly<Record<string, readonly string[]>> = {},
+): Record<string, string[]> {
+  const index = new Map<string, string[]>(
+    Object.entries(base).map(([sid, paths]) => [sid, [...paths]]),
+  );
+  for (const file of files) {
+    if (file.root.provider !== "codex") continue;
+    const sid = codexSessionId(file.path);
+    const paths = index.get(sid) ?? [];
+    if (!paths.includes(file.path)) paths.push(file.path);
+    index.set(sid, paths);
+  }
+  for (const paths of index.values()) paths.sort((a, b) => comparePyPaths(a, b));
+  return Object.fromEntries(index);
+}
+
 /** Runs one pass over `files`. With `full`, cursors of files not listed are dropped. */
 export async function runPass(
   ctx: PassContext,
@@ -173,6 +261,8 @@ export async function runPass(
     }
     return s;
   };
+  const rekeying = (root: Root) =>
+    root.provider === "codex" && ctx.rekey?.has(root.identity) === true;
 
   // Stat what the caller did not.
   const missing = files.filter((f) => f.stat === undefined);
@@ -198,9 +288,10 @@ export async function runPass(
       if (known.has(file.path)) removals.push(file.path);
       continue;
     }
-    if (!st.isFile || !canRead(file.root.provider)) continue;
+    if (!st.isFile) continue;
     statsOf(file.root).files++;
-    const cursor = known.get(file.path);
+    // A re-keyed account's rollouts are all read from the start, under scheme 2.
+    const cursor = rekeying(file.root) ? undefined : known.get(file.path);
     let start = 0;
     if (cursor !== undefined) {
       const sameFile = cursor.dev === st.dev && cursor.ino === st.ino;
@@ -221,7 +312,11 @@ export async function runPass(
   }
   if (full) for (const path of known.keys()) if (!listed.has(path)) removals.push(path);
 
-  const results = await readAll(tasks, bytes, { poolSize: ctx.poolSize, log: ctx.log });
+  const results = await readAll(tasks, bytes, {
+    poolSize: ctx.poolSize,
+    log: ctx.log,
+    context: { codexSessions: codexSessionIndex(files, ctx.codexSessions) },
+  });
 
   // Apply in cc-usage's file order.
   const order = results
@@ -229,6 +324,18 @@ export async function runPass(
     .sort((a, b) => comparePyPaths(tasks[a]?.path ?? "", tasks[b]?.path ?? ""));
   const events = new Map<bigint, Event>();
   const preOnly = new Map<bigint, { root: Root; counts: Counts }>();
+  const drops = new Map<bigint, Root>();
+  const limits = new Map<string, CodexLimitSnapshot>();
+  /** Per re-keyed root: its rollouts read, its scheme-1 keys (own and inherited). */
+  const rekeyed = new Map<Root, { rollouts: number; keys: Set<bigint>; failed: boolean }>();
+  const rekeyOf = (root: Root) => {
+    let r = rekeyed.get(root);
+    if (r === undefined) {
+      r = { rollouts: 0, keys: new Set(), failed: false };
+      rekeyed.set(root, r);
+    }
+    return r;
+  };
   const done: number[] = [];
   const unreadable = new Map<Root, string[]>();
   for (const i of order) {
@@ -239,6 +346,7 @@ export async function runPass(
     if (result.error !== undefined) {
       rs.errors++;
       unreadable.set(root, [...(unreadable.get(root) ?? []), result.error]);
+      if (rekeying(root)) rekeyOf(root).failed = true;
       continue;
     }
     done.push(i);
@@ -249,11 +357,16 @@ export async function runPass(
     rs.usageLines += result.stats.usageLines;
     rs.malformed += result.stats.malformed;
     rs.unkeyed += result.stats.unkeyed;
+    rs.inherited += result.drop.length;
+    const rekey = rekeying(root) ? rekeyOf(root) : null;
+    if (rekey !== null) rekey.rollouts++;
     for (const entry of result.entries) {
+      rekey?.keys.add(entry.key);
       const event = events.get(entry.key);
       if (event !== undefined) {
         mergeCounts(event.counts, entry.pre);
         mergeCounts(event.counts, entry.post);
+        if (event.model === UNATTRIBUTED && entry.ts !== null) event.model = entry.model;
       } else if (entry.ts !== null && entry.post !== null) {
         events.set(entry.key, {
           root,
@@ -269,6 +382,13 @@ export async function runPass(
         });
       }
     }
+    for (const key of result.drop) {
+      rekey?.keys.add(key);
+      if (!drops.has(key)) drops.set(key, root);
+    }
+    if (result.limits !== null && newerLimits(limits.get(root.identity), result.limits)) {
+      limits.set(root.identity, result.limits);
+    }
   }
   for (const [root, codes] of unreadable) {
     ctx.log(
@@ -277,36 +397,89 @@ export async function runPass(
     );
   }
 
+  // A Codex record without a tier from its rollout takes its root's fallback.
+  const fallbacks = new Map<Root, SpeedTier>();
+  const fallbackTier = (root: Root): SpeedTier => {
+    let tier = fallbacks.get(root);
+    if (tier === undefined) {
+      tier = ctx.codexTier?.(root) ?? configFallbackTier(root.path);
+      fallbacks.set(root, tier);
+    }
+    return tier;
+  };
+  for (const event of events.values()) {
+    if (event.root.provider !== "codex") continue;
+    const rs = statsOf(event.root);
+    if (event.counts.tier === TIER_UNKNOWN) {
+      event.counts.tier = fallbackTier(event.root);
+      rs.tierFromConfig++;
+    }
+    if (event.counts.tier === 1) rs.fast++;
+  }
+
   // Decide which rows change the store, and for the changed event, where they sit.
   const rows: UsageRow[] = [];
+  const replaced: UsageRow[] = [];
+  const remove: bigint[] = [];
   const touched = new Set<string>();
   let fromTs = Number.POSITIVE_INFINITY;
   let toTs = Number.NEGATIVE_INFINITY;
   let storeError: string | null = null;
+  let rekey: RekeyReport | null = null;
+  const touch = (identity: string, ts: number) => {
+    fromTs = Math.min(fromTs, ts);
+    toTs = Math.max(toTs, ts);
+    touched.add(identity);
+  };
   try {
     const keys = [...events.keys()];
     for (const key of preOnly.keys()) if (!events.has(key)) keys.push(key);
+    // A key one copy of a rollout still counts as its own wins over an inherited judgement.
+    const dropKeys = [...drops.keys()].filter((key) => !events.has(key));
+    keys.push(...dropKeys);
     const stored = new Map(ctx.store.rows(keys).map((r) => [r.key, r]));
     const accounts = keys.length > 0 ? ctx.store.accounts() : new Map();
     const models = keys.length > 0 ? ctx.store.models() : new Map<number, string>();
-    let unattributedId: number | undefined;
-    for (const [id, name] of models) if (name === UNATTRIBUTED) unattributedId = id;
+    const modelIds = new Map([...models].map(([id, name]) => [name, id]));
+    const unattributedId = modelIds.get(UNATTRIBUTED);
+    const identityOf = (s: StoredRow, fallback: string) =>
+      (accounts.get(s.acct)?.identity as string | undefined) ?? fallback;
+    const reports = new Map<Root, RekeyAccountReport>();
+    for (const [root, r] of rekeyed) {
+      reports.set(root, {
+        identity: root.identity,
+        rollouts: r.rollouts,
+        deleted: 0,
+        changed: 0,
+        inserted: 0,
+        unchanged: 0,
+        untouched: 0,
+      });
+    }
+
     const consider = (row: UsageRow, root: Root, s: StoredRow | undefined) => {
       const rs = statsOf(root);
       if (!storable(row)) {
         rs.unstorable++;
         return;
       }
-      if (s !== undefined && !raises(s, row, unattributedId)) return;
-      rows.push(row);
+      const report = reports.get(root);
+      if (report !== undefined) {
+        // Re-keying: the scheme-2 record replaces whatever scheme 1 stored.
+        if (s !== undefined && !differs(s, row, modelIds.get(row.model))) {
+          report.unchanged++;
+          return;
+        }
+        replaced.push(row);
+        if (s === undefined) report.inserted++;
+        else report.changed++;
+      } else {
+        if (s !== undefined && !raises(s, row, unattributedId)) return;
+        rows.push(row);
+      }
       if (s === undefined) rs.inserted++;
       else rs.changed++;
-      const ts = s?.ts ?? row.ts;
-      fromTs = Math.min(fromTs, ts);
-      toTs = Math.max(toTs, ts);
-      touched.add(
-        s === undefined ? row.identity : (accounts.get(s.acct)?.identity ?? row.identity),
-      );
+      touch(s === undefined ? row.identity : identityOf(s, row.identity), s?.ts ?? row.ts);
     };
     for (const [key, event] of events) {
       statsOf(event.root).records++;
@@ -325,10 +498,62 @@ export async function runPass(
       // The stored account and its label, unchanged.
       consider(toRow(key, account, true, s.ts, model, counts), root, s);
     }
-    if (rows.length > 0) ctx.store.upsert(rows);
+    for (const key of dropKeys) {
+      const s = stored.get(key);
+      if (s === undefined) continue;
+      const root = drops.get(key) as Root;
+      remove.push(key);
+      statsOf(root).removed++;
+      const report = reports.get(root);
+      if (report !== undefined) report.deleted++;
+      touch(identityOf(s, root.identity), s.ts);
+    }
+
+    let finished: string[] = [];
+    if (reports.size > 0) {
+      // Rows of a re-keyed account that no rollout on disk produces stay as they were.
+      const counts = ctx.store.rowCounts();
+      const idOf = new Map(
+        [...accounts.values()]
+          .filter((a) => a.provider === "codex")
+          .map((a) => [a.identity as string, a.id as number]),
+      );
+      for (const [root, report] of reports) {
+        const acct = idOf.get(root.identity);
+        const total = acct === undefined ? 0 : (counts.get(acct) ?? 0);
+        let covered = 0;
+        for (const key of rekeyed.get(root)?.keys ?? []) {
+          const s = stored.get(key);
+          if (s !== undefined && s.acct === acct) covered++;
+        }
+        report.untouched = total - covered;
+      }
+      // An account with an unreadable rollout stays pending, to be re-keyed again in full.
+      finished = [...rekeyed].filter(([, r]) => !r.failed).map(([root]) => root.identity);
+      const now = new Set([...reports.keys()].map((root) => root.identity));
+      const previous = ctx.store.meta.migrationReport as Partial<RekeyReport> | null;
+      const kept = Array.isArray(previous?.accounts)
+        ? previous.accounts.filter((a) => !now.has(a.identity))
+        : [];
+      rekey = {
+        scheme: KEY_SCHEME,
+        at: new Date().toISOString(),
+        accounts: [...kept, ...reports.values()],
+      };
+    }
+    if (rows.length + replaced.length + remove.length > 0 || rekey !== null) {
+      ctx.store.write({
+        upsert: rows,
+        replace: replaced,
+        remove,
+        rekeyed: finished,
+        ...(rekey === null ? {} : { migrationReport: rekey }),
+      });
+    }
   } catch (error) {
     if (!(error instanceof StoreError)) throw error;
     storeError = error.message;
+    rekey = null;
     ctx.log("error", `could not write the store: ${error.message}`);
   }
 
@@ -349,14 +574,37 @@ export async function runPass(
     });
     try {
       ctx.cursors.update(put, removals);
+      const storedLimits = ctx.cursors.codexLimitSnapshots();
+      for (const [identity, snapshot] of limits) {
+        if (!newerLimits(storedLimits.get(identity), snapshot)) limits.delete(identity);
+      }
+      ctx.cursors.putCodexLimitSnapshots(limits);
     } catch (error) {
       ctx.log("warn", `could not save read positions: ${(error as Error).message}`);
     }
   }
 
+  // Report each account under the label the store gives it.
+  try {
+    const labels = new Map(
+      [...ctx.store.accounts().values()].map((a) => [`${a.provider}\0${a.identity}`, a.label]),
+    );
+    for (const rs of perRoot.values())
+      rs.label = labels.get(`${rs.provider}\0${rs.identity}`) ?? rs.label;
+  } catch (error) {
+    if (!(error instanceof StoreError)) throw error;
+  }
+
+  const changes = rows.length + replaced.length + remove.length;
   const event: ChangedEvent | null =
-    storeError === null && rows.length > 0
+    storeError === null && changes > 0
       ? { type: "changed", accounts: [...touched], fromTs, toTs }
       : null;
-  return { roots: [...perRoot.values()], wallMs: performance.now() - t0, event, storeError };
+  return {
+    roots: [...perRoot.values()],
+    wallMs: performance.now() - t0,
+    event,
+    storeError,
+    rekey,
+  };
 }

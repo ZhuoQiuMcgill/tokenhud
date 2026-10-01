@@ -20,6 +20,12 @@ export async function cleanup(): Promise<void> {
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
 }
 
+/** Registers `engine` to be stopped by `cleanup`. */
+export function track(engine: IngestEngine): IngestEngine {
+  engines.push(engine);
+  return engine;
+}
+
 export function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "tokenhud-ingest-test-"));
   made.push(dir);
