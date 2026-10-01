@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Config,
   configFromCcUsage,
   configPath,
   defaultConfig,
-  effectiveConfig,
+  ensureConfig,
   loadConfig,
   saveConfig,
   validateConfig,
@@ -155,21 +155,63 @@ describe("configFromCcUsage", () => {
   });
 });
 
-describe("effectiveConfig", () => {
-  test("tokenhud's own file wins once it exists", () => {
+describe("ensureConfig: tokenhud owns its config, imported from cc-usage once", () => {
+  function files() {
     const dir = tempDir();
     const own = join(dir, "tokenhud", "config.json");
     const theirs = join(dir, "cc-usage", "config.json");
     mkdirSync(join(dir, "cc-usage"));
+    return { own, theirs };
+  }
+
+  test("the first run creates tokenhud's config from cc-usage's", () => {
+    const { own, theirs } = files();
     writeFileSync(theirs, JSON.stringify(ccUsage));
-    expect(effectiveConfig(own, theirs).theme).toBe("light");
-    saveConfig({ ...defaultConfig(), theme: "high-contrast" }, own);
-    expect(effectiveConfig(own, theirs).theme).toBe("high-contrast");
+    const first = ensureConfig(own, theirs);
+    expect(first).toEqual({ config: configFromCcUsage(ccUsage), imported: true, saveError: null });
+    expect(loadConfig(own)).toEqual(configFromCcUsage(ccUsage));
+    expect(readdirSync(join(own, ".."))).toEqual(["config.json"]);
   });
 
-  test("without either file, the defaults, and nothing is written", () => {
-    const dir = tempDir();
-    expect(effectiveConfig(join(dir, "a.json"), join(dir, "b.json"))).toEqual(defaultConfig());
-    expect(existsSync(join(dir, "a.json"))).toBe(false);
+  test("a later run reads only tokenhud's config, whatever cc-usage's says now", () => {
+    const { own, theirs } = files();
+    writeFileSync(theirs, JSON.stringify(ccUsage));
+    ensureConfig(own, theirs);
+    writeFileSync(theirs, JSON.stringify({ ...ccUsage, theme: "high-contrast", claude_roots: [] }));
+    const second = ensureConfig(own, theirs);
+    expect(second.imported).toBe(false);
+    expect(second.config).toEqual(configFromCcUsage(ccUsage));
+    rmSync(theirs);
+    expect(ensureConfig(own, theirs).config).toEqual(configFromCcUsage(ccUsage));
+  });
+
+  test("without cc-usage's config: the defaults, and nothing is written", () => {
+    const { own, theirs } = files();
+    expect(ensureConfig(own, theirs)).toEqual({
+      config: defaultConfig(),
+      imported: false,
+      saveError: null,
+    });
+    expect(existsSync(own)).toBe(false);
+  });
+
+  test("a damaged tokenhud config gives the defaults and is not replaced", () => {
+    const { own, theirs } = files();
+    writeFileSync(theirs, JSON.stringify(ccUsage));
+    mkdirSync(join(own, ".."), { recursive: true });
+    writeFileSync(own, "not json");
+    expect(ensureConfig(own, theirs)).toEqual({
+      config: defaultConfig(),
+      imported: false,
+      saveError: null,
+    });
+    expect(readFileSync(own, "utf8")).toBe("not json");
+  });
+
+  test("a cc-usage config that does not parse imports as the defaults", () => {
+    const { own, theirs } = files();
+    writeFileSync(theirs, "{");
+    expect(ensureConfig(own, theirs)).toMatchObject({ config: defaultConfig(), imported: true });
+    expect(loadConfig(own)).toEqual(defaultConfig());
   });
 });

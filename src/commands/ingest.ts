@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { ccUsageDir, configPath, effectiveConfig } from "../config.ts";
+import { ccUsageDir, configPath, ensureConfig } from "../config.ts";
 import { startIngestWorker, type WorkerOptions } from "../ingest/client.ts";
 import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
@@ -13,13 +13,16 @@ import { StoreError } from "../store/errors.ts";
 // ingest engine against the real roots, writing only the store and cache it is given.
 // Output is content-free: account labels and counts, never paths or transcript text.
 
-const USAGE = `usage: tokenhud ingest [--db <path>] [--cache <path>] [--once] [--stats] [--no-import]
+const USAGE = `usage: tokenhud ingest [--db <path>] [--cache <path>] [--config <path>]
+                       [--once] [--stats] [--no-import]
 
-  --db <path>     usage store (default: ~/.config/tokenhud/tokenhud.db)
-  --cache <path>  read-position cache (default: ~/.config/tokenhud/cache.db)
-  --once          run one pass, print its stats and exit (else: watch, print each change)
-  --stats         per-account stats (with --once), or a line per pass (watching)
-  --no-import     skip the first-run import of cc-usage's history`;
+  --db <path>      usage store (default: ~/.config/tokenhud/tokenhud.db)
+  --cache <path>   read-position cache (default: ~/.config/tokenhud/cache.db)
+  --config <path>  tokenhud's config; created from cc-usage's on the first run
+                   (default: ~/.config/tokenhud/config.json)
+  --once           run one pass, print its stats and exit (else: watch, print each change)
+  --stats          per-account stats (with --once), or a line per pass (watching)
+  --no-import      skip the first-run import of cc-usage's history`;
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -28,14 +31,26 @@ const EXIT_USAGE = 2;
 function engineOptions(values: {
   db?: string;
   cache?: string;
+  config?: string;
   "no-import"?: boolean;
 }): WorkerOptions {
   const env = process.env;
   const home = homedir();
+  const start = ensureConfig(
+    values.config ?? configPath(env, home),
+    join(ccUsageDir(env, home), "config.json"),
+  );
+  if (start.imported) {
+    process.stderr.write(
+      start.saveError === null
+        ? "info: created tokenhud's config from cc-usage's\n"
+        : `warn: cc-usage's config was imported but not saved: ${start.saveError}\n`,
+    );
+  }
   return {
     storePath: values.db ?? storePath(env, home),
     cachePath: values.cache ?? cachePath(env, home),
-    config: effectiveConfig(configPath(env, home), join(ccUsageDir(env, home), "config.json")),
+    config: start.config,
     discover: { home, env: { ...env } },
     importLedger: values["no-import"] ? null : join(ccUsageDir(env, home), "ledger.sqlite3"),
   };
@@ -192,6 +207,7 @@ export async function runIngest(args: readonly string[]): Promise<number> {
   let values: {
     db?: string;
     cache?: string;
+    config?: string;
     once?: boolean;
     stats?: boolean;
     "no-import"?: boolean;
@@ -203,6 +219,7 @@ export async function runIngest(args: readonly string[]): Promise<number> {
       options: {
         db: { type: "string" },
         cache: { type: "string" },
+        config: { type: "string" },
         once: { type: "boolean" },
         stats: { type: "boolean" },
         "no-import": { type: "boolean" },

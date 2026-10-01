@@ -192,19 +192,45 @@ export function configFromCcUsage(json: unknown): Config {
   });
 }
 
+/** The config a run starts with, and whether this run created it from cc-usage's. */
+export interface StartupConfig {
+  config: Config;
+  /** This run found no config of tokenhud's and created it from cc-usage's `config.json`. */
+  imported: boolean;
+  /** Why the imported config could not be saved (it is still used for this run). */
+  saveError: string | null;
+}
+
 /**
- * The config ingest runs with: tokenhud's own file once it exists; before that,
- * cc-usage's `config.json` (only read, never copied), so a cc-usage user's extra roots,
- * labels and disabled roots apply from the first run; else the defaults.
+ * The config tokenhud runs with. tokenhud owns `config.json`: on the first run without
+ * one, a cc-usage user's `config.json` is imported once through `configFromCcUsage` (root
+ * paths with their labels, disabled roots, theme, show-cost, refresh, window) and saved
+ * atomically; after that cc-usage's file is never read again. With neither file the run
+ * uses the defaults and writes nothing, so a cc-usage config that appears later is still
+ * imported on its first run.
  */
-export function effectiveConfig(
+export function ensureConfig(
   path: string = configPath(),
   ccUsageConfig: string = join(ccUsageDir(), "config.json"),
-): Config {
-  if (existsSync(path)) return loadConfig(path);
+): StartupConfig {
+  if (existsSync(path)) return { config: loadConfig(path), imported: false, saveError: null };
+  let text: string;
   try {
-    return configFromCcUsage(JSON.parse(readFileSync(ccUsageConfig, "utf8")));
+    text = readFileSync(ccUsageConfig, "utf8");
   } catch {
-    return defaultConfig();
+    return { config: defaultConfig(), imported: false, saveError: null };
+  }
+  let config: Config;
+  try {
+    config = configFromCcUsage(JSON.parse(text));
+  } catch {
+    // cc-usage itself runs on its defaults when its file does not parse.
+    config = defaultConfig();
+  }
+  try {
+    saveConfig(config, path);
+    return { config, imported: true, saveError: null };
+  } catch (error) {
+    return { config, imported: true, saveError: (error as Error).message };
   }
 }

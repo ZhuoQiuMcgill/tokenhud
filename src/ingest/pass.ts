@@ -140,6 +140,7 @@ function raises(stored: StoredRow, row: UsageRow, unattributedId: number | undef
 function toRow(
   key: bigint,
   account: { provider: string; identity: string; label: string },
+  derivedLabel: boolean,
   ts: number,
   model: string,
   counts: Counts,
@@ -149,6 +150,7 @@ function toRow(
     provider: account.provider,
     identity: account.identity,
     label: account.label,
+    derivedLabel,
     ts,
     model,
     ...counts,
@@ -219,7 +221,7 @@ export async function runPass(
   }
   if (full) for (const path of known.keys()) if (!listed.has(path)) removals.push(path);
 
-  const results = await readAll(tasks, bytes, ctx.poolSize);
+  const results = await readAll(tasks, bytes, { poolSize: ctx.poolSize, log: ctx.log });
 
   // Apply in cc-usage's file order.
   const order = results
@@ -309,7 +311,7 @@ export async function runPass(
     for (const [key, event] of events) {
       statsOf(event.root).records++;
       consider(
-        toRow(key, event.root, event.ts, event.model, event.counts),
+        toRow(key, event.root, !event.root.labelExplicit, event.ts, event.model, event.counts),
         event.root,
         stored.get(key),
       );
@@ -320,7 +322,8 @@ export async function runPass(
       const account = accounts.get(s.acct);
       const model = models.get(s.model);
       if (account === undefined || model === undefined) continue;
-      consider(toRow(key, account, s.ts, model, counts), root, s);
+      // The stored account and its label, unchanged.
+      consider(toRow(key, account, true, s.ts, model, counts), root, s);
     }
     if (rows.length > 0) ctx.store.upsert(rows);
   } catch (error) {

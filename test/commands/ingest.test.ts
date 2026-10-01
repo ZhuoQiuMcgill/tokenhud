@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { claudeLine, cleanup, makeRoot, tempDir } from "../ingest/helpers.ts";
 
@@ -70,5 +70,34 @@ describe("tokenhud ingest", () => {
     expect(second.stdout).toMatch(
       /^read 0 of 1 files \(0\.0 MB\), 0 records: 0 new, 0 changed, in \d+ ms\n$/,
     );
+  });
+
+  test("the first run creates tokenhud's config from cc-usage's, once; --config moves it", () => {
+    const dir = tempDir();
+    const home = join(dir, "home");
+    makeRoot(home, ".claude");
+    const work = makeRoot(dir, "work-root");
+    writeFileSync(join(work, "projects", "s.jsonl"), claudeLine("1", "1", 10));
+    mkdirSync(join(dir, "xdg", "cc-usage"), { recursive: true });
+    const theirs = join(dir, "xdg", "cc-usage", "config.json");
+    writeFileSync(
+      theirs,
+      JSON.stringify({ theme: "light", claude_roots: [{ path: work, label: "job" }] }),
+    );
+    const own = join(dir, "custom", "config.json");
+    const args = ["ingest", "--once", "--stats", "--no-import", "--config", own];
+    const first = run(dir, ...args, "--db", join(dir, "t.db"), "--cache", join(dir, "c.db"));
+    expect(first.stderr).toBe("info: created tokenhud's config from cc-usage's\n");
+    expect(first.stdout).toMatch(/^job \(claude\)\s+1\s+1/m);
+    expect(JSON.parse(readFileSync(own, "utf8")).claude_roots).toEqual([
+      { path: work, label: "job" },
+    ]);
+    expect(existsSync(join(dir, "xdg", "tokenhud"))).toBe(false);
+
+    writeFileSync(theirs, JSON.stringify({ theme: "dark", claude_roots: [] }));
+    const second = run(dir, ...args, "--db", join(dir, "t2.db"), "--cache", join(dir, "c2.db"));
+    expect(second.stderr).toBe("");
+    expect(second.stdout).toMatch(/^job \(claude\)\s+1\s+1/m);
+    expect(JSON.parse(readFileSync(own, "utf8")).theme).toBe("light");
   });
 });

@@ -377,9 +377,11 @@ export class IngestEngine {
       f.stat = fresh[i] ?? null;
     });
     this.#report(await runPass(this.#ctx(), files, false));
-    // A file that just appeared or changed is hot from now on; a vanished one is dropped.
+    // A file modified in the last 2 h is hot from now on. An old file listed only because
+    // its directory changed is left to the sweep, and a vanished one is dropped.
+    const now = Date.now();
     for (const f of files) {
-      if (!f.stat) {
+      if (!f.stat || now - f.stat.mtimeMs >= this.#timing.hotMs) {
         this.#hot.delete(f.path);
         continue;
       }

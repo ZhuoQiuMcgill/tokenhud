@@ -9,7 +9,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { ccUsageDir, configPath, effectiveConfig } from "../../src/config.ts";
+import { ccUsageDir, ensureConfig } from "../../src/config.ts";
 import { IngestEngine } from "../../src/ingest/engine.ts";
 import { importCcUsage } from "../../src/store/import-cc-usage.ts";
 import { openStore, type Store, type StoredRow } from "../../src/store/store.ts";
@@ -45,19 +45,27 @@ try {
   const imported = importCcUsage(reference, ledger);
   if (imported.status !== "imported") throw new Error(imported.warning);
   const theirs = named(reference);
+  const ledgerLabels = new Map(
+    [...reference.accounts().values()].map((a) => [a.identity, a.label]),
+  );
   reference.close();
 
   const t0 = performance.now();
   const engine = IngestEngine.open({
     storePath: join(dir, "tokenhud.db"),
     cachePath: join(dir, "cache.db"),
-    config: effectiveConfig(configPath(), join(ccUsageDir(), "config.json")),
+    // A first run: tokenhud's config is created (in the temp dir) from cc-usage's.
+    config: ensureConfig(join(dir, "config.json"), join(ccUsageDir(), "config.json")).config,
     discover: { home: homedir(), env: { ...process.env } },
     importLedger: null,
   });
   const report = await engine.fullPass();
   const ingestMs = performance.now() - t0;
   const ours = named(engine.store);
+  const ourAccounts = [...engine.store.accounts().values()].filter((a) =>
+    ledgerLabels.has(a.identity),
+  );
+  const labelsMatch = ourAccounts.filter((a) => ledgerLabels.get(a.identity) === a.label).length;
   const claudeRoots = engine.roots.filter((r) => r.provider === "claude").map((r) => r.identity);
   engine.close();
   if (report === null) throw new Error("the pass failed");
@@ -135,6 +143,7 @@ try {
         ledger_only_from_roots_not_scanned: ledgerOnlyOtherRoot,
         tokenhud_only: oursOnly,
         tokenhud_only_near_or_after_last_sync: oursOnlyAfterSync,
+        account_labels_equal_to_ledger: `${labelsMatch}/${ourAccounts.length}`,
       },
       null,
       1,

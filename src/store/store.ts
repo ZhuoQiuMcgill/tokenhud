@@ -73,6 +73,8 @@ export interface UsageRow {
   provider: string;
   identity: string;
   label: string;
+  /** See `AccountRef.derivedLabel`. */
+  derivedLabel?: boolean;
   /** Epoch milliseconds. */
   ts: number;
   model: string;
@@ -105,6 +107,12 @@ export interface AccountRef {
   provider: string;
   identity: string;
   label: string;
+  /**
+   * True when `label` was derived (from a directory name) rather than configured by the
+   * user: it names a new account but never renames an existing one. Absent or false is an
+   * explicit label, which renames as cc-usage's ledger does.
+   */
+  derivedLabel?: boolean;
 }
 
 export interface Account extends AccountRef {
@@ -244,7 +252,8 @@ export class Store {
    * NULL sub-bucket is kept only while both sides lack it; `codex-unattributed` gives
    * way to a real model, never the reverse; tier is the max. The key, account and ts of
    * a stored row never change. Each (provider, identity) is one account whose label
-   * follows the latest write. Throws `RangeError` for a malformed row (a caller bug)
+   * follows the latest write of an explicit label (a derived one only names a new
+   * account; see `AccountRef.derivedLabel`). Throws `RangeError` for a malformed row (a caller bug)
    * before touching the database, and `StoreError` for everything else.
    */
   upsert(rows: readonly UsageRow[]): number {
@@ -713,23 +722,34 @@ function accountKey(ref: { provider: string; identity: string }): string {
  * Interns every (provider, identity) with its last label, new ones in order of first
  * appearance (cc-usage's dict order); returns accountKey -> id. The label is the one
  * current at the latest write: a rename updates it, while the account stays the same.
+ * A derived label only names a new account, and an explicit label in the same batch
+ * wins over it.
  */
 function internAccounts(db: Database, refs: readonly AccountRef[]): Map<string, number> {
-  const labels = new Map<string, AccountRef>();
+  const labels = new Map<string, AccountRef & { derivedLabel: boolean }>();
   for (const ref of refs) {
-    labels.set(accountKey(ref), {
+    const key = accountKey(ref);
+    const derivedLabel = ref.derivedLabel === true;
+    if (derivedLabel && labels.get(key)?.derivedLabel === false) continue;
+    labels.set(key, {
       provider: storedText(ref.provider),
       identity: storedText(ref.identity),
       label: storedText(ref.label),
+      derivedLabel,
     });
   }
-  const upsert = db.query(
+  const rename = db.query(
     `INSERT INTO accounts (provider, identity, label) VALUES (?1, ?2, ?3)
      ON CONFLICT (provider, identity) DO UPDATE SET label = excluded.label
      WHERE accounts.label != excluded.label`,
   );
-  for (const { provider, identity, label } of labels.values())
-    upsert.run(provider, identity, label);
+  const name = db.query(
+    `INSERT INTO accounts (provider, identity, label) VALUES (?1, ?2, ?3)
+     ON CONFLICT (provider, identity) DO NOTHING`,
+  );
+  for (const { provider, identity, label, derivedLabel } of labels.values()) {
+    (derivedLabel ? name : rename).run(provider, identity, label);
+  }
   return new Map(
     db
       .query<{ id: bigint; provider: string; identity: string }, []>(

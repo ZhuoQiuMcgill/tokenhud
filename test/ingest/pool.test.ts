@@ -10,7 +10,8 @@ afterEach(cleanup);
 
 const withoutTime = (r: ReadResult) => ({ ...r, ms: 0 });
 
-test("parse Workers return exactly what an inline read returns, in task order", async () => {
+/** Seven small transcripts and one missing file. */
+function someTasks(): ReadTask[] {
   const dir = tempDir();
   const tasks: ReadTask[] = [];
   for (let i = 0; i < 7; i++) {
@@ -27,22 +28,47 @@ test("parse Workers return exactly what an inline read returns, in task order", 
     tail: null,
     state: null,
   });
+  return tasks;
+}
+
+// Claim each task is big, so the work goes to the Workers.
+const big = (tasks: ReadTask[]) => tasks.map(() => POOL_MIN_BYTES);
+
+test("parse Workers return exactly what an inline read returns, in task order", async () => {
+  const tasks = someTasks();
   const inline = tasks.map(readTask);
-  // Claim each task is big, so the work goes to 3 Workers.
-  const pooled = await readAll(
-    tasks,
-    tasks.map(() => POOL_MIN_BYTES),
-    3,
-  );
+  const pooled = await readAll(tasks, big(tasks), { poolSize: 3 });
   expect(pooled.map(withoutTime)).toEqual(inline.map(withoutTime));
   expect(pooled.at(-1)?.error).toBe("ENOENT");
+});
+
+describe("a parse Worker that does not reply", () => {
+  test.each([
+    ["exits mid-batch", "worker-exits.ts", "exited without replying"],
+    ["throws", "worker-throws.ts", "failed"],
+  ])("%s: its share is read here instead, and the next read works", async (_name, script, why) => {
+    const tasks = someTasks();
+    const inline = tasks.map(readTask);
+    const logs: string[] = [];
+    const url = new URL(`./${script}`, import.meta.url).href;
+    const pooled = await readAll(tasks, big(tasks), {
+      poolSize: 3,
+      workerUrl: url,
+      log: (_level, message) => logs.push(message),
+    });
+    expect(pooled.map(withoutTime)).toEqual(inline.map(withoutTime));
+    expect(logs).toHaveLength(3);
+    for (const message of logs) expect(message).toContain(why);
+    const again = await readAll(tasks, big(tasks), { poolSize: 3 });
+    expect(again.map(withoutTime)).toEqual(inline.map(withoutTime));
+  });
 });
 
 test("small jobs stay on the calling thread", async () => {
   const path = join(tempDir(), "s.jsonl");
   writeFileSync(path, claudeLine("1", "1", 1));
   const task: ReadTask = { provider: "claude", path, start: 0, tail: null, state: null };
-  const [result] = await readAll([task, task], [10, 10], 8);
+  const [result] = await readAll([task, task], [10, 10], { poolSize: 8 });
   expect(result?.entries).toHaveLength(1);
 });
 

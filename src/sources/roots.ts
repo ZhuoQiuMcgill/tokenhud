@@ -37,6 +37,12 @@ const CLAUDE_RESERVED: readonly string[] = [CODEX_ACCOUNT, ALL_SCOPE];
 export interface Root {
   provider: Provider;
   label: string;
+  /**
+   * Whether the label was configured (a `label` in the root's config entry). Any other
+   * label is a default or derived from the directory name, and never renames an account
+   * the store already has.
+   */
+  labelExplicit: boolean;
   /** The config dir as discovered: `~` expanded and normalised, symlinks not resolved. */
   path: string;
   /** Where the transcripts live: `<path>/projects` (Claude) or `<path>/sessions` (Codex). */
@@ -326,6 +332,7 @@ function discover(
     roots.push({
       provider: spec.provider,
       label: dedupeLabel(label, used),
+      labelExplicit: candidate.source === "config" && Boolean(candidate.label),
       path: candidate.path,
       projects: joinPath(candidate.path, spec.projectsSubdir, platform),
       source: candidate.source,
