@@ -25,3 +25,13 @@ export function pricingOverridesPath(env: Env = process.env, home: string = home
 export function storePath(env: Env = process.env, home: string = homedir()): string {
   return join(configDir(env, home), "tokenhud.db");
 }
+
+/**
+ * cc-usage's config dir, found exactly as cc-usage v2.6.1 finds it (`cc_usage/paths.py`):
+ * `$XDG_CONFIG_HOME/cc-usage` for any non-empty XDG_CONFIG_HOME, relative ones included,
+ * else `~/.config/cc-usage`. It holds the ledger, `pricing.json` and `config.json`, which
+ * tokenhud only ever reads.
+ */
+export function ccUsageDir(env: Env = process.env, home: string = homedir()): string {
+  return join(env.XDG_CONFIG_HOME || join(home, ".config"), "cc-usage");
+}

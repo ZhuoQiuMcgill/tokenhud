@@ -146,13 +146,46 @@ export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
     };
   } finally {
     source?.close();
+    removeScratch(scratch);
+  }
+}
+
+/**
+ * The key of every usage row in the cc-usage ledger at `ledgerPath`, read from a
+ * snapshot taken exactly as `importCcUsage` takes it, in `scratch` (an empty directory
+ * this removes afterwards). Null when cc-usage kept writing through every attempt. For
+ * `doctor`, which counts the rows only cc-usage has. Throws `ImportSourceError` for a
+ * missing, unreadable or incompatible ledger.
+ */
+export function readCcUsageKeys(ledgerPath: string, scratch: string): bigint[] | null {
+  let source: Database | undefined;
+  try {
+    const copy = snapshot(ledgerPath, scratch);
+    if (copy === null) return null;
+    source = openChecked(copy, ledgerPath);
+    const db = source;
     try {
-      // Windows can hold a just-closed file for a moment; retry, and never let cleanup
-      // mask the import's own result. A leftover is swept by a later store open.
-      rmSync(scratch, { recursive: true, force: true, maxRetries: 5 });
-    } catch {
-      // left in the scratch dir
+      checkLayout(db);
+      return db
+        .query<{ key: bigint }, []>("SELECT key FROM usage")
+        .all()
+        .map((r) => r.key);
+    } catch (error) {
+      throw sourceError(error, "the cc-usage ledger");
     }
+  } finally {
+    source?.close();
+    removeScratch(scratch);
+  }
+}
+
+function removeScratch(scratch: string): void {
+  try {
+    // Windows can hold a just-closed file for a moment; retry, and never let cleanup
+    // mask the caller's own result. A leftover is swept by a later store open.
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 5 });
+  } catch {
+    // left in the scratch dir
   }
 }
 
@@ -314,31 +347,37 @@ function text(value: unknown, what: string): string {
   throw new ImportSourceError("corrupt", `the cc-usage ledger has a non-text ${what}`);
 }
 
+/** The ledger's meta table, once its layout and key scheme are known to be cc-usage v2.6.1's. */
+function checkLayout(db: Database): Map<unknown, unknown> {
+  const version = Number(
+    db.query<{ user_version: bigint }, []>("PRAGMA user_version").get()?.user_version,
+  );
+  if (version !== CC_USAGE_SCHEMA_VERSION) {
+    throw new ImportSourceError(
+      "incompatible",
+      `ledger schema v${version}; tokenhud imports cc-usage's v${CC_USAGE_SCHEMA_VERSION} (launch cc-usage v2.6.1 once to upgrade it)`,
+    );
+  }
+  const meta = new Map(
+    db
+      .query<{ k: unknown; v: unknown }, []>("SELECT k, v FROM meta")
+      .all()
+      .map((m) => [m.k, m.v]),
+  );
+  // As cc-usage's read_summary: a missing scheme reads as 0.
+  const scheme = Number(meta.get("key_scheme") || 0);
+  if (scheme !== CC_USAGE_KEY_SCHEME) {
+    throw new ImportSourceError(
+      "incompatible",
+      `ledger uses record key scheme v${scheme}; tokenhud imports v${CC_USAGE_KEY_SCHEME} only`,
+    );
+  }
+  return meta;
+}
+
 function readLedger(db: Database): Ledger {
   try {
-    const version = Number(
-      db.query<{ user_version: bigint }, []>("PRAGMA user_version").get()?.user_version,
-    );
-    if (version !== CC_USAGE_SCHEMA_VERSION) {
-      throw new ImportSourceError(
-        "incompatible",
-        `ledger schema v${version}; tokenhud imports cc-usage's v${CC_USAGE_SCHEMA_VERSION} (launch cc-usage v2.6.1 once to upgrade it)`,
-      );
-    }
-    const meta = new Map(
-      db
-        .query<{ k: unknown; v: unknown }, []>("SELECT k, v FROM meta")
-        .all()
-        .map((m) => [m.k, m.v]),
-    );
-    // As cc-usage's read_summary: a missing scheme reads as 0.
-    const scheme = Number(meta.get("key_scheme") || 0);
-    if (scheme !== CC_USAGE_KEY_SCHEME) {
-      throw new ImportSourceError(
-        "incompatible",
-        `ledger uses record key scheme v${scheme}; tokenhud imports v${CC_USAGE_KEY_SCHEME} only`,
-      );
-    }
+    const meta = checkLayout(db);
     const accountsById = new Map<unknown, AccountRef>(
       db
         .query<{ id: bigint; provider: unknown; identity: unknown; label: unknown }, []>(
