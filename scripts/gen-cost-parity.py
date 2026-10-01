@@ -4,10 +4,13 @@ Run with cc-usage's interpreter (it must import cc_usage v2.6.1), with Bun on PA
 
     /mnt/d/Projects/CC_Usage/.venv/bin/python scripts/gen-cost-parity.py
 
-Writes, under test/fixtures/pricing/:
-  cc-usage-v2.6.1-pricing.json  cc-usage's bundled table: the same data, reformatted for
-                                Biome
-  cost-parity.json              deterministic pseudo-random usage records, each with
+Writes:
+  src/pricing/cc-usage-v2.6.1-pricing.json
+                                cc-usage's bundled table: the same data, reformatted for
+                                Biome. `tokenhud import-cc-usage` compares the user's
+                                pricing.json with it.
+  test/fixtures/pricing/cost-parity.json
+                                deterministic pseudo-random usage records, each with
                                 cc_usage.cost.compute_cost's result:
                                 - "cases": every model in that table. Zeros, null ephemeral
                                   buckets, long-context crossings at threshold - 1,
@@ -305,7 +308,7 @@ def main() -> None:
             rows.append([index, inp, out, cache_read, creation, e5, e1, cost])
 
     OUT.mkdir(parents=True, exist_ok=True)
-    table_path = OUT / "cc-usage-v2.6.1-pricing.json"
+    table_path = ROOT / "src" / "pricing" / "cc-usage-v2.6.1-pricing.json"
     parity_path = OUT / "cost-parity.json"
     table = {"_comment": bundled["_comment"], "models": models}
     table_path.write_text(to_json(table) + "\n", "utf-8")

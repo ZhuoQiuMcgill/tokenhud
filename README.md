@@ -27,7 +27,10 @@ Repository layout:
 ```
 src/cli.ts         entry point: parses arguments and dispatches commands
 src/version.ts     the version, taken from package.json at build time
-src/commands/      one module per subcommand (created with the first command)
+src/commands/      one module per subcommand: json, doctor, import-cc-usage
+src/query/         the query layer: periods, totals and groupings, priced to the cent
+src/store/         the SQLite usage store and its hourly rollup
+src/pricing/       the dated price table and the cost engine
 test/              bun test suites; they run the CLI in a subprocess
 scripts/build.ts   wrapper around bun build --compile
 ```

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import ccUsageBundled from "../../src/pricing/cc-usage-v2.6.1-pricing.json";
 import {
   loadPriceTable,
   mergePricing,
@@ -11,7 +12,6 @@ import {
 } from "../../src/pricing/overrides.ts";
 import { bundledPricing } from "../../src/pricing/table.ts";
 import ccUsageUser from "../fixtures/pricing/cc-usage-user-pricing.json";
-import ccUsageBundled from "../fixtures/pricing/cc-usage-v2.6.1-pricing.json";
 import { at } from "./helpers.ts";
 
 let dir: string;

@@ -1,8 +1,11 @@
+import { runDoctor } from "./commands/doctor.ts";
+import { runImportCcUsage } from "./commands/import-cc-usage.ts";
+import { runJson } from "./commands/json.ts";
 import { VERSION } from "./version.ts";
 
-// The commands from docs/ARCHITECTURE.md §3, in its order. None is implemented yet: each
-// is listed in the help as "(not yet available)" and exits 2 when run. Bare `tokenhud`
-// (the TUI) counts as one of them.
+// The commands from docs/ARCHITECTURE.md §3, in its order. Those not implemented yet are
+// listed in the help as "(not yet available)" and exit 2 when run. Bare `tokenhud` (the
+// TUI) counts as one of them.
 const PLANNED: ReadonlyArray<readonly [usage: string, summary: string]> = [
   ["tokenhud", "interactive TUI (default)"],
   ["tokenhud --once", "one static frame to stdout"],
@@ -12,6 +15,15 @@ const PLANNED: ReadonlyArray<readonly [usage: string, summary: string]> = [
   ["tokenhud doctor", "store health and data coverage"],
   ["tokenhud update", "self-update (npm or binary)"],
 ];
+
+type Command = (args: readonly string[]) => number;
+
+/** The implemented commands. Each parses its own arguments, its --help included. */
+const COMMANDS: ReadonlyMap<string, Command> = new Map([
+  ["json", runJson],
+  ["import-cc-usage", runImportCcUsage],
+  ["doctor", runDoctor],
+]);
 
 const SUBCOMMANDS: ReadonlySet<string> = new Set([
   "json",
@@ -32,10 +44,11 @@ const EXIT_USAGE = 2;
 function helpText(): string {
   const usageWidth = Math.max(...[...PLANNED, ...OPTIONS].map(([usage]) => usage.length)) + 2;
   const summaryWidth = Math.max(...PLANNED.map(([, summary]) => summary.length)) + 2;
-  const commands = PLANNED.map(
-    ([usage, summary]) =>
-      `  ${usage.padEnd(usageWidth)}${summary.padEnd(summaryWidth)}(not yet available)`,
-  );
+  const commands = PLANNED.map(([usage, summary]) => {
+    const available = COMMANDS.has(usage.split(" ")[1] ?? "");
+    const line = `  ${usage.padEnd(usageWidth)}${available ? summary : summary.padEnd(summaryWidth)}`;
+    return available ? line : `${line}(not yet available)`;
+  });
   const options = OPTIONS.map(([usage, summary]) => `  ${usage.padEnd(usageWidth)}${summary}`);
   return [
     `tokenhud ${VERSION}`,
@@ -55,12 +68,17 @@ function usageError(message: string): number {
 }
 
 // Arguments are read left to right and the first decisive one wins: `--help` and
-// `--version` answer at once, and an unknown option or command fails at once. So
-// `tokenhud doctor --help` shows the help, and `tokenhud --bogus --help` is an error.
+// `--version` answer at once, and an unknown option or command fails at once. An
+// implemented command takes every argument after its name, so `tokenhud doctor --help`
+// is the doctor's help, while `tokenhud mcp --help` is still the general one.
 function main(args: readonly string[]): number {
   let subcommand: string | undefined;
   let once = false;
-  for (const arg of args) {
+  for (const [i, arg] of args.entries()) {
+    if (subcommand === undefined) {
+      const command = COMMANDS.get(arg);
+      if (command !== undefined) return command(args.slice(i + 1));
+    }
     if (arg === "--help" || arg === "-h") {
       process.stdout.write(`${helpText()}\n`);
       return EXIT_OK;
@@ -74,8 +92,7 @@ function main(args: readonly string[]): number {
     } else if (arg.startsWith("-")) {
       return usageError(`unknown option '${arg}'`);
     } else if (subcommand === undefined) {
-      // Only the first positional names a command; later ones are its arguments, such as
-      // the json query.
+      // Only the first positional names a command; later ones are its arguments.
       if (!SUBCOMMANDS.has(arg)) return usageError(`unknown command '${arg}'`);
       subcommand = arg;
     }

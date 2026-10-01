@@ -1,6 +1,6 @@
+import ccUsageBundled from "../../src/pricing/cc-usage-v2.6.1-pricing.json";
 import type { Rates, TokenCounts } from "../../src/pricing/cost.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
-import ccUsageBundled from "../fixtures/pricing/cc-usage-v2.6.1-pricing.json";
 
 /** Python's math.isclose, with its default rel_tol of 1e-9. */
 export function isClose(a: number, b: number, absTol = 0, relTol = 1e-9): boolean {

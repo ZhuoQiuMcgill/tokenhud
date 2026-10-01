@@ -21,6 +21,7 @@ const ARCHITECTURE_COMMANDS = [
   "tokenhud doctor",
   "tokenhud update",
 ];
+const AVAILABLE = new Set(["tokenhud json <query>", "tokenhud import-cc-usage", "tokenhud doctor"]);
 
 describe("--version", () => {
   test("prints the package version and exits 0", () => {
@@ -43,13 +44,14 @@ describe("--help", () => {
     expect(lines[0]).toBe(`tokenhud ${version}`);
   });
 
-  test.each(ARCHITECTURE_COMMANDS)("lists '%s' with a summary, marked not yet available", (cmd) => {
+  test.each(ARCHITECTURE_COMMANDS)("lists '%s' with a summary, marked if not available", (cmd) => {
     // Two spaces end the invocation column, so "tokenhud" doesn't match "tokenhud mcp".
     const line = lines.find((l) => l.trimStart().startsWith(`${cmd}  `));
     expect(line).toBeDefined();
     const summary = line?.trimStart().slice(cmd.length).replace("(not yet available)", "").trim();
     expect(summary).not.toBe("");
-    expect(line).toEndWith("(not yet available)");
+    if (AVAILABLE.has(cmd)) expect(line).not.toContain("(not yet available)");
+    else expect(line).toEndWith("(not yet available)");
   });
 
   test.each(["-h, --help", "-v, --version"])("lists the option '%s' with a summary", (option) => {
@@ -66,19 +68,27 @@ describe("--help", () => {
     expect(run("-h")).toEqual(help);
   });
 
-  test("wins after a command", () => {
-    expect(run("doctor", "--help")).toEqual(help);
+  test("wins after a command that is not available yet", () => {
+    expect(run("mcp", "--help")).toEqual(help);
   });
+
+  test.each(["json", "import-cc-usage", "doctor"])(
+    "'%s --help' is that command's own help",
+    (cmd) => {
+      const own = run(cmd, "--help");
+      expect(own.code).toBe(0);
+      expect(own.stderr).toBe("");
+      expect(own.stdout).toContain(`tokenhud ${cmd}`);
+      expect(own.stdout).not.toEqual(help.stdout);
+    },
+  );
 });
 
 describe("commands that are not available yet", () => {
   test.each([
     [[], "tokenhud"],
     [["--once"], "--once"],
-    [["json", "today"], "json"],
     [["mcp"], "mcp"],
-    [["import-cc-usage"], "import-cc-usage"],
-    [["doctor"], "doctor"],
     [["update"], "update"],
   ])("%j exits 2 naming '%s'", (args, name) => {
     expect(run(...args)).toEqual({
@@ -93,7 +103,8 @@ describe("usage errors", () => {
   test.each([
     [["--bogus"], "unknown option '--bogus'"],
     [["-x"], "unknown option '-x'"],
-    [["doctor", "--bogus"], "unknown option '--bogus'"],
+    [["mcp", "--bogus"], "unknown option '--bogus'"],
+    [["--bogus", "doctor"], "unknown option '--bogus'"],
     [["--bogus", "--help"], "unknown option '--bogus'"],
     [["frobnicate"], "unknown command 'frobnicate'"],
   ])("%j exits 2 and points at --help", (args, error) => {
