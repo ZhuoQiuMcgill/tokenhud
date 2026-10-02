@@ -3,7 +3,7 @@
 // label survives a restart; the TUI shows it at once; and the store takes it with that
 // account's next ingested row, through the explicit-label path T4 added.
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,12 +26,13 @@ import {
   rootInfos,
 } from "../../src/tui/vm/session.ts";
 import { claudeLine } from "../ingest/helpers.ts";
+import { removeTempDir } from "../temp.ts";
 
 const dirs: string[] = [];
 const engines: IngestEngine[] = [];
 afterEach(async () => {
   for (const e of engines.splice(0)) await e.stop().catch(() => {});
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+  for (const d of dirs.splice(0)) removeTempDir(d);
 });
 
 /** A home with ~/.claude and a CLAUDE_CONFIG_DIR root, one transcript line each. */

@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Store, UsageRow } from "../../src/store/store.ts";
+import { removeTempDir } from "../temp.ts";
 
 const made: string[] = [];
 const opened: Store[] = [];
@@ -19,7 +20,7 @@ export function cleanup(): void {
       // already closed by the test
     }
   }
-  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  for (const dir of made.splice(0)) removeTempDir(dir);
 }
 
 /** A fresh temp dir, removed after the test. */
