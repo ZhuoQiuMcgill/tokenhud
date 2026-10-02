@@ -7,7 +7,7 @@ import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
 import type { ChangedEvent, PassReport, RootStats } from "../ingest/pass.ts";
 import { ccUsageLimitsPath } from "../limits/cache.ts";
-import { Limits } from "../limits/index.ts";
+import { Limits, manualLinks } from "../limits/index.ts";
 import { storePath } from "../paths.ts";
 import { discoverClaudeRoots, discoverCodexRoots } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
@@ -64,6 +64,7 @@ function engineOptions(values: {
     options.limits = {
       limitsPath: values.limits,
       ccUsageLimits: values["no-import"] ? null : ccUsageLimitsPath(env, home),
+      configPath: values.config ?? configPath(env, home),
     };
   }
   return options;
@@ -222,6 +223,7 @@ async function watchMode(options: WorkerOptions, stats: boolean): Promise<number
           },
           db: null,
           spend: null,
+          links: () => manualLinks(options.config),
         });
   const worker = startIngestWorker(options, (message) => {
     switch (message.type) {

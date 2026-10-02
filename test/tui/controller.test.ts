@@ -225,6 +225,7 @@ describe("settings", () => {
     identity: "fixture-identity-work",
     disabledBy: [],
     configIndex: null,
+    group: null,
   };
 
   test("s opens it (asking for fresh roots); a value change is saved and applied", () => {

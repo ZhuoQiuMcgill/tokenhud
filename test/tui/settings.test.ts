@@ -6,6 +6,8 @@ import {
   filterZones,
   initialSettings,
   labelProblem,
+  linkCandidates,
+  linkRoots,
   renameRoot,
   rowValue,
   SETTINGS_ROWS,
@@ -14,6 +16,7 @@ import {
   settingsKey,
   toggleEnabled,
   toggleHistoryOnly,
+  unlinkRoot,
 } from "../../src/tui/settings.ts";
 import type { RootInfo } from "../../src/tui/vm/types.ts";
 import { guard } from "../guard.ts";
@@ -30,6 +33,7 @@ const root = (over: Partial<RootInfo>): RootInfo => ({
   identity: "id-personal",
   disabledBy: [],
   configIndex: null,
+  group: null,
   ...over,
 });
 
@@ -258,6 +262,183 @@ describe("accounts", () => {
     expect(toggleEnabled(config, ROOTS[0] as RootInfo)).toEqual({
       ...config,
       disabled_roots: ["/a", "/home/someone/.claude"],
+    });
+  });
+});
+
+describe("shared accounts (T16): same account as…, unlink", () => {
+  const open = ["end", "return"];
+  /** The roots, with personal and work on one account. */
+  const linked = (source: "auto" | "manual"): RootInfo[] =>
+    ROOTS.map((r) =>
+      r.identity === "id-personal"
+        ? { ...r, group: { others: ["id-work"], source } }
+        : r.identity === "id-work"
+          ? { ...r, group: { others: ["id-personal"], source } }
+          : r,
+    );
+
+  function driveRoots(roots: RootInfo[], keys: string[], config = defaultConfig()) {
+    let state: SettingsState | null = initialSettings();
+    let cfg = config;
+    for (const name of keys) {
+      if (state === null) break;
+      const r = settingsKey(
+        state,
+        { name, sequence: name.length === 1 ? name : "" },
+        { ...input(cfg), roots },
+      );
+      state = r.state;
+      if (r.config) cfg = r.config;
+    }
+    return { state, config: cfg };
+  }
+
+  test("a picks another root of the same provider; enter links them in same_account", () => {
+    const picker = drive([...open, "a"]);
+    expect(picker.state).toMatchObject({ screen: "link", pick: 0, choice: 0 });
+    expect(linkCandidates(ROOTS[0] as RootInfo, ROOTS).map((r) => r.label)).toEqual([
+      "work",
+      "company",
+    ]);
+    const done = drive([...open, "a", "down", "return"]);
+    expect(done.config.same_account).toEqual([["id-personal", "id-env"]]);
+    expect(done.accountsChanged).toBe(true);
+    expect(done.state).toMatchObject({ screen: "accounts", pick: 0 });
+    // Esc leaves the config as it was.
+    expect(drive([...open, "a", "escape"]).config.same_account).toEqual([]);
+  });
+
+  test("roots already linked are not offered; a root with none to link to says so", () => {
+    expect(
+      linkCandidates(linked("auto")[0] as RootInfo, linked("auto")).map((r) => r.label),
+    ).toEqual(["company"]);
+    const lone = drive([...open, "end", "a"]);
+    expect(lone.state).toMatchObject({
+      screen: "accounts",
+      message: "no other codex root to link it to",
+    });
+  });
+
+  test("linking joins the entry either root is in, and drops a separate pair between them", () => {
+    const config: Config = {
+      ...defaultConfig(),
+      same_account: [
+        ["id-personal", "id-work"],
+        ["x", "y"],
+      ],
+      separate_accounts: [
+        ["id-env", "id-work"],
+        ["id-env", "z"],
+      ],
+    };
+    const after = linkRoots(config, ROOTS[2] as RootInfo, ROOTS[1] as RootInfo);
+    expect(after.same_account).toEqual([
+      ["x", "y"],
+      ["id-personal", "id-work", "id-env"],
+    ]);
+    expect(after.separate_accounts).toEqual([["id-env", "z"]]);
+  });
+
+  test("disabled roots are not offered: a link to one would do nothing", () => {
+    const roots = ROOTS.map((r) => (r.identity === "id-work" ? { ...r, enabled: false } : r));
+    expect(linkCandidates(roots[0] as RootInfo, roots).map((r) => r.label)).toEqual(["company"]);
+  });
+
+  test("linking drops the separate pairs between the root and every root on the target's account", () => {
+    // The critic's case: work unlinked from {personal, work, company} (kept apart from both),
+    // then linked back to personal, whose account company is still on.
+    const config: Config = {
+      ...defaultConfig(),
+      same_account: [["id-personal", "id-env"]],
+      separate_accounts: [
+        ["id-work", "id-personal"],
+        ["id-work", "id-env"],
+        ["id-env", "z"],
+      ],
+    };
+    const personal = {
+      ...(ROOTS[0] as RootInfo),
+      group: { others: ["id-env"], source: "manual" as const },
+    };
+    const after = linkRoots(config, ROOTS[1] as RootInfo, personal);
+    expect(after.same_account).toEqual([["id-personal", "id-env", "id-work"]]);
+    expect(after.separate_accounts).toEqual([["id-env", "z"]]);
+  });
+
+  test("linking two accounts works both ways, and says which separate pairs it undid", () => {
+    // The critic's case: work unlinked from {personal, work, company}; then personal (still
+    // on company's account) picks work. Before, only work picking personal worked.
+    const config: Config = {
+      ...defaultConfig(),
+      same_account: [["id-personal", "id-env"]],
+      separate_accounts: [
+        ["id-work", "id-personal"],
+        ["id-work", "id-env"],
+      ],
+    };
+    const onAccount = (r: RootInfo, others: string[]): RootInfo => ({
+      ...r,
+      group: { others, source: "manual" },
+    });
+    const roots = ROOTS.map((r) =>
+      r.identity === "id-personal"
+        ? onAccount(r, ["id-env"])
+        : r.identity === "id-env"
+          ? onAccount(r, ["id-personal"])
+          : r,
+    );
+    const [personal, work] = roots as [RootInfo, RootInfo];
+    for (const [a, b] of [
+      [personal, work],
+      [work, personal],
+    ] as const) {
+      const after = linkRoots(config, a, b);
+      expect(after.separate_accounts).toEqual([]);
+      expect(after.same_account).toHaveLength(1);
+      expect([...(after.same_account[0] as string[])].sort()).toEqual([
+        "id-env",
+        "id-personal",
+        "id-work",
+      ]);
+    }
+    // Through the keys: personal (first) picks work (its only candidate), with a message.
+    let state: SettingsState | null = initialSettings();
+    let cfg = config;
+    for (const name of ["end", "return", "a", "return"]) {
+      const r = settingsKey(
+        state as SettingsState,
+        { name, sequence: name.length === 1 ? name : "" },
+        {
+          ...input(cfg),
+          roots,
+        },
+      );
+      state = r.state;
+      if (r.config) cfg = r.config;
+    }
+    expect(cfg.separate_accounts).toEqual([]);
+    expect(state).toMatchObject({
+      screen: "accounts",
+      message: "no longer kept apart: work | personal, work | company",
+    });
+  });
+
+  test("u unlinks: out of same_account, and kept apart from every root it shared with", () => {
+    const config: Config = {
+      ...defaultConfig(),
+      same_account: [["id-personal", "id-work", "x"]],
+    };
+    const manual = driveRoots(linked("manual"), [...open, "u"], config);
+    expect(manual.config.same_account).toEqual([["id-work", "x"]]);
+    expect(manual.config.separate_accounts).toEqual([["id-personal", "id-work"]]);
+    // An auto-detected link is kept apart the same way, so it isn't found again.
+    const auto = driveRoots(linked("auto"), [...open, "down", "u"]);
+    expect(auto.config.separate_accounts).toEqual([["id-work", "id-personal"]]);
+    expect(unlinkRoot(auto.config, linked("auto")[1] as RootInfo)).toEqual(auto.config);
+    // A root on its own has nothing to unlink.
+    expect(drive([...open, "u"]).state).toMatchObject({
+      message: "personal shares its account with no root",
     });
   });
 });

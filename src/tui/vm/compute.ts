@@ -48,6 +48,30 @@ export interface Computed<V> {
   readonly validUntil: number;
 }
 
+/** A group of roots on one subscription account (T16), as the views label it. */
+export interface SharedGroup {
+  readonly id: string;
+  /** Its roots' display labels joined by " + ", as its Overview card is titled. */
+  readonly label: string;
+  /** Its roots' identities. */
+  readonly identities: readonly string[];
+}
+
+/** The groups of roots on one subscription account, by member identity; empty without limits. */
+export function sharedGroups(ctx: ComputeContext): Map<string, SharedGroup> {
+  const out = new Map<string, SharedGroup>();
+  const groups = ctx.sources?.limits?.groups();
+  if (groups === undefined) return out;
+  const labels = new Map(ctx.accounts.map((a) => [`${a.provider}\0${a.identity}`, a.label]));
+  for (const [identity, group] of groups) {
+    const label = group.members
+      .map((m) => labels.get(`${m.provider}\0${m.identity}`) ?? m.label)
+      .join(" + ");
+    out.set(identity, { id: group.id, label, identities: group.members.map((m) => m.identity) });
+  }
+  return out;
+}
+
 export const amount = (u: Usage): Amount => ({
   cost: u.cost,
   tokens: u.tokens.total,

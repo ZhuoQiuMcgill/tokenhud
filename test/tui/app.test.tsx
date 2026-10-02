@@ -267,6 +267,7 @@ describe("states", () => {
           identity: "fixture-identity-personal",
           disabledBy: [],
           configIndex: null,
+          group: null,
         },
       ],
     });

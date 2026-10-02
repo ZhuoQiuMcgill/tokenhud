@@ -78,8 +78,18 @@ export function detectLimitEvents(
   return changes;
 }
 
-/** Records the events `capture` implies for `root`'s account. Returns how many changed. */
-export function recordCaptureEvents(store: Store, root: Root, capture: Capture): number {
+/**
+ * Records the events `capture` implies for `root`'s account. `shared`: the other roots on
+ * the same subscription account (T16), whose events are this account's too: an instance
+ * any of them recorded is not recorded again, and their open `reached` events are resumed
+ * by this capture. Returns how many changed.
+ */
+export function recordCaptureEvents(
+  store: Store,
+  root: Root,
+  capture: Capture,
+  shared: readonly Root[] = [],
+): number {
   return store.recordLimitEvents(
     {
       provider: root.provider,
@@ -89,7 +99,39 @@ export function recordCaptureEvents(store: Store, root: Root, capture: Capture):
     },
     Math.round(capture.captured_at * 1000) - EVENT_HORIZON_MS,
     (existing) => detectLimitEvents(capture, existing),
+    shared,
   );
+}
+
+/**
+ * Limit events of roots on one subscription account recorded more than once (by each root
+ * before they were linked, or by two processes) shown once: the first of each kind, window
+ * and instance (resets under 15 minutes apart) among the roots `groupOf` puts together,
+ * with the first resume any of them recorded. `groupOf` names a root's group, or null.
+ */
+export function dedupeEvents<E extends LimitEvent>(
+  events: readonly E[],
+  groupOf: (identity: string) => string | null,
+): E[] {
+  const out: E[] = [];
+  const kept = new Map<string, number[]>();
+  for (const e of events) {
+    const group = groupOf(e.account.id);
+    if (group === null) {
+      out.push(e);
+      continue;
+    }
+    const key = `${group}\0${e.kind}\0${e.window}`;
+    const at = kept.get(key) ?? [];
+    const twin = at.find((i) => Math.abs((out[i] as E).resets_at - e.resets_at) < SAME_INSTANCE_MS);
+    if (twin === undefined) {
+      kept.set(key, [...at, out.length]);
+      out.push(e);
+    } else if ((out[twin] as E).resumed_at === null && e.resumed_at !== null) {
+      out[twin] = { ...(out[twin] as E), resumed_at: e.resumed_at };
+    }
+  }
+  return out;
 }
 
 /** A recorded event, as consumers read it. Times are epoch ms. */

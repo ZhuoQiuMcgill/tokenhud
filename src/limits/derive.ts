@@ -6,24 +6,34 @@ import type { UsageQueries } from "../query/engine.ts";
  * T2's cost engine; `pace` reads raw rows over the `usage_ts` index.
  */
 
-/** Spend of one store account (`accounts.id`). */
+/**
+ * Spend of store accounts (`accounts.id`) together: one root's, or every root's on one
+ * subscription account (T16), whose limits they share. An empty list spends nothing.
+ */
 export interface SpendSource {
   /** USD and tokens per hour over the last `minutes`. */
-  pace(acct: number, minutes: number): { costPerHour: number; tokensPerHour: number };
+  pace(accts: readonly number[], minutes: number): { costPerHour: number; tokensPerHour: number };
   /** USD spent in `[from, to)` (epoch ms). */
-  cost(acct: number, from: number, to: number): number;
+  cost(accts: readonly number[], from: number, to: number): number;
 }
 
 /** A `SpendSource` over T6's query engine. */
 export function spendFromQueries(queries: UsageQueries): SpendSource {
   return {
-    pace(acct, minutes) {
-      const pace = queries.pace({ accounts: [acct], minutes }).accounts[0];
-      return { costPerHour: pace?.costPerHour ?? 0, tokensPerHour: pace?.tokensPerHour ?? 0 };
+    pace(accts, minutes) {
+      if (accts.length === 0) return { costPerHour: 0, tokensPerHour: 0 };
+      // The accounts' spend summed, then made hourly: the pace of all of them together.
+      let cost = 0;
+      let tokens = 0;
+      for (const pace of queries.pace({ accounts: accts, minutes }).accounts) {
+        cost += pace.cost;
+        tokens += pace.tokens;
+      }
+      return { costPerHour: cost * (60 / minutes), tokensPerHour: tokens * (60 / minutes) };
     },
-    cost(acct, from, to) {
-      if (to <= from) return 0;
-      return queries.totals({ range: { from, to }, accounts: [acct] }).usage.cost;
+    cost(accts, from, to) {
+      if (to <= from || accts.length === 0) return 0;
+      return queries.totals({ range: { from, to }, accounts: accts }).usage.cost;
     },
   };
 }
@@ -70,9 +80,10 @@ export interface ProjectionInput {
  * spend is "safe": this account's spending does not move it.
  *
  * Limits of the estimate:
- * - Spend is what this machine's transcripts show. Usage of the same subscription
- *   elsewhere (another machine, claude.ai, a Codex home not read here) moves the meter
- *   without showing up, which makes `k` too high and the projection too early.
+ * - Spend is what this machine's transcripts show, summed over every root linked to the
+ *   account (T16). Usage of the same subscription elsewhere (another machine, claude.ai, a
+ *   root not linked to it) moves the meter without showing up, which makes `k` too high
+ *   and the projection too early.
  * - A window scoped to one model (Claude's per-model weekly limits) is divided by the
  *   account's whole spend, so its `k` is too low when other models dominate.
  * - API-equivalent dollars stand in for the provider's own, unpublished weighting, so a

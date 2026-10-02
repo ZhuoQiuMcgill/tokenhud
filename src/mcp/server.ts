@@ -12,11 +12,16 @@ import {
   StdioServerTransport,
   serveStdio,
 } from "@modelcontextprotocol/server/stdio";
-import { configPath, loadConfig } from "../config.ts";
+import { type Config, configPath, liveConfig } from "../config.ts";
 import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
 import { ccUsageLimitsPath, limitsPath } from "../limits/cache.ts";
-import { codexSnapshotsFrom, LimitsService } from "../limits/index.ts";
+import {
+  codexSnapshotsFrom,
+  LimitsService,
+  type ManualLinks,
+  manualLinks,
+} from "../limits/index.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import { PERIOD_NAMES } from "../query/periods.ts";
@@ -286,17 +291,27 @@ export function wireTools(options: WiringOptions = {}): Wiring {
   const log =
     options.log ?? ((message: string) => process.stderr.write(`tokenhud mcp: ${message}\n`));
   const now = options.now ?? Date.now;
-  const config = loadConfig(configPath(env, home));
+  // config.json, read again when it changes: the TUI's settings edit roots and account
+  // links while this server runs for the rest of a session, and the account groups it
+  // records must come from the links as they are.
+  const currentConfig = liveConfig(configPath(env, home));
+  const config = currentConfig();
   const discover = { home, env: { ...env } };
-  let cached: { at: number; roots: Root[] } | null = null;
+  let cached: { at: number; config: Config; roots: Root[] } | null = null;
   const roots = (): Root[] => {
     const at = Date.now();
-    if (cached === null || at - cached.at > ROOTS_TTL_MS) {
-      const claude = discoverClaudeRoots(config, discover);
-      cached = { at, roots: [...claude, ...discoverCodexRoots(config, discover, claude)] };
+    const now = currentConfig();
+    if (cached === null || cached.config !== now || at - cached.at > ROOTS_TTL_MS) {
+      const claude = discoverClaudeRoots(now, discover);
+      cached = {
+        at,
+        config: now,
+        roots: [...claude, ...discoverCodexRoots(now, discover, claude)],
+      };
     }
     return cached.roots;
   };
+  const links = (): ManualLinks => manualLinks(currentConfig());
 
   const zone = options.zone ?? Zone.configured(config.time_zone);
   const { table, warnings } = loadPriceTable(pricingOverridesPath(env, home));
@@ -310,6 +325,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     ccUsageLimits: ccUsageLimitsPath(env, home),
     roots: () => roots().filter((r) => r.enabled),
     snapshots,
+    links,
     now,
     log: (level, message) => log(`${level}: ${message}`),
   });
@@ -321,7 +337,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
       const engine = IngestEngine.open({
         storePath: path,
         cachePath: cachePath(env, home),
-        config,
+        config: currentConfig(),
         discover,
         // History import stays with the TUI and `tokenhud import-cc-usage`: a tool call
         // shouldn't wait for one.
@@ -351,6 +367,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     priceWarnings: warnings.length === 0 ? [] : [PRICE_WARNING],
     limitsPath: limitsPath(env, home),
     snapshots,
+    links,
     refresh: options.refresh ?? ((account, maxAgeS) => service.refresh(account, maxAgeS)),
     freshen: () => freshener.ensure(),
     hasTranscript: memoTranscripts(),

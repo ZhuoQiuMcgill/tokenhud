@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { configDir } from "./paths.ts";
@@ -53,6 +61,16 @@ export interface Config {
    * that now runs on another machine). See ARCHITECTURE.md, "history-only accounts".
    */
   history_only_roots: string[];
+  /**
+   * Roots (by identity) on one subscription account, linked by hand: each entry lists two
+   * or more roots of one provider that share their limits. Wins over auto-detection.
+   */
+  same_account: string[][];
+  /**
+   * Root pairs (by identity) never treated as one account, whatever auto-detection finds.
+   * A pair here wins over one in `same_account`.
+   */
+  separate_accounts: string[][];
   /** Whether the TUI may ask GitHub, once a day, if a newer release is out (tokenhud update). */
   update_check: boolean;
 }
@@ -69,6 +87,8 @@ export function defaultConfig(): Config {
     codex_roots: [],
     disabled_roots: [],
     history_only_roots: [],
+    same_account: [],
+    separate_accounts: [],
     update_check: true,
   };
 }
@@ -122,6 +142,20 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+/**
+ * Lists of root identities: each entry's non-empty strings, without repeats, kept when at
+ * least two remain; with `pairs`, only entries of exactly two.
+ */
+function identityLists(value: unknown, pairs: boolean): string[][] {
+  if (!Array.isArray(value)) return [];
+  const out: string[][] = [];
+  for (const entry of value) {
+    const ids = [...new Set(strings(entry).filter((id) => id !== ""))];
+    if (pairs ? ids.length === 2 : ids.length >= 2) out.push(ids);
+  }
+  return out;
+}
+
 /** cc-usage's `_validate` over a parsed config object: every bad or missing value becomes its default. */
 export function validateConfig(raw: unknown): Config {
   const config = defaultConfig();
@@ -143,6 +177,8 @@ export function validateConfig(raw: unknown): Config {
   config.codex_roots = sanitizeRoots(raw.codex_roots);
   config.disabled_roots = strings(raw.disabled_roots);
   config.history_only_roots = strings(raw.history_only_roots);
+  config.same_account = identityLists(raw.same_account, false);
+  config.separate_accounts = identityLists(raw.separate_accounts, true);
   if (typeof raw.update_check === "boolean") config.update_check = raw.update_check;
   return config;
 }
@@ -160,6 +196,30 @@ export function loadConfig(path: string = configPath()): Config {
   } catch {
     return defaultConfig();
   }
+}
+
+/**
+ * The config at `path`, read again whenever the file changes (one stat per call): for a
+ * long-running process that must see edits made elsewhere, such as account links saved by
+ * the TUI's settings.
+ */
+export function liveConfig(path: string = configPath()): () => Config {
+  let stamp: string | null = null;
+  let config = defaultConfig();
+  return () => {
+    let now = "";
+    try {
+      const st = statSync(path);
+      now = `${st.ino}:${st.mtimeMs}:${st.size}`;
+    } catch {
+      // missing: the defaults
+    }
+    if (now !== stamp) {
+      stamp = now;
+      config = loadConfig(path);
+    }
+    return config;
+  };
 }
 
 /**

@@ -26,6 +26,7 @@ function win(kind: string, label: string, utilization: number, resetsAt: number)
 function account(windows: LimitWindow[], signedIn = true): AccountLimits {
   return {
     account: { id: "0".repeat(32), label: "personal", provider: "claude", signed_in: signedIn },
+    group: null,
     windows,
     as_of: NOW,
     source: "api",

@@ -5,7 +5,7 @@
 import type { Database } from "bun:sqlite";
 import { statSync } from "node:fs";
 import type { Config } from "../../config.ts";
-import { Limits, spendFromQueries } from "../../limits/index.ts";
+import { type AccountGroup, Limits, manualLinks, spendFromQueries } from "../../limits/index.ts";
 import { codexSnapshotsFrom } from "../../limits/snapshots.ts";
 import { type McpActivity, readMcpActivity } from "../../mcp/heartbeat.ts";
 import { loadPriceTable } from "../../pricing/overrides.ts";
@@ -145,9 +145,18 @@ export function createQueries(db: Database, prices: PriceTable, tz: string, now:
   return new UsageQueries(db, prices, { tz, now, autoInvalidate: false });
 }
 
-/** The roots the settings editor lists, with what it needs to edit their config. */
-export function rootInfos(roots: readonly Root[], config: Config, home: string): RootInfo[] {
+/**
+ * The roots the settings editor lists, with what it needs to edit their config, and the
+ * groups of roots on one account (`Limits.groups`).
+ */
+export function rootInfos(
+  roots: readonly Root[],
+  config: Config,
+  home: string,
+  groups: ReadonlyMap<string, AccountGroup> = new Map(),
+): RootInfo[] {
   return roots.map((root) => {
+    const group = groups.get(root.identity);
     const entries = root.provider === "claude" ? config.claude_roots : config.codex_roots;
     // By identity, as discovery applies entries: `~/.claude` and its absolute path match.
     const index = entries.findIndex((e) => rootIdentity(e.path, home) === root.identity);
@@ -163,6 +172,13 @@ export function rootInfos(roots: readonly Root[], config: Config, home: string):
         (raw) => raw !== "" && expandPath(raw, home) === root.path,
       ),
       configIndex: index >= 0 ? index : null,
+      group:
+        group === undefined
+          ? null
+          : {
+              others: group.members.filter((m) => m !== root).map((m) => m.identity),
+              source: group.source,
+            },
     };
   });
 }
@@ -372,8 +388,20 @@ export class VmSession {
   #postRoots(): void {
     this.#post({
       type: "roots",
-      roots: rootInfos(this.#roots, this.#config, this.#start.discover.home),
+      roots: rootInfos(this.#roots, this.#config, this.#start.discover.home, this.#groups()),
     });
+  }
+
+  /** The groups of roots on one account, as limits.json and the config have them now. */
+  #groups(): Map<string, AccountGroup> {
+    const roots = this.#roots;
+    return new Limits({
+      limitsPath: this.#start.limitsPath,
+      roots: () => roots,
+      db: null,
+      spend: null,
+      links: () => manualLinks(this.#config),
+    }).groups();
   }
 
   #applySettings(settings: VmSettings): void {
@@ -566,6 +594,7 @@ export class VmSession {
         db: this.#db,
         spend: spendFromQueries(this.#queries),
         snapshots: codexSnapshotsFrom(this.#start.cachePath),
+        links: () => manualLinks(this.#config),
         now: () => now,
       }),
       mcp: this.#activity,

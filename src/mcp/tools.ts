@@ -1,6 +1,7 @@
 import { BadArgument, parseBound } from "../commands/json.ts";
 import { loadLimitsCache } from "../limits/cache.ts";
 import { spendFromQueries } from "../limits/derive.ts";
+import type { ManualLinks } from "../limits/groups.ts";
 import { type AccountLimits, Limits } from "../limits/index.ts";
 import type { CodexSnapshots } from "../limits/snapshots.ts";
 import type { DocumentRequest } from "../query/json.ts";
@@ -56,6 +57,8 @@ export interface ToolsDeps {
   priceWarnings: readonly string[];
   limitsPath: string;
   snapshots?: CodexSnapshots;
+  /** Manual account links (config `same_account`, `separate_accounts`). */
+  links?: () => ManualLinks;
   /** T8's on-demand refresh (`LimitsService.refresh`), within its rate limits. */
   refresh: (account: string, maxAgeS: number) => Promise<unknown>;
   /** Ingest once if the store is stale and the single-writer lock is free. */
@@ -88,6 +91,11 @@ export interface AccountEntry {
   id: string;
   label: string;
   provider: Provider;
+  /**
+   * The id of the roots on its subscription account (T16), shared by every one of them;
+   * null for a root alone.
+   */
+  group: string | null;
   /** Null until the account's limits are first checked (`limits` or the TUI). */
   signed_in: boolean | null;
   last_seen: string | null;
@@ -170,6 +178,7 @@ export class Tools {
       db,
       spend: store === null || db === null ? null : spendFromQueries(store.queries),
       ...(this.#d.snapshots !== undefined && { snapshots: this.#d.snapshots }),
+      ...(this.#d.links !== undefined && { links: this.#d.links }),
       now: this.#d.now,
     });
   }
@@ -216,14 +225,16 @@ export class Tools {
     this.#d.record?.("should_wait", resolved.root.label);
     const { limits, storeDown } = await this.#accountLimits(resolved.root, true);
     const store = storeDown ? null : this.#optionalStore();
-    const acct = this.#storeAccounts(store).get(
-      `${resolved.root.provider}:${resolved.root.identity}`,
-    )?.id;
+    // Every root on the account spends from its limits (T16).
+    const accounts = this.#storeAccounts(store);
+    const accts = (limits.group?.members.map((m) => m.id) ?? [resolved.root.identity])
+      .map((id) => accounts.get(`${resolved.root.provider}:${id}`)?.id)
+      .filter((id): id is number => id !== undefined);
     const spend = store === null ? null : spendFromQueries(store.queries);
     const spent: Spent = (from, to) => {
-      if (acct === undefined || spend === null) return null;
+      if (accts.length === 0 || spend === null) return null;
       try {
-        return spend.cost(acct, from, to);
+        return spend.cost(accts, from, to);
       } catch (error) {
         this.#storeFailed(error);
         return null;
@@ -370,8 +381,9 @@ export class Tools {
   /**
    * Every enabled account from what is cached: no request, no app-server, no sign-in
    * refresh. `signed_in` is known once T8 has checked the account (its status in
-   * limits.json), for a history-only root, or for a Codex account with limits read here
-   * (T8 counts those as signed in); otherwise null.
+   * limits.json, or that of a root on the same subscription account), for a history-only
+   * root, or for a Codex account with limits read here (T8 counts those as signed in);
+   * otherwise null.
    */
   async accounts(): Promise<{ accounts: AccountEntry[] }> {
     this.#d.record?.("accounts", null);
@@ -390,15 +402,17 @@ export class Tools {
     return {
       accounts: roots.map((root) => {
         const limits = byIdentity.get(root.identity);
+        const members = limits?.group?.members.map((m) => m.id) ?? [root.identity];
         const known =
           root.historyOnly ||
-          status[root.identity] !== undefined ||
+          members.some((id) => status[id] !== undefined) ||
           (root.provider === "codex" && (limits?.source === "rollout" || limits?.source === "rpc"));
         const lastSeen = seen.get(`${root.provider}:${root.identity}`)?.lastSeen ?? null;
         return {
           id: root.identity,
           label: root.label,
           provider: root.provider,
+          group: limits?.group?.id ?? null,
           signed_in: known ? (limits?.account.signed_in ?? !root.historyOnly) : null,
           last_seen: lastSeen === null ? null : this.#d.zone.iso(lastSeen),
           is_current: root.identity === current,

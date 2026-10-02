@@ -22,6 +22,7 @@ import { breakpoint, fitSections } from "./layout.ts";
 import {
   choices,
   filterZones,
+  linkCandidates,
   ROW_LABELS,
   rowValue,
   SETTINGS_ROWS,
@@ -213,12 +214,20 @@ function settingsLines(
     case "accounts":
     case "rename": {
       const { start, shown } = windowAround(input.roots, s.pick, rows - 4);
+      const labelOf = new Map(input.roots.map((r) => [r.identity, r.label]));
+      // The roots each shares a subscription account with (T16), when any does.
+      const shared = (r: RootInfo) =>
+        r.group === null
+          ? ""
+          : `same as ${r.group.others.map((id) => labelOf.get(id) ?? "?").join(", ")}`;
+      const sharing = input.roots.some((r) => r.group !== null);
       const lines = shown.map((r, i) =>
         picked(start + i === s.pick, [
           seg(r.enabled ? "● " : "○ ", r.enabled ? "live" : "dim"),
           seg(fit(r.label, 14), r.enabled ? "fg" : "dim"),
           seg(fit(r.provider, 7), "mute"),
           seg(fit(r.historyOnly ? "history only" : "", 13), "mid"),
+          ...(sharing ? [seg(fit(shared(r), 24), "live")] : []),
           seg(r.path, "dim"),
         ]),
       );
@@ -230,8 +239,38 @@ function settingsLines(
               ...message,
               hint("enter save · esc cancel"),
             ]
-          : [...message, hint("e enable/disable · l rename · h history only · esc back")];
+          : [
+              ...message,
+              hint("e enable/disable · l rename · h history only · esc back"),
+              hint("a same account as… · u unlink"),
+            ];
       return { title: "Settings › Accounts", lines: [...lines, { left: [] }, ...footerLines] };
+    }
+    case "link": {
+      const root = input.roots[s.pick];
+      const candidates = root === undefined ? [] : linkCandidates(root, input.roots);
+      const { start, shown } = windowAround(candidates, s.choice, rows - 5);
+      return {
+        title: "Settings › Accounts › Same account",
+        lines: [
+          {
+            left: [
+              seg(root?.label ?? "", "head", true),
+              seg(" is on the same subscription account as:", "mute"),
+            ],
+          },
+          ...shown.map((r, i) =>
+            picked(start + i === s.choice, [
+              seg(fit(r.label, 14), r.enabled ? "fg" : "dim"),
+              seg(fit(r.provider, 7), "mute"),
+              seg(r.path, "dim"),
+            ]),
+          ),
+          { left: [] },
+          ...message,
+          hint("↑/↓ move · enter link · esc cancel"),
+        ],
+      };
     }
   }
 }

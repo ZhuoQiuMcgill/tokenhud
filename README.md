@@ -146,6 +146,7 @@ The footer shows the keys of the view you are in.
 | `enter` | Change the selected setting, or pick a value |
 | `esc` | Back; from the main list, back to the view |
 | `e`, `l`, `h` | Under Accounts: turn an account off or on, rename it, mark it history only |
+| `a`, `u` | Under Accounts: mark an account as the same subscription account as another (pick it from a list), or unlink it |
 
 Settings are the refresh interval, the default spend window, whether to show cost, the
 theme (dark, light, high contrast), the time zone, whether to check for updates, and the
@@ -299,6 +300,28 @@ runs on another computer, say) keeps all of its history. Its card says "not sign
 here" instead of showing an error, and tokenhud checks its limits only once a day, or never
 once you mark it history only (`h`).
 
+**Several directories on one subscription account.** Two config dirs signed in to the same
+Claude (or ChatGPT) account share one set of limits: under WSL, `~/.claude` and the
+Windows-side `.claude` often are. tokenhud then shows them as one limits account: one
+card titled with both labels, limits fetched once through whichever is signed in, and a
+pace summed over both, since both spend from the same limit. History, spend and the
+Accounts view stay per directory; there, each says which directories it shares its account
+with, and the account's 30-day total.
+
+tokenhud links them by itself when their limits reset at the same times (within 2 s) and
+their use moves together: equal on two pairs of fetches seconds apart, at most ten minutes
+apart, and changed in between. An account nobody is using proves nothing, so two
+directories on an idle account show apart until it is used. Once they are linked, the
+other directory is still fetched every 30 minutes, and once more right away when its
+credential file changes. If a reset differs, the two show apart straight away, and a second
+difference in a row unlinks them; a difference in use alone is checked again next round.
+
+In settings under Accounts, `a` links an account to another by hand and `u` unlinks it;
+they are saved as `same_account` and `separate_accounts` in `config.json`, and win over
+what tokenhud finds. A link you made is never undone: if the limits differ, Accounts and
+`tokenhud doctor` say so. `tokenhud doctor` lists the linked directories, how each link was
+made, and the pairs kept apart.
+
 ## Use with Claude Code
 
 tokenhud's MCP server lets a Claude Code agent check the limits of the account it runs
@@ -344,11 +367,11 @@ plugin: `claude mcp add -s user tokenhud -- cmd /c tokenhud mcp`. The standalone
 
 | Tool | What it does |
 |---|---|
-| `limits` | The account's limit windows (5-hour, weekly, per model): utilization from 0 to 1, reset time, spend pace, and when the window would run out at that pace (an estimate). Fetches fresh limits when the cached ones are over 60 s old. |
+| `limits` | The account's limit windows (5-hour, weekly, per model): utilization from 0 to 1, reset time, spend pace, and when the window would run out at that pace (an estimate). Fetches fresh limits when the cached ones are over 60 s old. For a directory that shares its subscription account with others, the windows and pace are the account's, and `shared_with` names the others. |
 | `should_wait` | `wait: true` when a window is at 90 % or more (`min_headroom`, default 0.1), when `estimated_cost` (USD) would take it there, or when it is projected to run out within 10 minutes, before its reset. The 5-hour and weekly windows always count; a per-model window (such as a model's weekly limit) counts only when `model` names that model, and is otherwise just mentioned. Returns a short reason and `wait_s`: until the reset, plus 30 s. |
 | `wait_for_reset` | Waits until the window `should_wait` binds on (for the same `model`) resets, or its utilization drops under `until_utilization_below`, for at most `max_wait_s` (5 hours or less). Sends progress every 30 s, re-checks the limits every 5 minutes, and stops at once when the call is cancelled. |
 | `usage` | Tokens and API-equivalent cost for a period, optionally by model, account, day, week or month (at most 500 groups per call), as `tokenhud json usage` prints them ([schema](docs-public/JSON.md)), plus `stale_s`, the age of the store's data. |
-| `accounts` | The accounts on this machine, from cached data only: whether their limits can be read here (`signed_in`, null until first checked), their last usage, and which one this session runs on. |
+| `accounts` | The accounts on this machine, from cached data only: whether their limits can be read here (`signed_in`, null until first checked), their last usage, which one this session runs on, and `group`, the same id for every directory on one subscription account. |
 
 Every tool answers for the account the session runs on: `CLAUDE_CONFIG_DIR`, else
 `~/.claude`, confirmed by finding the session's transcript. `limits` reports how it was

@@ -160,6 +160,8 @@ describe("configFromCcUsage", () => {
       codex_roots: [{ path: "/mnt/c/Users/Example/.codex", label: "codex-win", enabled: true }],
       disabled_roots: ["/home/example/.claude-old"],
       history_only_roots: [],
+      same_account: [],
+      separate_accounts: [],
       update_check: true,
     });
   });

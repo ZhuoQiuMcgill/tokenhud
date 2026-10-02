@@ -133,6 +133,8 @@ describe("limits", () => {
         config_dir: f.m.claude,
         signed_in: true,
         detected_via: "default",
+        group: null,
+        shared_with: [],
       },
       windows: [
         {
@@ -173,6 +175,8 @@ describe("limits", () => {
       config_dir: f.m.work,
       signed_in: false,
       detected_via: "transcript",
+      group: null,
+      shared_with: [],
     });
     expect(value.windows).toEqual([]);
   });
@@ -539,6 +543,7 @@ describe("accounts", () => {
           id: f.personal.identity,
           label: "personal",
           provider: "claude",
+          group: null,
           signed_in: true,
           last_seen: "2026-10-01T14:50:00.000Z",
           is_current: true,
@@ -547,6 +552,7 @@ describe("accounts", () => {
           id: f.work.identity,
           label: "work",
           provider: "claude",
+          group: null,
           signed_in: false,
           last_seen: "2026-09-30T13:00:00.000Z",
           is_current: false,
@@ -555,6 +561,7 @@ describe("accounts", () => {
           id: f.codex.identity,
           label: "codex",
           provider: "codex",
+          group: null,
           // Never checked: unknown until its limits are first read.
           signed_in: null,
           last_seen: "2026-10-01T12:00:00.000Z",

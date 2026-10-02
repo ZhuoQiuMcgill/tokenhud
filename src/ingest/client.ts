@@ -20,6 +20,11 @@ export interface LimitsWorkerOptions {
   limitsPath: string;
   /** cc-usage's provider-limits.json, imported when limits.json does not exist yet; null never. */
   ccUsageLimits: string | null;
+  /**
+   * config.json, read again when it changes, for the account links (`same_account`,
+   * `separate_accounts`); absent: the links of the Worker's `config`.
+   */
+  configPath?: string;
 }
 
 /** Engine options that can cross to the Worker: no callbacks, no file-system port. */

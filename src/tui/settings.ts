@@ -1,7 +1,8 @@
 // The settings screen as a pure state machine, ported from cc-usage's keyboard-driven
 // settings (settings_screen.py) and adapted: every value is picked from a list (↑/↓,
 // Enter, Esc), except an account's new label and the time-zone filter, which are typed.
-// Keys in, new state and config out; the shell saves and applies.
+// Under Accounts, a root can also be linked to another on the same subscription account,
+// or unlinked (T16). Keys in, new state and config out; the shell saves and applies.
 
 import {
   type Config,
@@ -78,6 +79,15 @@ export type SettingsState =
       readonly pick: number;
       readonly text: string;
       readonly message: string | null;
+    }
+  /** "same account as…": which root the picked one (`pick`) shares its account with. */
+  | {
+      readonly screen: "link";
+      readonly cursor: number;
+      readonly pick: number;
+      /** Index in `linkCandidates`. */
+      readonly choice: number;
+      readonly message: string | null;
     };
 
 /** A key as the settings screen reads it: OpenTUI's name, and the text it typed. */
@@ -102,7 +112,7 @@ export interface SettingsResult {
   readonly state: SettingsState | null;
   /** A changed config to save and apply. */
   readonly config?: Config;
-  /** Roots were enabled, disabled, renamed or marked: ingest should restart on close. */
+  /** Roots were enabled, disabled, renamed, marked or linked: ingest should restart on close. */
   readonly accountsChanged?: boolean;
 }
 
@@ -265,6 +275,77 @@ export function labelProblem(
   return null;
 }
 
+// ── shared accounts (T16) ────────────────────────────────────────────────────────
+
+/**
+ * The roots `root` can be marked as sharing a subscription account with: the other enabled
+ * roots of its provider not already on its account (a disabled root is in no group).
+ */
+export function linkCandidates(root: RootInfo, roots: readonly RootInfo[]): RootInfo[] {
+  const linked = new Set(root.group?.others ?? []);
+  return roots.filter(
+    (r) =>
+      r.enabled &&
+      r.provider === root.provider &&
+      r.identity !== root.identity &&
+      !linked.has(r.identity),
+  );
+}
+
+const pairOf = (entry: readonly string[], a: string, b: string) =>
+  entry.includes(a) && entry.includes(b);
+
+/** A root and the roots already on its account. */
+const accountOf = (root: RootInfo) => [root.identity, ...(root.group?.others ?? [])];
+
+/**
+ * The `separate_accounts` pairs that keep `a`'s account and `b`'s apart: one root of each.
+ * Linking the two drops them, since the two accounts are then one, roots and all.
+ */
+export function keptApart(config: Config, a: RootInfo, b: RootInfo): string[][] {
+  const mine = accountOf(a);
+  const theirs = accountOf(b);
+  return config.separate_accounts.filter((p) =>
+    mine.some((x) => theirs.some((y) => pairOf(p, x, y))),
+  );
+}
+
+/**
+ * `a` on the same subscription account as `b`: a `same_account` link (joining the entries
+ * that already hold either), and no `separate_accounts` pair left between a root of `a`'s
+ * account and one of `b`'s, which would keep them apart whichever way they are linked.
+ */
+export function linkRoots(config: Config, a: RootInfo, b: RootInfo): Config {
+  const ids = [a.identity, b.identity];
+  const holding = config.same_account.filter((e) => ids.some((id) => e.includes(id)));
+  const merged = [...new Set([...holding.flat(), ...ids])];
+  const apart = keptApart(config, a, b);
+  return {
+    ...config,
+    same_account: [...config.same_account.filter((e) => !holding.includes(e)), merged],
+    separate_accounts: config.separate_accounts.filter((p) => !apart.includes(p)),
+  };
+}
+
+/**
+ * `root` on its own account: out of every `same_account` entry, and a `separate_accounts`
+ * pair with each root it was grouped with, so auto-detection doesn't link them again.
+ */
+export function unlinkRoot(config: Config, root: RootInfo): Config {
+  const others = root.group?.others ?? [];
+  const same = config.same_account
+    .map((e) => e.filter((id) => id !== root.identity))
+    .filter((e) => e.length >= 2);
+  const added = others
+    .filter((id) => !config.separate_accounts.some((p) => pairOf(p, root.identity, id)))
+    .map((id) => [root.identity, id]);
+  return {
+    ...config,
+    same_account: same,
+    separate_accounts: [...config.separate_accounts, ...added],
+  };
+}
+
 // ── keys ─────────────────────────────────────────────────────────────────────────
 
 const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n));
@@ -393,7 +474,60 @@ export function settingsKey(
           },
         };
       }
+      if (key.name === "a") {
+        if (linkCandidates(root, roots).length === 0) {
+          return { state: { ...state, message: `no other ${root.provider} root to link it to` } };
+        }
+        return {
+          state: {
+            screen: "link",
+            cursor: state.cursor,
+            pick: state.pick,
+            choice: 0,
+            message: null,
+          },
+        };
+      }
+      if (key.name === "u") {
+        if (root.group === null) {
+          return { state: { ...state, message: `${root.label} shares its account with no root` } };
+        }
+        return {
+          state: { ...state, message: null },
+          config: unlinkRoot(config, root),
+          accountsChanged: true,
+        };
+      }
       return { state };
+    }
+    case "link": {
+      const root = roots[state.pick];
+      const toList = {
+        screen: "accounts" as const,
+        cursor: state.cursor,
+        pick: state.pick,
+        message: null,
+      };
+      if (back || key.name === "q" || root === undefined) return { state: toList };
+      const candidates = linkCandidates(root, roots);
+      const moved = move(key, state.choice, candidates.length);
+      if (moved !== null) return { state: { ...state, choice: moved } };
+      if (key.name !== "return" && key.name !== "enter") return { state };
+      const other = candidates[state.choice];
+      if (other === undefined) return { state: toList };
+      // Say which pairs kept apart in config the link undoes: it is never a silent change.
+      const labelOf = new Map(roots.map((r) => [r.identity, r.label]));
+      const undone = keptApart(config, root, other).map((p) =>
+        p.map((id) => labelOf.get(id) ?? "a root not found here").join(" | "),
+      );
+      return {
+        state: {
+          ...toList,
+          message: undone.length === 0 ? null : `no longer kept apart: ${undone.join(", ")}`,
+        },
+        config: linkRoots(config, root, other),
+        accountsChanged: true,
+      };
     }
     case "rename": {
       const root = roots[state.pick];

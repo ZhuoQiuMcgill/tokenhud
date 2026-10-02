@@ -10,7 +10,13 @@ import { createRoot, flushSync } from "@opentui/react";
 import type { ReactNode } from "react";
 import { type Config, configPath, loadConfig } from "../config.ts";
 import { cachePath } from "../ingest/cursors.ts";
-import { codexSnapshotsFrom, Limits, limitsPath, spendFromQueries } from "../limits/index.ts";
+import {
+  codexSnapshotsFrom,
+  Limits,
+  limitsPath,
+  manualLinks,
+  spendFromQueries,
+} from "../limits/index.ts";
 import { mcpDir, readMcpActivity } from "../mcp/heartbeat.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
@@ -179,6 +185,7 @@ export async function runOnce(
           db,
           spend: spendFromQueries(q),
           snapshots: codexSnapshotsFrom(cachePath(env, home)),
+          links: () => manualLinks(config),
           now: () => now,
         }),
         mcp: readMcpActivity(mcpDir(env, home), now),

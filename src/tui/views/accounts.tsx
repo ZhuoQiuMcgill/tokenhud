@@ -1,17 +1,20 @@
 // Accounts: list + detail (T13, gen.py `accounts_a`). Left, every account with its status
 // and highest current utilisation; right, the selected one's root and history, its limit
 // meters, the weekly window's last 8 weeks, its 30-day spend and models, and its last MCP
-// call. Narrow, the detail stacks under the list.
+// call. A root on a subscription account it shares (T16) says which roots it shares it
+// with and shows the account's meters and total spend. Narrow, the detail stacks under the
+// list.
 import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column } from "../components/index.ts";
 import { filledCells } from "../components/meter.ts";
 import { sparkChar } from "../components/spark.ts";
 import { chartCell } from "../components/vchart.ts";
 import { Lines, Table } from "../elements.tsx";
-import { dayLabel, fit, percent, textWidth, tokens } from "../format.ts";
+import { dayLabel, fit, percent, textWidth, tokens, truncate } from "../format.ts";
 import { fitSections, type SectionSpec } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
 import type { AccountRow, AccountsVM, ModelSpend, WeekSlot } from "../vm/accounts.ts";
+import type { Priced } from "../vm/types.ts";
 import { costText } from "./cells.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
@@ -355,11 +358,31 @@ function meterLines(a: AccountRow, vm: AccountsVM, width: number): Line[] {
   return [];
 }
 
-/** The limit meters (5-HOUR, WEEKLY, then any other), or why there are none. */
+/** `shared with win-like, work`: as many labels as fit, then how many more. */
+function sharedLine(labels: readonly string[], width: number): Line {
+  const lead = " shared with ";
+  const room = width - textWidth(lead) - 1;
+  const all = labels.join(", ");
+  let text = all;
+  if (textWidth(all) > room) {
+    const cut = (n: number) => `${labels.slice(0, n).join(", ")} +${labels.length - n} more`;
+    let n = labels.length - 1;
+    while (n > 0 && textWidth(cut(n)) > room) n--;
+    text = n > 0 ? cut(n) : truncate(all, room);
+  }
+  return { left: [seg(lead, "dim"), seg(text, "fg")] };
+}
+
+/**
+ * The limit meters (5-HOUR, WEEKLY, then any other), or why there are none. A root on a
+ * shared account says so first: the meters are the account's.
+ */
 function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
   let lines: Line[];
   const l = a.limits;
-  if (a.historyOnly || (l !== null && !l.signedIn)) {
+  const shared = a.sharedWith.length > 0;
+  // A history-only root on an account signed in through another root shows its meters.
+  if ((a.historyOnly && !(shared && l?.signedIn === true)) || (l !== null && !l.signedIn)) {
     lines = [{ left: [seg(" not signed in here", "mid")] }];
   } else if (a.root === null) {
     lines = [noteLine("limits", ["not fetched: no root on this machine", "no root here"], width)];
@@ -392,13 +415,22 @@ function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
             "mid",
           ),
         ];
+  const head = shared ? [sharedLine(a.sharedWith, width)] : [];
+  if (a.sharedDiffers) {
+    const why = [
+      " their limits differed at the last check: one account?",
+      " limits differed at the last check",
+      " limits differ",
+    ];
+    head.push({ left: [seg(firstFit(why, width - 1), "mid")] });
+  }
   // Short of rows, the meters after the 5-hour and weekly ones go first.
   return {
     id: "limits",
     priority: 3,
-    height: lines.length + failed.length,
-    minHeight: Math.min(lines.length, 2) + failed.length,
-    lines: (h) => [...lines.slice(0, h - failed.length), ...failed],
+    height: head.length + lines.length + failed.length,
+    minHeight: head.length + Math.min(lines.length, 2) + failed.length,
+    lines: (h) => [...head, ...lines.slice(0, h - head.length - failed.length), ...failed],
   };
 }
 
@@ -478,24 +510,60 @@ function weeklyPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
   return { id: "weekly", priority: 6, height: CHART_ROWS + 4, minHeight: 6, lines };
 }
 
-/** 30-day spend: a sparkline of daily cost (tokens with costs hidden) and the total. */
+/** The 30-day total, as cost, or as tokens with costs hidden. */
+function totalText(p: Priced, ctx: ViewContext): { text: string; role: Role } {
+  return ctx.showCost ? costText(p) : { text: tokens(p.tokens), role: "tokens" };
+}
+
+/**
+ * 30-day spend: a sparkline of daily cost (tokens with costs hidden) and the total; for a
+ * root on a shared subscription account, the account's total under it.
+ */
 function spendPart(a: AccountRow, ctx: ViewContext, width: number): Part {
   const values = ctx.showCost ? a.spark : a.sparkTokens;
-  const total = ctx.showCost
-    ? costText(a.last30)
-    : { text: tokens(a.last30.tokens), role: "tokens" as Role };
-  const room = Math.max(0, Math.min(SPARK_DAYS, width - FIELD - 2 - textWidth(total.text) - 1));
-  const shown = values.slice(-room);
-  const hi = Math.max(0, ...shown);
-  const spark = shown.map((v) => sparkChar(v, hi > 0 ? hi : 1)).join("");
-  const line: Line = {
+  const total = totalText(a.last30, ctx);
+  /** The spend line, the sparkline as long as `after` leaves room for. */
+  const spendLine = (after: readonly Seg[]): Line => {
+    const fixed = FIELD + 2 + textWidth(total.text) + 1 + segsWidth(after);
+    const shown = values.slice(-Math.max(0, Math.min(SPARK_DAYS, width - fixed)));
+    const hi = Math.max(0, ...shown);
+    return {
+      left: [
+        label(ctx.showCost ? "spend 30d" : "tokens 30d"),
+        seg(
+          shown.map((v) => sparkChar(v, hi > 0 ? hi : 1)).join(""),
+          ctx.showCost ? "cost" : "tokens",
+        ),
+        seg(`  ${total.text}`, total.role, total.role === "cost"),
+        ...after,
+      ],
+    };
+  };
+  const line = spendLine([]);
+  if (a.accountLast30 === null) return { id: "spend", priority: 4, height: 1, lines: () => [line] };
+  const sum = totalText(a.accountLast30, ctx);
+  const sumSeg = seg(sum.text, sum.role, sum.role === "cost");
+  const account: Line = {
     left: [
-      label(ctx.showCost ? "spend 30d" : "tokens 30d"),
-      seg(spark, ctx.showCost ? "cost" : "tokens"),
-      seg(`  ${total.text}`, total.role, total.role === "cost"),
+      label(""),
+      ...fitSegs(
+        ["account total (all linked roots): ", "account total: ", "total: "].map((lead) => [
+          seg(lead, "dim"),
+          sumSeg,
+        ]),
+        width - FIELD,
+      ),
     ],
   };
-  return { id: "spend", priority: 4, height: 1, lines: () => [line] };
+  // Short of rows, the account's total follows the root's on the one line.
+  const one = spendLine([seg("  total ", "dim"), sumSeg]);
+  return {
+    id: "spend",
+    priority: 4,
+    height: 2,
+    minHeight: 1,
+    lines: (h) => (h >= 2 ? [line, account] : [one]),
+  };
 }
 
 /** Top models over 30 days, one line: as many as fit, by share of cost (tokens). */

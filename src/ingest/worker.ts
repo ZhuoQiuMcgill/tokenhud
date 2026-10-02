@@ -5,7 +5,9 @@
 //
 // With limits on, it also runs the limits schedule (src/limits/service.ts): the first
 // round after the first scan, so the UI thread never waits on the network.
+import { liveConfig } from "../config.ts";
 import { recordCaptureEvents } from "../limits/events.ts";
+import { manualLinks } from "../limits/groups.ts";
 import { LimitsService, type LimitsServiceOptions } from "../limits/service.ts";
 import { codexSnapshotsFrom } from "../limits/snapshots.ts";
 import { StoreError } from "../store/errors.ts";
@@ -39,20 +41,25 @@ process.on("unhandledRejection", fatal);
 export const limitsOverrides: Pick<LimitsServiceOptions, "fetchClaude" | "fetchCodex" | "timing"> =
   {};
 
-function limitsService(live: IngestEngine, options: LimitsWorkerOptions, cachePath: string) {
+function limitsService(live: IngestEngine, options: LimitsWorkerOptions, worker: WorkerOptions) {
+  // Links as config.json has them now: groups are written only from current links.
+  const read =
+    options.configPath === undefined ? () => worker.config : liveConfig(options.configPath);
   return new LimitsService({
     ...limitsOverrides,
     limitsPath: options.limitsPath,
     ccUsageLimits: options.ccUsageLimits,
     roots: () => live.discover(),
+    links: () => manualLinks(read()),
     knownAccounts: () => [...live.store.accounts().values()],
-    snapshots: codexSnapshotsFrom(cachePath),
+    snapshots: codexSnapshotsFrom(worker.cachePath),
     // New limit events change the TUI's views though no usage did: they go out as a
     // change at the capture's instant, like rows written then.
-    recordEvents: (root, capture) => {
-      if (recordCaptureEvents(live.store, root, capture) === 0) return;
+    recordEvents: (root, capture, shared) => {
+      if (recordCaptureEvents(live.store, root, capture, shared) === 0) return;
       const at = Math.round(capture.captured_at * 1000);
-      post({ type: "changed", accounts: [root.identity], fromTs: at, toTs: at });
+      const accounts = [root, ...shared].map((r) => r.identity);
+      post({ type: "changed", accounts, fromTs: at, toTs: at });
     },
     log: (level, message) => post({ type: "log", level, message }),
     onChanged: (accounts) => post({ type: "limits", accounts }),
@@ -84,7 +91,7 @@ function start(workerOptions: WorkerOptions): void {
   live.recover();
   const imported = live.importIfFirstRun();
   if (imported?.status === "imported") post({ type: "imported", rows: imported.inserted });
-  if (limitsOptions) limits = limitsService(live, limitsOptions, options.cachePath);
+  if (limitsOptions) limits = limitsService(live, limitsOptions, workerOptions);
   void live.startLive().then(() => {
     post({ type: "ready", roots: live.labels(live.roots) });
     if (!stopping) limits?.start();

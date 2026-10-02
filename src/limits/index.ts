@@ -11,7 +11,14 @@ import {
 } from "./capture.ts";
 import { PACE_MINUTES, type Projection, projectExhaustion, type SpendSource } from "./derive.ts";
 import { type LimitEvent, readLimitEvents } from "./events.ts";
-import { shownError } from "./service.ts";
+import {
+  type AccountGroup,
+  type GroupSource,
+  type ManualLinks,
+  NO_LINKS,
+  resolveGroups,
+} from "./groups.ts";
+import { groupError } from "./service.ts";
 import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
 
 /**
@@ -27,6 +34,13 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
 export { limitsPath } from "./cache.ts";
 export { type SpendSource, spendFromQueries } from "./derive.ts";
 export type { LimitEvent, LimitEventKind } from "./events.ts";
+export {
+  type AccountGroup,
+  type GroupSource,
+  type ManualLinks,
+  manualLinks,
+  NO_LINKS,
+} from "./groups.ts";
 export { LimitsService, type LimitsServiceOptions, type RefreshOutcome } from "./service.ts";
 export { codexSnapshotsFrom } from "./snapshots.ts";
 
@@ -47,7 +61,10 @@ export interface LimitWindow {
   resets_at: number;
   /** The window's length in seconds (5 h, 7 d), or null when unknown. */
   window_s: number | null;
-  /** The account's spend pace, USD per hour over the last 30 minutes; null without a store. */
+  /**
+   * The account's spend pace, USD per hour over the last 30 minutes (every root on the
+   * account together); null without a store.
+   */
   pace_cost_per_h: number | null;
   /**
    * **An estimate** (label it so wherever it is shown): when the window reaches 100 % at
@@ -59,6 +76,21 @@ export interface LimitWindow {
   stale_s: number;
 }
 
+/** The roots on one subscription account (T16), as `getLimits` reports them. */
+export interface SharedAccount {
+  /** A hash of the member identities. */
+  id: string;
+  /** Linked in config (`same_account`), or found by auto-detection. */
+  source: GroupSource;
+  /** Every root on the account, this one included, in discovery order. */
+  members: { id: string; label: string }[];
+  /**
+   * Two of the roots showed different limits at their last comparison: for a manual link,
+   * which is kept, a sign it may be wrong (an auto link is suspended then instead).
+   */
+  differs: boolean;
+}
+
 export interface AccountLimits {
   account: {
     /** The root identity, `sha256(resolved root path)[:32]`. */
@@ -68,9 +100,16 @@ export interface AccountLimits {
     /**
      * False for a history-only account: in `history_only_roots`, or not signed in on this
      * machine. Show "not signed in here"; its last-good windows, if any, are still listed.
+     * For roots on one account: true when any of them is signed in here.
      */
     signed_in: boolean;
   };
+  /**
+   * The roots this one shares its subscription account with, or null for a root on its
+   * own. Its windows, pace and projections are then the account's: the freshest capture
+   * of any of them, and their spend summed.
+   */
+  group: SharedAccount | null;
   /** In cc-usage's display order; empty when nothing was ever captured. */
   windows: LimitWindow[];
   /** When the windows were captured; null when there are none. */
@@ -79,7 +118,10 @@ export interface AccountLimits {
   source: CaptureVia | null;
   /** The last fetch error, when the windows are older than it; never holds a credential. */
   error: string | null;
-  /** Spend over the last 30 minutes, per hour; null without a store. */
+  /**
+   * Spend over the last 30 minutes, per hour, of every root on the account together; null
+   * without a store.
+   */
   pace: { cost_per_h: number; tokens_per_h: number } | null;
 }
 
@@ -92,6 +134,8 @@ export interface LimitsOptions {
   /** Spend over that store (`spendFromQueries`), or null. */
   spend: SpendSource | null;
   snapshots?: CodexSnapshots;
+  /** Manual account links (config `same_account`, `separate_accounts`). */
+  links?: () => ManualLinks;
   now?: () => number;
 }
 
@@ -115,35 +159,52 @@ export class Limits {
         ? roots
         : roots.filter((root) => root.identity === account || root.label === account).slice(0, 1);
     const file = loadLimitsCache(this.#o.limitsPath);
+    const groups = resolveGroups(roots, this.#o.links?.() ?? NO_LINKS, file.pairs, file.groups);
+    const members = (root: Root) => groups.get(root.identity)?.members ?? [root];
     const snapshots = chosen.some((root) => root.provider === "codex")
       ? (this.#o.snapshots ?? NO_SNAPSHOTS)()
       : new Map<string, Capture>();
+    // cc-usage's order: on a captured_at tie the snapshot beats last-good.
+    const captureOf = (root: Root) =>
+      freshest([snapshots.get(root.identity), file.providers[root.identity]]);
     const now = this.#now();
     const out = chosen.map((root): AccountLimits => {
-      // cc-usage's order: on a captured_at tie the snapshot beats last-good.
-      const capture = freshest([snapshots.get(root.identity), file.providers[root.identity]]);
-      const status = file.status[root.identity];
-      return this.#account(
-        root,
-        capture,
-        status?.signed_in ?? true,
-        shownError(root, status, capture),
-        now,
-      );
+      const group = groups.get(root.identity) ?? null;
+      const all = members(root);
+      // The root's own capture first: on a tie it is the one shown.
+      const capture = freshest([root, ...all.filter((m) => m !== root)].map(captureOf));
+      const status = (id: string) => file.status[id];
+      const signedIn = all.some((m) => !m.historyOnly && (status(m.identity)?.signed_in ?? true));
+      return this.#account(root, group, capture, signedIn, groupError(all, status, capture), now);
     });
     return account === undefined ? out : (out[0] ?? null);
   }
 
+  /**
+   * The groups of roots on one subscription account, by member identity, among the enabled
+   * roots: from the manual links and what auto-detection recorded in limits.json.
+   */
+  groups(): Map<string, AccountGroup> {
+    const roots = this.#o.roots().filter((root) => root.enabled);
+    const file = loadLimitsCache(this.#o.limitsPath);
+    return resolveGroups(roots, this.#o.links?.() ?? NO_LINKS, file.pairs, file.groups);
+  }
+
   #account(
     root: Root,
+    group: AccountGroup | null,
     capture: Capture | null,
     signedIn: boolean,
     error: string | null,
     now: number,
   ): AccountLimits {
     const { spend } = this.#o;
-    const acct = this.#storeAccount(root);
-    const pace = acct !== null && spend !== null ? spend.pace(acct, PACE_MINUTES) : null;
+    // Every root on the account spends from its limits: their store accounts together.
+    const accts = (group?.members ?? [root])
+      .map((member) => this.#storeAccount(member))
+      .filter((id): id is number => id !== null);
+    const known = accts.length > 0 && spend !== null;
+    const pace = known ? spend.pace(accts, PACE_MINUTES) : null;
     const capturedAt = capture === null ? 0 : capture.captured_at * 1000;
     const windows = orderedBuckets(capture).map(([kind, bucket]): LimitWindow => {
       const resetsAt = bucket.resets_at * 1000;
@@ -157,7 +218,7 @@ export class Limits {
         window_s: minutes === null ? null : minutes * 60,
         pace_cost_per_h: pace === null ? null : pace.costPerHour,
         projected_exhaustion_at:
-          acct === null || spend === null || pace === null
+          !known || pace === null
             ? null
             : projectExhaustion({
                 utilization,
@@ -166,7 +227,7 @@ export class Limits {
                 windowMs: minutes === null ? null : minutes * 60_000,
                 costPerHour: pace.costPerHour,
                 now,
-                spent: (from, to) => spend.cost(acct, from, to),
+                spent: (from, to) => spend.cost(accts, from, to),
               }),
         stale_s: Math.max(0, Math.floor((now - capturedAt) / 1000)),
       };
@@ -176,8 +237,17 @@ export class Limits {
         id: root.identity,
         label: root.label,
         provider: root.provider,
-        signed_in: !root.historyOnly && signedIn,
+        signed_in: signedIn,
       },
+      group:
+        group === null
+          ? null
+          : {
+              id: group.id,
+              source: group.source,
+              members: group.members.map((m) => ({ id: m.identity, label: m.label })),
+              differs: group.differs,
+            },
       windows,
       as_of: capture === null ? null : Math.round(capturedAt),
       source: capture?.via ?? null,
@@ -201,13 +271,20 @@ export class Limits {
 
   /**
    * Limit events with `from <= at < to`, oldest first; for one account (identity or label)
-   * when given. Empty without a store.
+   * when given, together with the other roots on its subscription account. Empty without a
+   * store.
    */
   limitEvents(range: { from: number; to: number }, account?: string): LimitEvent[] {
     const db = this.#o.db;
     if (db === null) return [];
     if (account === undefined) return readLimitEvents(db, range);
     const root = this.#o.roots().find((r) => r.identity === account || r.label === account);
-    return readLimitEvents(db, range, [root?.identity ?? account]);
+    if (root === undefined) return readLimitEvents(db, range, [account]);
+    const group = this.groups().get(root.identity);
+    return readLimitEvents(
+      db,
+      range,
+      (group?.members ?? [root]).map((m) => m.identity),
+    );
   }
 }
