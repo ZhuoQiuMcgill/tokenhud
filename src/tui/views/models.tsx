@@ -1,11 +1,13 @@
 // Models: the rate board (T13, gen.py `models_a`). Per model and tier over the window: its
 // tokens, the rate each is billed at now, cost and share; under it the footnotes, and the
 // selected model's rates card and who used it.
-import type { Window } from "../../config.ts";
-import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
+import { WINDOW_CHOICES, type Window } from "../../config.ts";
+import { type Line, type Seg, seg } from "../components/base.ts";
 import type { Column } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
 import { clip, percent, textWidth, tokens } from "../format.ts";
+import { type Tab, tabsHeader } from "../frame.ts";
+import { type Keymap, moveKey } from "../keys.ts";
 import { splitWidth } from "../layout.ts";
 import type { Role } from "../theme.ts";
 import type { ModelRow, ModelSort, ModelsVM, PriceChange } from "../vm/models.ts";
@@ -31,9 +33,6 @@ export const WINDOW_LABELS: Readonly<Record<Window, string>> = {
   "5h": "last 5h",
   "24h": "last 24h",
 };
-/** The switcher's tabs: the calendar windows, then (wide) the rolling ones. */
-const CALENDAR: readonly Window[] = ["today", "this_week", "this_month", "all"];
-const ROLLING: readonly Window[] = ["1h", "5h", "24h"];
 const TAB_LABELS: Readonly<Record<Window, string>> = {
   ...WINDOW_LABELS,
   all: "all",
@@ -41,6 +40,15 @@ const TAB_LABELS: Readonly<Record<Window, string>> = {
   "5h": "5h",
   "24h": "24h",
 };
+const SHORT_LABELS: Readonly<Partial<Record<Window, string>>> = {
+  this_week: "week",
+  this_month: "month",
+};
+/** The window tabs: config's `WINDOW_CHOICES`, in its order (the shell steps through it). */
+const WINDOW_TABS: readonly Tab[] = WINDOW_CHOICES.map((w) => ({
+  label: TAB_LABELS[w],
+  ...(SHORT_LABELS[w] === undefined ? {} : { short: SHORT_LABELS[w] }),
+}));
 const SORTS: readonly ModelSort[] = ["cost", "tokens", "name"];
 
 export const RATE_FOOTNOTE =
@@ -339,27 +347,14 @@ function selectedIndex(rows: readonly ModelRow[], state: ModelsState): number {
   return Math.max(0, at);
 }
 
-/** The window tabs: the calendar ones, plus the rolling ones at wide widths. */
-function switcher(vm: ModelsVM, ctx: ViewContext): Seg[] {
-  if (ctx.bp === "narrow") return [];
-  const tabs = ctx.bp === "wide" ? [...CALENDAR, ...ROLLING] : [...CALENDAR];
-  if (!tabs.includes(vm.window)) tabs.push(vm.window);
-  const out: Seg[] = [seg("window ", "dim")];
-  for (const w of tabs) {
-    out.push(
-      w === vm.window
-        ? seg(` ${TAB_LABELS[w]} `, "head", true, "tab")
-        : seg(` ${TAB_LABELS[w]} `, "mute"),
-    );
-  }
-  out.push(seg(" ", "fg"));
-  return out;
-}
-
+/** The title, then the window's tab strip flush right: the title shortens before any tab goes. */
 function titleLine(vm: ModelsVM, state: ModelsState, ctx: ViewContext): Line {
-  const left = [seg(` MODELS · ${WINDOW_LABELS[vm.window]} · by ${state.sort}`, "head", true)];
-  const right = switcher(vm, ctx);
-  return segsWidth(left) + 2 + segsWidth(right) <= ctx.width ? { left, right } : { left };
+  return tabsHeader(
+    [[seg(` MODELS · by ${state.sort}`, "head", true)], [seg(" MODELS", "head", true)]],
+    WINDOW_TABS,
+    WINDOW_CHOICES.indexOf(vm.window),
+    ctx.width,
+  );
 }
 
 function tableSection(
@@ -374,7 +369,7 @@ function tableSection(
   const title = titleLine(vm, state, ctx);
   if (n === 0) {
     const empty: Line = {
-      left: [seg(`  no usage in ${WINDOW_LABELS[vm.window]} · ←/→ changes the window`, "dim")],
+      left: [seg(`  no usage in ${WINDOW_LABELS[vm.window]} · a/d changes the window`, "dim")],
     };
     return {
       id: "models",
@@ -699,32 +694,49 @@ function cardsSection(
   };
 }
 
+const keymap: Keymap<ModelsState, ModelsVM | undefined> = [
+  // The window is config's: the shell steps it.
+  moveKey("tabs", {
+    label: "window",
+    does: `Switch the window: ${WINDOW_TABS.map((t) => t.label).join(" · ")}`,
+    act: (state, _vm, key) =>
+      withCommand(state, { type: "window", step: key === "right" ? 1 : -1 }),
+  }),
+  moveKey("select", {
+    label: "model",
+    does: "Select a model",
+    act: (state, vm, key) => {
+      if (vm === undefined) return undefined;
+      const rows = ordered(vm, state);
+      if (rows.length === 0) return undefined;
+      const at = selectedIndex(rows, state) + (key === "down" ? 1 : -1);
+      const next = rows[Math.max(0, Math.min(rows.length - 1, at))] as ModelRow;
+      return { ...state, selected: rowKey(next) };
+    },
+  }),
+  moveKey("open", {
+    label: "rates",
+    does: "Show or hide the selected model's rates and who used it",
+    act: (state) => ({ ...state, cards: !state.cards }),
+  }),
+  {
+    // `o` was the sort key before T17: kept, unlisted, for hands that remember it.
+    keys: ["r", "o"],
+    show: "r",
+    label: "sort",
+    does: "Sort by cost, tokens or name",
+    act: (state) => ({
+      ...state,
+      sort: SORTS[(SORTS.indexOf(state.sort) + 1) % SORTS.length] as ModelSort,
+    }),
+  },
+];
+
 export const models: View<ModelsVM, ModelsState> = {
   id: "models",
   title: "Models",
-  // Narrow footers drop these from the end: ↑/↓ needs no reminder.
-  hints: [
-    { key: "←/→", label: "window" },
-    { key: "o", label: "sort" },
-    { key: "enter", label: "rates" },
-    { key: "↑/↓", label: "select" },
-  ],
+  keymap,
   initial: { selected: null, sort: "cost", cards: false },
-  keys(key, state, vm) {
-    // The window is config's: the shell steps it.
-    if (key === "left") return withCommand(state, { type: "window", step: -1 });
-    if (key === "right") return withCommand(state, { type: "window", step: 1 });
-    if (key === "o") {
-      return { ...state, sort: SORTS[(SORTS.indexOf(state.sort) + 1) % SORTS.length] as ModelSort };
-    }
-    if (key === "return" || key === "enter") return { ...state, cards: !state.cards };
-    if (vm === undefined || (key !== "up" && key !== "down")) return undefined;
-    const rows = ordered(vm, state);
-    if (rows.length === 0) return undefined;
-    const at = selectedIndex(rows, state) + (key === "down" ? 1 : -1);
-    const next = rows[Math.max(0, Math.min(rows.length - 1, at))] as ModelRow;
-    return { ...state, selected: rowKey(next) };
-  },
   sections(vm, state, ctx) {
     const rows = ordered(vm, state);
     const at = selectedIndex(rows, state);

@@ -67,12 +67,25 @@ describe("global keys", () => {
     expect(notified).toBe(4);
   });
 
-  test("q and Ctrl-C quit; Ctrl-C even from settings", () => {
+  test("tab and shift-tab step through the views, round the ends", () => {
+    const { c, s } = setup();
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      c.key(key("tab"));
+      seen.push(s().view);
+    }
+    expect(seen).toEqual(["history", "models", "accounts", "overview"]);
+    c.key({ name: "tab", sequence: "\x1b[Z", ctrl: false, shift: true });
+    expect(s().view).toBe("accounts");
+  });
+
+  test("q, Q and Ctrl-C quit; Ctrl-C even from settings", () => {
     const { c, calls } = setup();
     c.key(key("q"));
-    c.key(key("s"));
+    c.key({ name: "q", sequence: "Q", ctrl: false });
+    c.key(key("x"));
     c.key({ name: "c", sequence: "\x03", ctrl: true });
-    expect(calls.filter((x) => x === "quit")).toHaveLength(2);
+    expect(calls.filter((x) => x === "quit")).toHaveLength(3);
   });
 
   test("? opens help; Esc, ? or q close it, and other keys do nothing meanwhile", () => {
@@ -89,12 +102,12 @@ describe("global keys", () => {
     expect(s().overlay).toBe("none");
   });
 
-  test("a cycles the scope all → each account → all, saving it and telling the Worker", () => {
+  test("c cycles the scope all → each account → all, saving it and telling the Worker", () => {
     const { c, s, saved, settings } = setup();
     c.vmMessage({ type: "views", views: {}, accounts, scope: null, ms: 1 });
     const seen: (number | null)[] = [];
     for (let i = 0; i < 4; i++) {
-      c.key(key("a"));
+      c.key(key("c"));
       seen.push(s().scope);
     }
     expect(seen).toEqual([1, 2, 4, null]);
@@ -102,54 +115,53 @@ describe("global keys", () => {
     expect(settings.map((x) => x.scope)).toEqual([1, 2, 4, null]);
   });
 
-  test("a with no accounts yet does nothing", () => {
-    const { c, calls } = setup();
+  test("c with no accounts yet does nothing; a and s are movement, not the scope or settings", () => {
+    const { c, s, calls } = setup();
+    c.key(key("c"));
+    c.vmMessage({ type: "views", views: {}, accounts, scope: null, ms: 1 });
     c.key(key("a"));
+    c.key(key("s"));
     expect(calls).toEqual([]);
+    expect(s()).toMatchObject({ overlay: "none", scope: null });
   });
 
   test("other keys go to the active view, whose state the shell keeps", () => {
     const { c, s } = setup();
     c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
     c.key(key("2"));
-    c.key(key("up"));
-    c.key(key("left"));
-    expect(s().viewState.history).toMatchObject({ day: "2026-09-21" });
+    c.key(key("right"));
+    c.key(key("down"));
+    expect(s().viewState.history).toMatchObject({ tab: "this_month", day: "2026-09-28" });
     c.key(key("1"));
     c.key(key("2"));
-    expect(s().viewState.history).toMatchObject({ day: "2026-09-21" }); // kept across switches
-    c.key(key("x"));
-    expect(s().viewState.history).toMatchObject({ day: "2026-09-21" });
+    expect(s().viewState.history).toMatchObject({ tab: "this_month", day: "2026-09-28" }); // kept
+    c.key(key("z"));
+    expect(s().viewState.history).toMatchObject({ tab: "this_month", day: "2026-09-28" });
   });
 
-  test("a printable key reaches the view as typed, so W is not w", () => {
-    const { c, s } = setup();
+  test("letters ignore case: W is w, which is ↑; S, A, D, C and X act as their lower case", () => {
+    const { c, s, calls } = setup();
     c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
     c.key(key("2"));
+    c.key({ name: "d", sequence: "D", ctrl: false });
+    c.key({ name: "s", sequence: "S", ctrl: false });
+    expect(s().viewState.history).toMatchObject({ tab: "this_month", day: "2026-09-28" });
     c.key({ name: "w", sequence: "W", ctrl: false });
-    expect(s().viewState.history).toMatchObject({ group: "day", open: "week" });
-    c.key({ name: "w", sequence: "w", ctrl: false });
-    expect(s().viewState.history).toMatchObject({ group: "week", open: null });
-  });
-
-  test("shifted letters are not global keys: S, A and Q reach the view", () => {
-    const { c, s, calls } = setup();
-    c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
-    c.key(key("2"));
-    for (const k of ["S", "A", "Q"]) c.key({ name: k.toLowerCase(), sequence: k, ctrl: false });
-    expect(s()).toMatchObject({ view: "history", overlay: "none", scope: null });
-    expect(calls).toEqual([]);
-    c.key(key("s"));
+    expect(s().viewState.history).toMatchObject({ day: "2026-09-29" });
+    c.key({ name: "c", sequence: "C", ctrl: false });
+    expect(s().scope).toBe(1);
+    c.key({ name: "x", sequence: "X", ctrl: false });
     expect(s().overlay).toBe("settings");
+    expect(calls).toContain("vmRoots");
   });
 
-  test("while a view types into a field, the shell's keys go to it; Ctrl-C still quits", () => {
+  test("while a view types into a field, the shell's keys and WASD go to it; Ctrl-C still quits", () => {
     const { c, s, calls } = setup();
     c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
     c.key(key("2"));
-    for (const k of ["/", "q", "1", "a", "s", "?"]) c.key(key(k));
+    for (const k of ["f", "q", "1", "c", "x", "?", "w", "A", "s", "d", "tab"]) c.key(key(k));
     expect(s()).toMatchObject({ view: "history", overlay: "none", scope: null });
-    expect(s().viewState.history).toMatchObject({ typing: true, filter: "q1as?" });
+    expect(s().viewState.history).toMatchObject({ typing: true, filter: "q1cx?wAsd" });
     expect(calls).toEqual([]);
     c.key(key("return"));
     c.key(key("1"));
@@ -158,6 +170,18 @@ describe("global keys", () => {
     c.key(key("/"));
     c.key({ name: "c", sequence: "\u0003", ctrl: true });
     expect(calls).toEqual(["quit"]);
+  });
+
+  test("a Ctrl combination is no key of its own: Ctrl-A neither moves nor types", () => {
+    const { c, s } = setup();
+    c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
+    c.key(key("2"));
+    const before = s().viewState.history;
+    c.key({ name: "a", sequence: "\u0001", ctrl: true });
+    expect(s().viewState.history).toBe(before);
+    c.key(key("f"));
+    c.key({ name: "a", sequence: "\u0001", ctrl: true });
+    expect(s().viewState.history).toMatchObject({ typing: true, filter: "" });
   });
 });
 
@@ -228,9 +252,9 @@ describe("settings", () => {
     group: null,
   };
 
-  test("s opens it (asking for fresh roots); a value change is saved and applied", () => {
+  test("x opens it (asking for fresh roots); a value change is saved and applied", () => {
     const { c, s, calls, saved, settings } = setup();
-    c.key(key("s"));
+    c.key(key("x"));
     expect(s().overlay).toBe("settings");
     expect(calls).toEqual(["vmRoots"]);
     // Theme: down ×3, enter, then pick "light".
@@ -248,20 +272,54 @@ describe("settings", () => {
     expect(calls).not.toContain("accountsEdited");
   });
 
-  test("account edits go to the Worker at once and restart ingest when settings close", () => {
+  test("account edits, from the action menu, go to the Worker at once and restart ingest when settings close", () => {
     const { c, s, calls } = setup();
     c.vmMessage({ type: "roots", roots: [root] });
-    c.key(key("s"));
+    c.key(key("x"));
     c.key(key("end"));
     c.key(key("return"));
     expect(s().settings.screen).toBe("accounts");
-    c.key(key("e"));
+    c.key(key("return"));
+    // No store account for this root yet: no scope item; Disable is first.
+    expect(s().menu).toMatchObject({ from: "settings", cursor: 0 });
+    c.key(key("return"));
+    expect(s().menu).toBeNull();
     expect(s().config.disabled_roots).toEqual(["/home/someone/.claude-work"]);
     expect(calls).toContain("vmConfig");
     expect(calls).not.toContain("accountsEdited");
     c.key(key("escape"));
     c.key(key("escape"));
+    expect(s().overlay).toBe("none");
     expect(calls[calls.length - 1]).toBe("accountsEdited");
+  });
+
+  test("the menu's Rename opens the label prompt, which goes back to the editor", () => {
+    const { c, s, saved } = setup();
+    c.vmMessage({ type: "roots", roots: [root] });
+    for (const k of ["x", "end", "return", "return", "s", "return"]) c.key(key(k));
+    expect(s().settings).toMatchObject({ screen: "rename", text: "work" });
+    // A text field: WASD are letters here.
+    for (const k of ["backspace", "backspace", "backspace", "backspace", "w", "a", "s", "d"]) {
+      c.key(key(k));
+    }
+    c.key(key("return"));
+    expect(s().settings).toMatchObject({ screen: "accounts", pick: 0 });
+    expect(saved.at(-1)?.claude_roots).toEqual([
+      { path: "/home/someone/.claude-work", label: "wasd" },
+    ]);
+  });
+
+  test("a/d step a setting's value in place on the main list", () => {
+    const { c, s } = setup();
+    c.key(key("x"));
+    c.key(key("d"));
+    expect(s().config.refresh_interval).toBe(10);
+    c.key(key("a"));
+    c.key(key("a"));
+    expect(s().config.refresh_interval).toBe(2);
+    c.key(key("a")); // round the end
+    expect(s().config.refresh_interval).toBe(30);
+    expect(s().settings).toMatchObject({ screen: "main", cursor: 0 });
   });
 
   test("a config that can't be saved shows why, and the change still applies for this run", () => {
@@ -275,7 +333,7 @@ describe("settings", () => {
       accountsEdited: () => {},
       quit: () => {},
     });
-    failing.key(key("s"));
+    failing.key(key("x"));
     for (const k of ["down", "down", "return", "down", "return"]) failing.key(key(k));
     expect(failing.getState().config.show_cost).toBe(false);
     expect(failing.getState().error).toBe("settings not saved: EACCES");

@@ -4,15 +4,18 @@
 //   query is one json's help lists;
 // - every TOKENHUD_* variable is read somewhere in src/ or the installers;
 // - every key the README names (its "Keys" tables and inline code in its prose) is one the
-//   TUI binds; every key the TUI's footer and help show is in the "Keys" tables; and the
-//   global keys and each view's own keys are listed where they belong (the first table, and
-//   under `### <view title>`).
+//   TUI binds; and the "Keys" tables list exactly the keys the keymaps show (src/tui/keys.ts),
+//   each where it belongs: movement and the global keys in the first tables, each view's
+//   under `### <view title>`, the action menu's and the settings screen's under their own.
 //
 //   bun scripts/check-docs.ts      # prints the problems, exit 1 if any
 //
 // test/docs.test.ts runs it in `bun run check`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { GLOBAL_KEYS, type KeyHelp, MOVE_KEYS, TEXT } from "../src/tui/keys.ts";
+import { MENU_KEYMAP } from "../src/tui/menu.ts";
+import { SETTINGS_KEYS } from "../src/tui/settings.ts";
 import { VIEWS } from "../src/tui/views/index.ts";
 
 const root = join(import.meta.dir, "..");
@@ -203,41 +206,37 @@ const KEY_NAMES: Readonly<Record<string, string>> = {
   right: "→",
 };
 
+/** The keys an entry shows, in the help and README: its key and its alias; none for typing. */
+function shownKeys(entry: KeyHelp): string[] {
+  if (entry.keys.includes(TEXT)) return [];
+  return entry.alias === undefined ? [entry.show] : [entry.show, entry.alias];
+}
+
+/** Every keymap, by the README "## Keys" subsection it belongs under ("" for the first). */
+function keymaps(): Map<string, readonly KeyHelp[]> {
+  const maps = new Map<string, readonly KeyHelp[]>([
+    ["", [...Object.values(MOVE_KEYS), ...Object.values(GLOBAL_KEYS)]],
+  ]);
+  for (const view of Object.values(VIEWS)) maps.set(view.title, view.keymap);
+  maps.set("Account menu", MENU_KEYMAP);
+  maps.set("Settings", Object.values(SETTINGS_KEYS).flat());
+  return maps;
+}
+
 /**
- * The keys the TUI binds and shows: the footer and help hints (`{ key: "…" }`), the help
- * panel's rows, and the keys the handlers compare against (`key.name === "…"`).
+ * The keys the TUI binds: every key an entry shows (and each half of `a/d`), and every key
+ * name an entry answers, as the README writes it (`esc`, `↑`, `o`).
  */
-export function keymap(): { bound: Set<string>; shown: Set<string> } {
-  const shown = new Set<string>();
-  const bound = new Set<string>(["Ctrl-C"]);
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (/\.(ts|tsx)$/.test(entry.name)) {
-        const text = readFileSync(path, "utf8");
-        for (const m of text.matchAll(/\bkey: "([^"]+)"/g)) shown.add(m[1] as string);
-        for (const m of text.matchAll(/\brow\("([^"]+)"/g)) {
-          for (const k of (m[1] as string).split(" ")) bound.add(k);
-        }
-        for (const m of text.matchAll(/key(?:\.name)? === "([^"]+)"/g)) {
-          const k = m[1] as string;
-          bound.add(KEY_NAMES[k] ?? k);
-        }
-        // Hint lines such as "e enable/disable · l rename · esc back".
-        for (const m of text.matchAll(/hint\("([^"]+)"\)/g)) {
-          for (const part of (m[1] as string).split(" · ")) bound.add(part.split(" ")[0] as string);
-        }
-      }
-    }
-  };
-  walk(join(root, "src", "tui"));
-  for (const k of shown) {
+export function boundKeys(): Set<string> {
+  const bound = new Set<string>();
+  for (const k of [...keySections().values()].flat()) {
     bound.add(k);
-    // "↑/↓" binds both arrows; "1-4" binds 1 to 4.
     for (const part of k.split("/")) bound.add(part);
   }
-  return { bound, shown };
+  for (const entries of keymaps().values()) {
+    for (const e of entries) for (const k of e.keys) if (k !== TEXT) bound.add(KEY_NAMES[k] ?? k);
+  }
+  return bound;
 }
 
 /**
@@ -268,21 +267,15 @@ export function documentedKeys(
 }
 
 /**
- * Where each key the TUI shows belongs in the README: the global keys (app.tsx's `GLOBAL`)
- * in the Keys section's first table (""), each view's own keys (its `hints`) under a
- * `### <view title>` heading.
+ * Where each key the TUI shows belongs in the README's "## Keys" section: movement and the
+ * global keys in its first tables (""), each view's under `### <view title>`, the action
+ * menu's under `### Account menu`, the settings screen's under `### Settings`.
  */
 export function keySections(): Map<string, string[]> {
-  const app = readFileSync(join(root, "src", "tui", "app.tsx"), "utf8");
-  const block = /const GLOBAL = \{([\s\S]*?)\} as const/.exec(app)?.[1] ?? "";
-  const sections = new Map([
-    ["", [...block.matchAll(/key: "([^"]+)"/g)].map((m) => m[1] as string)],
-  ]);
-  for (const view of Object.values(VIEWS))
-    sections.set(
-      view.title,
-      view.hints.map((h) => h.key),
-    );
+  const sections = new Map<string, string[]>();
+  for (const [section, entries] of keymaps()) {
+    sections.set(section, [...new Set(entries.flatMap(shownKeys))]);
+  }
   return sections;
 }
 
@@ -295,7 +288,7 @@ export function checkDocs(): string[] {
   const problems: string[] = [];
   const spec = cliSpec();
   const source = sourceText();
-  const keys = keymap();
+  const bound = boundKeys();
   for (const file of docFiles()) {
     const text = readDoc(file);
     const name = relative(root, file);
@@ -313,17 +306,20 @@ export function checkDocs(): string[] {
   if (documented.length === 0) problems.push("README.md: no keys documented under ## Keys");
   for (const { line, key } of [...documented, ...proseKeys(readme)]) {
     const problem = `README.md:${line}: the TUI binds no key '${key}'`;
-    if (!keys.bound.has(key) && !problems.includes(problem)) problems.push(problem);
-  }
-  const listed = new Set(documented.map((d) => d.key));
-  for (const key of keys.shown) {
-    if (!listed.has(key)) problems.push(`README.md: the TUI shows key '${key}', ## Keys doesn't`);
+    if (!bound.has(key) && !problems.includes(problem)) problems.push(problem);
   }
   for (const [section, shown] of keySections()) {
     const there = new Set(documented.filter((d) => d.section === section).map((d) => d.key));
-    const where = section === "" ? "the global keys" : `### ${section}`;
+    const where = section === "" ? "the first tables" : `### ${section}`;
     for (const key of shown) {
       if (!there.has(key)) problems.push(`README.md: ## Keys doesn't list '${key}' under ${where}`);
+    }
+    for (const key of there) {
+      if (!shown.includes(key)) {
+        problems.push(
+          `README.md: ## Keys lists '${key}' under ${where}, whose keymap doesn't show it`,
+        );
+      }
     }
   }
   return problems;

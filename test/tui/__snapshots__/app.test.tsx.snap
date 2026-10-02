@@ -26,7 +26,7 @@ exports[`105×50 view 1 (overview) 1`] = `
   cost         $8.47*      $14.64*     $164.52*     $342.29*                                             
   tokens         7.5M        13.1M       147.6M       315.5M                                             
                                                                                                          
- ACTIVITY · cost per 15 min · 24h                                                peak $1.47 at Mon 21:30 
+ ACTIVITY · cost per 15 min · peak $1.47 at Mon 21:30                            ◀ a  5h   24h   7d  d ▶ 
  $1.47                                        █                                             ▃ ▃ ▃ ▃      
                                               █                                             █ █ █ █      
                                               █                             ▂               █ █ █ █      
@@ -48,9 +48,9 @@ exports[`105×50 view 1 (overview) 1`] = `
   Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
   Sun 21:10  codex     weekly passed 80%     —                                                           
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   a account   s settings   ? help   q quit        MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens                                                      
+ 1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
 "
 `;
 
@@ -58,53 +58,53 @@ exports[`105×50 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
+ ◀ a  this week   this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ───────────────────────╮
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M                              │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · +2          │
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · +2              │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30         │
- Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day             │
+ Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                            │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                            │
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰────────────────────────────────────────────╯
                                                                                                          
-  Day   Week   Month     This week   This month                       * not all tokens priced · / filter 
- date         input  output    cache        cost vs 30-day avg            top model        accounts      
- Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8  personal, cod…
- Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8  personal, cod…
- Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex-win, co…
- Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.6-sol      codex, codex-…
- Fri Sep 25    171K    101K     4.1M      $5.79* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.5          codex-win, co…
- Thu Sep 24    120K     72K     2.8M       $2.81 ━━━━━━━━━━━━━━━━━━  0.5× claude-opus-4-8  personal, cod…
- Wed Sep 23    202K    121K     4.8M      $3.17* ━━━━━━━━━━━━━━━━━━  0.6× gpt-5.5          codex-win, co…
- Tue Sep 22    163K    104K     3.8M       $6.41 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex-win, co…
- Mon Sep 21    191K    127K     5.2M      $6.58* ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.6-sol      codex, work, …
- Sun Sep 20    139K     80K     3.4M      $3.89* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, pe…
- Sat Sep 19    102K     61K     2.6M       $3.90 ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, pe…
- Fri Sep 18    197K    111K     4.8M       $6.72 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex, codex-…
- Thu Sep 17    471K    288K    11.9M     $15.06* ━━━━━━━━━━━━━━━━━━  2.8× claude-opus-4-8  personal, cod…
- Wed Sep 16     64K     43K     1.5M      $0.25* ━━━━━━━━━━━━━━━━━━  0.0× claude-haiku-4-5 personal      
- Tue Sep 15    158K     94K     3.9M      $3.83* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.6-sol      codex, work, …
- Mon Sep 14    143K     88K     3.8M      $4.08* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, pe…
- Sun Sep 13    216K    135K     5.4M      $6.57* ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.6-sol      codex-win, co…
- Sat Sep 12    257K    163K     6.5M       $9.30 ━━━━━━━━━━━━━━━━━━  1.7× gpt-5.6-sol      codex-win, wo…
- Fri Sep 11     80K     52K     1.9M       $2.33 ━━━━━━━━━━━━━━━━━━  0.4× claude-opus-4-8  work, personal
- Thu Sep 10    190K    121K     4.9M      $4.07* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, wo…
- Wed Sep 9     189K    110K     4.7M       $6.82 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex, codex-…
- Tue Sep 8     309K    175K     7.4M      $9.26* ━━━━━━━━━━━━━━━━━━  1.7× gpt-5.5          codex-win, co…
- Mon Sep 7     227K    133K     5.5M      $5.17* ━━━━━━━━━━━━━━━━━━  0.9× gpt-5.5          codex-win, co…
- Sun Sep 6     250K    144K     6.0M       $8.29 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.6-sol      codex-win, co…
- Sat Sep 5     281K    173K     6.4M      $5.23* ━━━━━━━━━━━━━━━━━━  1.0× gpt-5.5          codex-win, ol…
- Fri Sep 4     214K    135K     5.7M       $8.46 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.5          codex-win, co…
- Thu Sep 3     157K    108K     4.3M      $4.19* ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex, old-la…
- Wed Sep 2      81K     52K     2.1M       $3.26 ━━━━━━━━━━━━━━━━━━  0.6× gpt-5.6-sol      codex-win, ol…
- Tue Sep 1     144K     95K     3.8M      $3.85* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, wo…
- Mon Aug 31     95K     57K     2.3M      $2.20* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex-win, wo…
- Sun Aug 30    190K    117K     4.8M      $5.65* ━━━━━━━━━━━━━━━━━━  1.0× claude-opus-4-8  personal, cod…
+ date         input  output    cache        cost vs 30-day avg            top model       accounts       
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8 personal, code…
+ Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8 personal, code…
  ────────────────────────────────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.3M   296.5M    $342.29*                                                         
+ 2 days        399K    331K    12.3M     $14.64*                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   d/w/m group   a account   s settings   ? help   q quit                       MCP ● 2 agents 
+ a/d period   w/s row   enter open   f filter                                                            
+ 1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
 "
 `;
 
@@ -112,7 +112,7 @@ exports[`105×50 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- MODELS · all time · by cost                                  window  today  this week  this month  all  
+ MODELS · by cost                         ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
  model                  provider  input    $/M  output    $/M   cache   $/M      cost  share             
  gpt-5.5                codex      2.5M   5.00    1.6M  30.00   63.9M  0.50   $117.29  ━━━━━━━━━━  34.3% 
  gpt-5.6-sol            codex      2.8M   4.00    1.8M  20.00   72.0M  0.40   $108.18  ━━━━━━━━━━  31.6% 
@@ -156,9 +156,9 @@ exports[`105×50 view 3 (models) 1`] = `
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   o sort   a account   s settings   ? help   q quit               MCP ● 2 agents 
+ a/d window   w/s model   enter rates   r sort                                                           
+ 1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
 "
 `;
 
@@ -175,10 +175,10 @@ exports[`105×50 view 4 (accounts) 1`] = `
  ○ old-laptop         claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
  + add a root…                    │                                                                      
                                   │  weekly usage when it reset · last 8 weeks                           
- enter scope to it                │                                                                      
- e enable/disable                 │                                                            ▂▂▂▂▂▂    
- l rename label                   │                                                            ██████    
- h history only                   │                                                            ██████    
+ w/s   account                    │                                                                      
+ enter actions                    │                                                            ▂▂▂▂▂▂    
+                                  │                                                            ██████    
+                                  │                                                            ██████    
                                   │    —       —       —       —       —       —       —       58%       
                                   │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now       
                                   │    no limit events recorded yet: only this week is known             
@@ -210,9 +210,9 @@ exports[`105×50 view 4 (accounts) 1`] = `
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   enter scope   a account   s settings   ? help   q quit         MCP ● 2 agents 
+ w/s account   enter actions                                                                             
+ 1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
 "
 `;
 
@@ -237,7 +237,7 @@ exports[`120×45 view 1 (overview) 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                  
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                  
                                                                                                                         
- ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h                     
+ ACTIVITY · cost per 20 min                             ◀ a  5h   24h   7d  d ▶    TOP MODELS · 24h                     
  $1.53                              █                                  ▁▁ ▁▁       Opus 4.8            $7.66  76% ━━━━━━
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
@@ -259,9 +259,9 @@ exports[`120×45 view 1 (overview) 1`] = `
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   enter details   a account   s settings   ? help   q quit       MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens                                                                     
+ 1-4/tab views   c account   x settings   ? help   q quit                                                MCP ● 2 agents 
 "
 `;
 
@@ -269,48 +269,48 @@ exports[`120×45 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
+ ◀ a  this week   this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ──────────────────────────────────────╮
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                    │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M            │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · gpt-5.6-sol 17% · +1       │
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · codex $2.41 · codex-win $0.02  │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30                        │
- Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day                            │
+ Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                           │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                           │
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰───────────────────────────────────────────────────────────╯
                                                                                                                         
-  Day   Week   Month     This week   This month                                      * not all tokens priced · / filter 
- date         input  output    cache        cost vs 30-day avg            top model        accounts                     
- Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8  personal, codex, codex-win   
- Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8  personal, codex-win, codex, …
- Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex-win, codex, personal   
- Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.6-sol      codex, codex-win, personal, …
- Fri Sep 25    171K    101K     4.1M      $5.79* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.5          codex-win, codex, work       
- Thu Sep 24    120K     72K     2.8M       $2.81 ━━━━━━━━━━━━━━━━━━  0.5× claude-opus-4-8  personal, codex, work        
- Wed Sep 23    202K    121K     4.8M      $3.17* ━━━━━━━━━━━━━━━━━━  0.6× gpt-5.5          codex-win, codex, work, pers…
- Tue Sep 22    163K    104K     3.8M       $6.41 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex-win, codex             
- Mon Sep 21    191K    127K     5.2M      $6.58* ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.6-sol      codex, work, codex-win, pers…
- Sun Sep 20    139K     80K     3.4M      $3.89* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, personal          
- Sat Sep 19    102K     61K     2.6M       $3.90 ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, personal, work    
- Fri Sep 18    197K    111K     4.8M       $6.72 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex, codex-win, personal, …
- Thu Sep 17    471K    288K    11.9M     $15.06* ━━━━━━━━━━━━━━━━━━  2.8× claude-opus-4-8  personal, codex, codex-win, …
- Wed Sep 16     64K     43K     1.5M      $0.25* ━━━━━━━━━━━━━━━━━━  0.0× claude-haiku-4-5 personal                     
- Tue Sep 15    158K     94K     3.9M      $3.83* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.6-sol      codex, work, personal        
- Mon Sep 14    143K     88K     3.8M      $4.08* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, personal, codex, …
- Sun Sep 13    216K    135K     5.4M      $6.57* ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.6-sol      codex-win, codex, personal, …
- Sat Sep 12    257K    163K     6.5M       $9.30 ━━━━━━━━━━━━━━━━━━  1.7× gpt-5.6-sol      codex-win, work, codex       
- Fri Sep 11     80K     52K     1.9M       $2.33 ━━━━━━━━━━━━━━━━━━  0.4× claude-opus-4-8  work, personal               
- Thu Sep 10    190K    121K     4.9M      $4.07* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, work, personal    
- Wed Sep 9     189K    110K     4.7M       $6.82 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex, codex-win, old-laptop…
- Tue Sep 8     309K    175K     7.4M      $9.26* ━━━━━━━━━━━━━━━━━━  1.7× gpt-5.5          codex-win, codex, old-laptop…
- Mon Sep 7     227K    133K     5.5M      $5.17* ━━━━━━━━━━━━━━━━━━  0.9× gpt-5.5          codex-win, codex, work, old-…
- Sun Sep 6     250K    144K     6.0M       $8.29 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.6-sol      codex-win, codex, personal, …
- Sat Sep 5     281K    173K     6.4M      $5.23* ━━━━━━━━━━━━━━━━━━  1.0× gpt-5.5          codex-win, old-laptop, work,…
- Fri Sep 4     214K    135K     5.7M       $8.46 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.5          codex-win, codex, old-laptop…
+ date         input  output    cache        cost vs 30-day avg            top model       accounts                      
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8 personal, codex, codex-win    
+ Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8 personal, codex-win, codex, w…
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.3M   296.5M    $342.29*                                                                        
+ 2 days        399K    331K    12.3M     $14.64*                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   d/w/m group   / filter by model   a account   s settings   ? help   q quit                  MCP ● 2 agents 
+ a/d period   w/s row   enter open   f filter                                                                           
+ 1-4/tab views   c account   x settings   ? help   q quit                                                MCP ● 2 agents 
 "
 `;
 
@@ -318,7 +318,7 @@ exports[`120×45 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- MODELS · all time · by cost                                    window  today  this week  this month  all  1h  5h  24h  
+ MODELS · by cost                                        ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
  model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                   
  gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.29   ━━━━━━━━━━   34.3%      
  gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   31.6%      
@@ -357,9 +357,9 @@ exports[`120×45 view 3 (models) 1`] = `
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   o sort   enter rates   a account   s settings   ? help   q quit                MCP ● 2 agents 
+ a/d window   w/s model   enter rates   r sort                                                                          
+ 1-4/tab views   c account   x settings   ? help   q quit                                                MCP ● 2 agents 
 "
 `;
 
@@ -376,10 +376,10 @@ exports[`120×45 view 4 (accounts) 1`] = `
  ○ old-laptop          claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40     
  + add a root…                     │                                                                                    
                                    │  weekly usage when it reset · last 8 weeks                                         
- enter scope to it                 │                                                                                    
- e enable/disable                  │                                                            ▂▂▂▂▂▂                  
- l rename label                    │                                                            ██████                  
- h history only                    │                                                            ██████                  
+ w/s   account                     │                                                                                    
+ enter actions                     │                                                            ▂▂▂▂▂▂                  
+                                   │                                                            ██████                  
+                                   │                                                            ██████                  
                                    │    —       —       —       —       —       —       —       58%                     
                                    │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now                     
                                    │    no limit events recorded yet: only this week is known                           
@@ -406,9 +406,9 @@ exports[`120×45 view 4 (accounts) 1`] = `
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   enter scope   e enable   a account   s settings   ? help   q quit             MCP ● 2 agents 
+ w/s account   enter actions                                                                                            
+ 1-4/tab views   c account   x settings   ? help   q quit                                                MCP ● 2 agents 
 "
 `;
 
@@ -436,7 +436,7 @@ exports[`80×24 view 1 (overview) 1`] = `
   tokens         7.5M        13.1M       147.6M       315.5M                    
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens   ? help     MCP ● 2 agents 
 "
 `;
 
@@ -444,6 +444,7 @@ exports[`80×24 view 2 (history) 1`] = `
 " tokenhud   1   2 History   3   4                  all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
+ ◀ a  this week   this month   days   weeks   months  d ▶              f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more                       
      Apr   May       Jun     Jul     Aug       Sep     Oct                      
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
@@ -456,15 +457,14 @@ exports[`80×24 view 2 (history) 1`] = `
                                                                                 
  Tue Sep 29 · today  $8.47*  1.6× avg  1 limit hit  enter lists them            
                                                                                 
-  Day   Week   Month     This week   This month                        / filter 
+                                                                                
  date         input  output    cache        cost vs 30-day avg                  
  Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×       
  Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×       
- Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×       
  ───────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.3M   296.5M    $342.29*                                
+ 2 days        399K    331K    12.3M     $14.64*                                
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ a/d period   w/s row   enter open   f filter   ? help           MCP ● 2 agents 
 "
 `;
 
@@ -472,7 +472,7 @@ exports[`80×24 view 3 (models) 1`] = `
 " tokenhud   1   2   3 Models   4                   all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- MODELS · all time · by cost                                                    
+ MODELS · by cost          ◀ a  today   week   month   all   1h   5h   24h  d ▶ 
  model             provider  input  output   cache      cost  share             
  gpt-5.5           codex      2.5M    1.6M   63.9M   $117.29  ━━━━━━━━━━  34.3% 
  gpt-5.6-sol       codex      2.8M    1.8M   72.0M   $108.18  ━━━━━━━━━━  31.6% 
@@ -492,7 +492,7 @@ exports[`80×24 view 3 (models) 1`] = `
                                                                                 
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ a/d window   w/s model   enter rates   r sort   ? help          MCP ● 2 agents 
 "
 `;
 
@@ -509,10 +509,10 @@ exports[`80×24 view 4 (accounts) 1`] = `
  ○ old-laptop  claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
  + add a root…             │                                                    
                            │  weekly usage when it reset · last 8 weeks         
- enter scope to it         │                                                    
- e enable/disable          │                                              ▅▅▅▅  
- l rename label            │                                              ████  
- h history only            │    —     —     —     —     —     —     —     58%   
+ w/s   account             │                                                    
+ enter actions             │                                              ▅▅▅▅  
+                           │                                              ████  
+                           │    —     —     —     —     —     —     —     58%   
                            │    8/12  8/19  8/26  9/2   9/9   9/16  9/23  now   
                            │    no limit events yet: only this week is known    
                            │                                                    
@@ -520,7 +520,7 @@ exports[`80×24 view 4 (accounts) 1`] = `
                            │                                                    
                            │  models    gpt-5.5 59% · gpt-5.6-sol 41%           
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ w/s account   enter actions   1-4/tab views   ? help            MCP ● 2 agents 
 "
 `;
 
@@ -545,7 +545,7 @@ exports[`160×50 view 1 (overview) 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                                                          
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                                                          
                                                                                                                                                                 
- ACTIVITY · cost per 15 min · 24h                                                                         TOP MODELS · 24h                                      
+ ACTIVITY · cost per 15 min                                                    ◀ a  5h   24h   7d  d ▶    TOP MODELS · 24h                                      
  $1.47                                        █                                             ▃ ▃ ▃ ▃       Opus 4.8                    $7.66  76% ━━━━━━         
                                               █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
                                               █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
@@ -572,9 +572,9 @@ exports[`160×50 view 1 (overview) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
-                                                                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   enter details   tab card   a account   s settings   ? help   q quit                                    MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens                                                                                                             
+ 1-4/tab views   c account   x settings   ? help   q quit                                                                                        MCP ● 2 agents 
 "
 `;
 
@@ -582,53 +582,53 @@ exports[`160×50 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
+ ◀ a  this week   this month   days   weeks   months  d ▶                                                                    * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ─────────────────────────────────────────────────────────╮                     
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                                       │                     
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M                               │                     
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · gpt-5.6-sol 17% · gpt-5.5 12%                 │                     
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · codex $2.41 · codex-win $0.02                     │                     
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30                                           │                     
- Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day                                               │                     
+ Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                                              │                     
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                                              │                     
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰──────────────────────────────────────────────────────────────────────────────╯                     
                                                                                                                                                                 
-  Day   Week   Month     This week   This month                                                                              * not all tokens priced · / filter 
- date         input  output    cache        cost vs 30-day avg            top model        accounts                                                             
- Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8  personal, codex, codex-win                                           
- Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8  personal, codex-win, codex, work                                     
- Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex-win, codex, personal                                           
- Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.6-sol      codex, codex-win, personal, work                                     
- Fri Sep 25    171K    101K     4.1M      $5.79* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.5          codex-win, codex, work                                               
- Thu Sep 24    120K     72K     2.8M       $2.81 ━━━━━━━━━━━━━━━━━━  0.5× claude-opus-4-8  personal, codex, work                                                
- Wed Sep 23    202K    121K     4.8M      $3.17* ━━━━━━━━━━━━━━━━━━  0.6× gpt-5.5          codex-win, codex, work, personal                                     
- Tue Sep 22    163K    104K     3.8M       $6.41 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex-win, codex                                                     
- Mon Sep 21    191K    127K     5.2M      $6.58* ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.6-sol      codex, work, codex-win, personal                                     
- Sun Sep 20    139K     80K     3.4M      $3.89* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, personal                                                  
- Sat Sep 19    102K     61K     2.6M       $3.90 ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, personal, work                                            
- Fri Sep 18    197K    111K     4.8M       $6.72 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex, codex-win, personal, work                                     
- Thu Sep 17    471K    288K    11.9M     $15.06* ━━━━━━━━━━━━━━━━━━  2.8× claude-opus-4-8  personal, codex, codex-win, work                                     
- Wed Sep 16     64K     43K     1.5M      $0.25* ━━━━━━━━━━━━━━━━━━  0.0× claude-haiku-4-5 personal                                                             
- Tue Sep 15    158K     94K     3.9M      $3.83* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.6-sol      codex, work, personal                                                
- Mon Sep 14    143K     88K     3.8M      $4.08* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, personal, codex, work                                     
- Sun Sep 13    216K    135K     5.4M      $6.57* ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.6-sol      codex-win, codex, personal, work                                     
- Sat Sep 12    257K    163K     6.5M       $9.30 ━━━━━━━━━━━━━━━━━━  1.7× gpt-5.6-sol      codex-win, work, codex                                               
- Fri Sep 11     80K     52K     1.9M       $2.33 ━━━━━━━━━━━━━━━━━━  0.4× claude-opus-4-8  work, personal                                                       
- Thu Sep 10    190K    121K     4.9M      $4.07* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, work, personal                                            
- Wed Sep 9     189K    110K     4.7M       $6.82 ━━━━━━━━━━━━━━━━━━  1.2× gpt-5.5          codex, codex-win, old-laptop, personal, work                         
- Tue Sep 8     309K    175K     7.4M      $9.26* ━━━━━━━━━━━━━━━━━━  1.7× gpt-5.5          codex-win, codex, old-laptop, personal                               
- Mon Sep 7     227K    133K     5.5M      $5.17* ━━━━━━━━━━━━━━━━━━  0.9× gpt-5.5          codex-win, codex, work, old-laptop                                   
- Sun Sep 6     250K    144K     6.0M       $8.29 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.6-sol      codex-win, codex, personal, work                                     
- Sat Sep 5     281K    173K     6.4M      $5.23* ━━━━━━━━━━━━━━━━━━  1.0× gpt-5.5          codex-win, old-laptop, work, personal                                
- Fri Sep 4     214K    135K     5.7M       $8.46 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.5          codex-win, codex, old-laptop, work                                   
- Thu Sep 3     157K    108K     4.3M      $4.19* ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex, old-laptop, work                                              
- Wed Sep 2      81K     52K     2.1M       $3.26 ━━━━━━━━━━━━━━━━━━  0.6× gpt-5.6-sol      codex-win, old-laptop                                                
- Tue Sep 1     144K     95K     3.8M      $3.85* ━━━━━━━━━━━━━━━━━━  0.7× gpt-5.5          codex-win, work, codex                                               
- Mon Aug 31     95K     57K     2.3M      $2.20* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex-win, work, old-laptop                                          
- Sun Aug 30    190K    117K     4.8M      $5.65* ━━━━━━━━━━━━━━━━━━  1.0× claude-opus-4-8  personal, codex, work, codex-win, old-laptop                         
+ date         input  output    cache        cost vs 30-day avg            top model       accounts                                                              
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8 personal, codex, codex-win                                            
+ Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8 personal, codex-win, codex, work                                      
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.3M   296.5M    $342.29*                                                                                                                
+ 2 days        399K    331K    12.3M     $14.64*                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   d/w/m group   / filter by model   W/M this week/month   tab heat map/table   a account   s settings   ? help   q quit               MCP ● 2 agents 
+ a/d period   w/s row   enter open   f filter                                                                                                                   
+ 1-4/tab views   c account   x settings   ? help   q quit                                                                                        MCP ● 2 agents 
 "
 `;
 
@@ -636,7 +636,7 @@ exports[`160×50 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- MODELS · all time · by cost                                                                            window  today  this week  this month  all  1h  5h  24h  
+ MODELS · by cost                                                                                ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
  model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                                                           
  gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.29   ━━━━━━━━━━   34.3%                                              
  gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   31.6%                                              
@@ -680,9 +680,9 @@ exports[`160×50 view 3 (models) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
-                                                                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit                                           MCP ● 2 agents 
+ a/d window   w/s model   enter rates   r sort                                                                                                                  
+ 1-4/tab views   c account   x settings   ? help   q quit                                                                                        MCP ● 2 agents 
 "
 `;
 
@@ -699,10 +699,10 @@ exports[`160×50 view 4 (accounts) 1`] = `
  ○ old-laptop          claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40                                             
  + add a root…                     │                                                                                                                            
                                    │  weekly usage when it reset · last 8 weeks                                                                                 
- enter scope to it                 │                                                                                                                            
- e enable/disable                  │                                                            ▂▂▂▂▂▂                                                          
- l rename label                    │                                                            ██████                                                          
- h history only                    │                                                            ██████                                                          
+ w/s   account                     │                                                                                                                            
+ enter actions                     │                                                            ▂▂▂▂▂▂                                                          
+                                   │                                                            ██████                                                          
+                                   │                                                            ██████                                                          
                                    │    —       —       —       —       —       —       —       58%                                                             
                                    │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now                                                             
                                    │    no limit events recorded yet: only this week is known                                                                   
@@ -734,9 +734,9 @@ exports[`160×50 view 4 (accounts) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
-                                                                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   enter scope   e enable   l label   h history only   a account   s settings   ? help   q quit                          MCP ● 2 agents 
+ w/s account   enter actions                                                                                                                                    
+ 1-4/tab views   c account   x settings   ? help   q quit                                                                                        MCP ● 2 agents 
 "
 `;
 
@@ -760,7 +760,7 @@ exports[`narrow 50×20 view 1 (overview): every number whole 1`] = `
                                                   
                                                   
 ──────────────────────────────────────────────────
- 1-4 views   ? help   q quit       MCP ● 2 agents 
+ a/d window   w/s card   ? help    MCP ● 2 agents 
 "
 `;
 
@@ -768,23 +768,23 @@ exports[`narrow 50×20 view 2 (history): every number whole 1`] = `
 " tokenhud   1   2 History   3   4          ● live 
 ──────────────────────────────────────────────────
                                                   
-  Day   Week   Month     This week   This month   
+ ◀ a  this wk   this mo   days   wks  … d ▶       
  date              cost vs 30-day avg             
  Tue Sep 29      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×  
  Mon Sep 28      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×  
- Sun Sep 27       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×  
- Sat Sep 26      $6.24* ━━━━━━━━━━━━━━━━━━  1.1×  
- Fri Sep 25      $5.79* ━━━━━━━━━━━━━━━━━━  1.1×  
- Thu Sep 24       $2.81 ━━━━━━━━━━━━━━━━━━  0.5×  
- Wed Sep 23      $3.17* ━━━━━━━━━━━━━━━━━━  0.6×  
- Tue Sep 22       $6.41 ━━━━━━━━━━━━━━━━━━  1.2×  
- Mon Sep 21      $6.58* ━━━━━━━━━━━━━━━━━━  1.2×  
- Sun Sep 20      $3.89* ━━━━━━━━━━━━━━━━━━  0.7×  
- Sat Sep 19       $3.90 ━━━━━━━━━━━━━━━━━━  0.7×  
  ─────────────────────────────────────────────────
- 177 days      $342.29*                           
+ 2 days         $14.64*                           
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
 ──────────────────────────────────────────────────
- 1-4 views   ? help   q quit       MCP ● 2 agents 
+ a/d period   w/s row   ? help     MCP ● 2 agents 
 "
 `;
 
@@ -792,7 +792,7 @@ exports[`narrow 50×20 view 3 (models): every number whole 1`] = `
 " tokenhud   1   2   3 Models   4           ● live 
 ──────────────────────────────────────────────────
                                                   
- MODELS · all time · by cost                      
+ MODELS       ◀ a …  month   all   1h   5h  … d ▶ 
  model             input  output      cost        
  gpt-5.5            2.5M    1.6M   $117.29  34.3% 
  gpt-5.6-sol        2.8M    1.8M   $108.18  31.6% 
@@ -808,7 +808,7 @@ exports[`narrow 50×20 view 3 (models): every number whole 1`] = `
                                                   
                                                   
 ──────────────────────────────────────────────────
- 1-4 views   ? help   q quit       MCP ● 2 agents 
+ a/d window   ? help               MCP ● 2 agents 
 "
 `;
 
@@ -832,7 +832,7 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
                                                   
  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27 
 ──────────────────────────────────────────────────
- 1-4 views   ? help   q quit       MCP ● 2 agents 
+ w/s account   ? help              MCP ● 2 agents 
 "
 `;
 
@@ -856,7 +856,7 @@ exports[`narrow 60×20 view 1 (overview): every number whole 1`] = `
                                                             
                                                             
 ────────────────────────────────────────────────────────────
- 1-4 views   a account   ? help   q quit     MCP ● 2 agents 
+ a/d window   w/s card   ? help              MCP ● 2 agents 
 "
 `;
 
@@ -864,23 +864,23 @@ exports[`narrow 60×20 view 2 (history): every number whole 1`] = `
 " tokenhud   1   2 History   3   4   all accounts ▾   ● live 
 ────────────────────────────────────────────────────────────
                                                             
-  Day   Week   Month     This week   This month    / filter 
+ ◀ a  this wk   this mo   days   wks   mos  d ▶    f filter 
  date         input        cost vs 30-day avg               
  Tue Sep 29    180K      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×    
  Mon Sep 28    219K      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×    
- Sun Sep 27    113K       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×    
- Sat Sep 26    225K      $6.24* ━━━━━━━━━━━━━━━━━━  1.1×    
- Fri Sep 25    171K      $5.79* ━━━━━━━━━━━━━━━━━━  1.1×    
- Thu Sep 24    120K       $2.81 ━━━━━━━━━━━━━━━━━━  0.5×    
- Wed Sep 23    202K      $3.17* ━━━━━━━━━━━━━━━━━━  0.6×    
- Tue Sep 22    163K       $6.41 ━━━━━━━━━━━━━━━━━━  1.2×    
- Mon Sep 21    191K      $6.58* ━━━━━━━━━━━━━━━━━━  1.2×    
- Sun Sep 20    139K      $3.89* ━━━━━━━━━━━━━━━━━━  0.7×    
- Sat Sep 19    102K       $3.90 ━━━━━━━━━━━━━━━━━━  0.7×    
  ───────────────────────────────────────────────────────────
- 177 days     11.7M    $342.29*                             
+ 2 days        399K     $14.64*                             
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
 ────────────────────────────────────────────────────────────
- 1-4 views   a account   ? help   q quit     MCP ● 2 agents 
+ a/d period   w/s row   ? help               MCP ● 2 agents 
 "
 `;
 
@@ -888,7 +888,7 @@ exports[`narrow 60×20 view 3 (models): every number whole 1`] = `
 " tokenhud   1   2   3 Models   4    all accounts ▾   ● live 
 ────────────────────────────────────────────────────────────
                                                             
- MODELS · all time · by cost                                
+ MODELS      ◀ a …  week   month   all   1h   5h   24h  d ▶ 
  model               input  output   cache      cost        
  gpt-5.5              2.5M    1.6M   63.9M   $117.29  34.3% 
  gpt-5.6-sol          2.8M    1.8M   72.0M   $108.18  31.6% 
@@ -904,7 +904,7 @@ exports[`narrow 60×20 view 3 (models): every number whole 1`] = `
                                                             
                                                             
 ────────────────────────────────────────────────────────────
- 1-4 views   a account   ? help   q quit     MCP ● 2 agents 
+ a/d window   w/s model   ? help             MCP ● 2 agents 
 "
 `;
 
@@ -928,7 +928,7 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
                                                             
  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27           
 ────────────────────────────────────────────────────────────
- 1-4 views   a account   ? help   q quit     MCP ● 2 agents 
+ w/s account   enter actions   ? help        MCP ● 2 agents 
 "
 `;
 
@@ -953,7 +953,7 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [mute/bg]  cost  [cost|mid/bg/b]        $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*[-/bg]                                  
 [mute/bg]  tokens[tokens|heat4/bg]         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M[-/bg]                                  
 [-/bg]                                                                                                                        
-[head/bg/b] ACTIVITY · cost per 20 min · 24h[-/bg]                                                 [head/bg/b] TOP MODELS · 24h[-/bg]                     
+[head/bg/b] ACTIVITY · cost per 20 min[-/bg]                             [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b] 24h [-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] [-/bg]  [head/bg/b] TOP MODELS · 24h[-/bg]                     
 [-/bg] [dim/bg]$1.53[-/bg] [cost|mid/bg]                             █                                  ▁▁ ▁▁   [-/bg]    [fg/bg]Opus 4.8       [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[empty/bg]━
 [-/bg]       [cost|mid/bg]                             █                                  ██ ██   [-/bg]    [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
 [-/bg]       [cost|mid/bg]                             █                               ▃  ██ ██   [-/bg]    [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
@@ -975,9 +975,9 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [-/bg]                                                                                                                        
 [-/bg]                                                                                                                        
 [-/bg]                                                                                                                        
-[-/bg]                                                                                                                        
 [border/bg]────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]enter[dim/bg] details   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]    [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
+[-/bg] [head/bg/b]a/d[dim/bg] window   [head/bg/b]w/s[dim/bg] card   [head/bg/b]enter[dim/bg] open   [head/bg/b]t[dim/bg] cost/tokens   [-/bg]                                                                  
+[-/bg] [head/bg/b]1-4/tab[dim/bg] views   [head/bg/b]c[dim/bg] account   [head/bg/b]x[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                                             [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
 `;
 
 exports[`colours the light theme paints the same frame in its own roles 1`] = `
@@ -1006,7 +1006,7 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [mute/bg]  cost  [cost|mid/bg/b]       $8.47*      $14.64*     $164.52*     $342.29*[-/bg]                                             
 [mute/bg]  tokens[tokens/bg]         7.5M        13.1M       147.6M       315.5M[-/bg]                                             
 [-/bg]                                                                                                         
-[head/bg/b] ACTIVITY · cost per 15 min · 24h[-/bg]                                                [dim/bg]peak $1.47 at Mon 21:30 
+[head/bg/b] ACTIVITY · cost per 15 min[dim/bg] · peak $1.47 at Mon 21:30[-/bg]                            [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b] 24h [-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] 
 [-/bg] [dim/bg]$1.47[-/bg] [cost|mid/bg]                                       █                                             ▃ ▃ ▃ ▃    [-/bg]  
 [-/bg]       [cost|mid/bg]                                       █                                             █ █ █ █    [-/bg]  
 [-/bg]       [cost|mid/bg]                                       █                             ▂               █ █ █ █    [-/bg]  
@@ -1028,16 +1028,16 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [dim/bg]  Fri 11:05  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 12:57[-/bg]                                               
 [dim/bg]  Sun 21:10  [fg/bg]codex     [cost|mid/bg/b]weekly passed 80%     [mute/bg]—[-/bg]                                                           
 [-/bg]                                                                                                         
-[-/bg]                                                                                                         
 [border/bg]─────────────────────────────────────────────────────────────────────────────────────────────────────────
-[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]     [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
+[-/bg] [head/bg/b]a/d[dim/bg] window   [head/bg/b]w/s[dim/bg] card   [head/bg/b]enter[dim/bg] open   [head/bg/b]t[dim/bg] cost/tokens   [-/bg]                                                   
+[-/bg] [head/bg/b]1-4/tab[dim/bg] views   [head/bg/b]c[dim/bg] account   [head/bg/b]x[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                              [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
 `;
 
-exports[`footer MCP status, from the heartbeat files two servers that called tools in the last 10 min: MCP ● 2 agents 1`] = `"[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]     [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "`;
+exports[`footer MCP status, from the heartbeat files two servers that called tools in the last 10 min: MCP ● 2 agents 1`] = `"[-/bg] [head/bg/b]1-4/tab[dim/bg] views   [head/bg/b]c[dim/bg] account   [head/bg/b]x[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                              [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "`;
 
-exports[`footer MCP status, from the heartbeat files no heartbeat in the last 10 min: a dim MCP ○ 1`] = `"[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]              [dim/bg]MCP ○ "`;
+exports[`footer MCP status, from the heartbeat files no heartbeat in the last 10 min: a dim MCP ○ 1`] = `"[-/bg] [head/bg/b]1-4/tab[dim/bg] views   [head/bg/b]c[dim/bg] account   [head/bg/b]x[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                                       [dim/bg]MCP ○ "`;
 
-exports[`states another instance holds the lock: read-only, stale, and the notice 1`] = `" 1-4 views   a account   s settings   ? help   q quit     another tokenhud is ingesting   MCP ● 2 agents "`;
+exports[`states another instance holds the lock: read-only, stale, and the notice 1`] = `" 1-4/tab views   c account   x settings   ? help          another tokenhud is ingesting   MCP ● 2 agents "`;
 
 exports[`states before the first view models: the frame, and a line saying the store is being read 1`] = `
 " tokenhud   1 Overview   2   3   4                     all accounts ▾   ● stale 
@@ -1063,42 +1063,41 @@ exports[`states before the first view models: the frame, and a line saying the s
                                                                                 
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   a account   s settings   ? help   q quit              
+ a/d window   w/s card   enter open   t cost/tokens   1-4/tab views   ? help    
 "
 `;
 
-exports[`states help overlay 1`] = `
+exports[`states help overlay: how to move, this view's keys with its tab names, the global keys 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
-                     ╭─ Keys ───────────────────────────────────────────────────────╮                    
-                     │   1 2 3 4  Overview, History, Models, Accounts               │                    
-                     │   a        cycle the account scope: all → each account → all │                    
-                     │   s        settings                                          │                    
-                     │   ?        this help                                         │                    
-                     │   q        quit (or Ctrl-C)                                  │                    
-                     │                                                              │                    
-                     │   History                                                    │                    
-                     │   d/w/m    group                                             │                    
-                     │   /        filter by model                                   │                    
-                     │   W/M      this week/month                                   │                    
-                     │   tab      heat map/table                                    │                    
-                     │   enter    open                                              │                    
-                     │   esc      back                                              │                    
-                     │   ←→↑↓     move                                              │                    
-                     ╰──────────────────────────────────────────────────────────────╯                    
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
+     ╭─ Keys ───────────────────────────────────────────────────────────────────────────────────────╮    
+     │  MOVE                                                                                        │    
+     │   a/d  ←/→             Switch the tab: what the view shows                                   │    
+     │   w/s  ↑/↓             Move the selection: which row or card                                 │    
+     │   enter                Open the selection                                                    │    
+     │   esc                  Go back one step: close, un-drill, clear                              │    
+     │   WASD works like the arrow keys; letters work with Caps Lock on                             │    
+     │                                                                                              │    
+     │  HISTORY                                                                                     │    
+     │   a/d                  Switch the table: this week · this month · days · weeks · months      │    
+     │   w/s                  Select a row; the heat map highlights its day, week or month          │    
+     │   pgup/pgdn  home/end  Move ten rows, or to the first or last                                │    
+     │   enter                On a week or month, list its days; on a day, list its limit events    │    
+     │   esc                  Close the limit events, then the open week or month, then clear the   │    
+     │                        filter                                                                │    
+     │   f  /                 Filter every number by model: type part of a model id, enter applies  │    
+     │                        it                                                                    │    
+     │                                                                                              │    
+     │  GLOBAL                                                                                      │    
+     │   1-4                  Switch view: Overview, History, Models, Accounts                      │    
+     │   tab  shift-tab       Next view; shift-tab goes to the previous one                         │    
+     │   c                    Cycle the account scope: all accounts, then each account, then all    │    
+     │                        again                                                                 │    
+     │   x                    Open settings                                                         │    
+     │   ?                    Show the keys, this view's included                                   │    
+     │   q  Ctrl-C            Quit                                                                  │    
+     ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
                                                                                                          
                                                                                                          
                                                                                                          
@@ -1117,7 +1116,8 @@ exports[`states help overlay 1`] = `
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- esc close                                                                                MCP ● 2 agents 
+ esc close                                                                                               
+                                                                                          MCP ● 2 agents 
 "
 `;
 
@@ -1134,7 +1134,7 @@ exports[`states settings: the list, then a picker 1`] = `
      │   Check for updates       on                                                                 │    
      │   Accounts                1 of 1 enabled                                                     │    
      │                                                                                              │    
-     │ ↑/↓ move · enter change · esc back to the view                                               │    
+     │ w/s move · a/d change · enter open · esc close                                               │    
      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
                                                                                                          
                                                                                                          
@@ -1149,9 +1149,9 @@ exports[`states settings: the list, then a picker 1`] = `
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                       MCP ● 2 agents 
+ w/s move   a/d change   enter open   esc close                                                          
+                                                                                          MCP ● 2 agents 
 
  tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1161,7 +1161,7 @@ exports[`states settings: the list, then a picker 1`] = `
      │     light                                                                                    │    
      │     high-contrast                                                                            │    
      │                                                                                              │    
-     │ ● current · ↑/↓ move · enter select · esc back                                               │    
+     │ ● current · w/s move · enter select · esc back                                               │    
      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
                                                                                                          
                                                                                                          
@@ -1180,8 +1180,8 @@ exports[`states settings: the list, then a picker 1`] = `
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                       MCP ● 2 agents 
+ w/s move   enter select   esc back                                                                      
+                                                                                          MCP ● 2 agents 
 "
 `;

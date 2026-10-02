@@ -33,7 +33,7 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       await run.waitFor(LIVE, "the live indicator");
       expect(run.vt.altScreen).toBe(true);
       for (const [key, marker] of [
-        ["2", "This month"],
+        ["2", " this month "],
         ["3", "MODELS ·"],
         ["4", " ACCOUNTS"],
         ["1", " LIMITS"],
@@ -41,7 +41,7 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
         run.send(key);
         await run.waitFor((s) => s.includes(marker), `view ${key}`);
       }
-      run.send("s");
+      run.send("x");
       await run.waitFor((s) => s.includes("╭─ Settings"), "settings");
       run.send("\x1b");
       await run.waitFor(
@@ -160,13 +160,18 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       const first = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
       try {
         await first.waitFor((s) => LIVE(s) && s.includes("personal · claude"), "the card");
-        first.send("s");
+        first.send("x");
         await first.waitFor((s) => s.includes("╭─ Settings"), "settings");
         first.send("\x1b[F"); // End: the Accounts row
         await Bun.sleep(100);
         first.send("\r");
         await first.waitFor((s) => s.includes("Settings › Accounts"), "the account list");
-        first.send("l");
+        first.send("\r");
+        await first.waitFor(
+          (s) => s.includes("Show only this account") && s.includes("Rename…"),
+          "the action menu",
+        );
+        first.send("ss\r"); // Rename… is the third item
         await first.waitFor((s) => s.includes("new label"), "the rename prompt");
         first.send(`${"\x7f".repeat(8)}main\r`);
         await first.waitFor((s) => s.includes("● main"), "the renamed root");

@@ -90,10 +90,43 @@ describe("the docs checker", () => {
     ]);
   });
 
-  test("knows the global keys and every view's own keys", () => {
+  test("knows the moves, the global keys, every view's own keys, the menu's and settings'", () => {
     const sections = keySections();
-    expect([...sections.keys()]).toEqual(["", "Overview", "History", "Models", "Accounts"]);
-    expect(sections.get("")).toEqual(["1-4", "a", "s", "?", "q"]);
+    expect([...sections.keys()]).toEqual([
+      "",
+      "Overview",
+      "History",
+      "Models",
+      "Accounts",
+      "Account menu",
+      "Settings",
+    ]);
+    expect(sections.get("")).toEqual([
+      "a/d",
+      "←/→",
+      "w/s",
+      "↑/↓",
+      "enter",
+      "esc",
+      "1-4",
+      "tab",
+      "shift-tab",
+      "c",
+      "x",
+      "?",
+      "q",
+      "Ctrl-C",
+    ]);
+    expect(sections.get("History")).toEqual([
+      "a/d",
+      "w/s",
+      "pgup/pgdn",
+      "home/end",
+      "enter",
+      "esc",
+      "f",
+      "/",
+    ]);
     for (const [section, keys] of sections)
       expect([section, keys.length > 0]).toEqual([section, true]);
   });

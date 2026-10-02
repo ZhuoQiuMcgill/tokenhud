@@ -26,7 +26,7 @@ exports[`105×50 snapshot, and every number on screen whole 1`] = `
   cost         $8.47*      $14.64*     $164.52*     $342.29*                                             
   tokens         7.5M        13.1M       147.6M       315.5M                                             
                                                                                                          
- ACTIVITY · cost per 15 min · 24h                                                peak $1.47 at Mon 21:30 
+ ACTIVITY · cost per 15 min · peak $1.47 at Mon 21:30                            ◀ a  5h   24h   7d  d ▶ 
  $1.47                                        █                                             ▃ ▃ ▃ ▃      
                                               █                                             █ █ █ █      
                                               █                             ▂               █ █ █ █      
@@ -48,9 +48,9 @@ exports[`105×50 snapshot, and every number on screen whole 1`] = `
   Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
   Sun 21:10  codex     weekly passed 80%     —                                                           
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   a account   s settings   ? help   q quit        MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens                                                      
+ 1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
 "
 `;
 
@@ -75,7 +75,7 @@ exports[`120×45 snapshot, and every number on screen whole 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                  
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                  
                                                                                                                         
- ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h                     
+ ACTIVITY · cost per 20 min                             ◀ a  5h   24h   7d  d ▶    TOP MODELS · 24h                     
  $1.53                              █                                  ▁▁ ▁▁       Opus 4.8            $7.66  76% ━━━━━━
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
@@ -97,9 +97,9 @@ exports[`120×45 snapshot, and every number on screen whole 1`] = `
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   enter details   a account   s settings   ? help   q quit       MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens                                                                     
+ 1-4/tab views   c account   x settings   ? help   q quit                                                MCP ● 2 agents 
 "
 `;
 
@@ -127,7 +127,7 @@ exports[`80×24 snapshot, and every number on screen whole 1`] = `
   tokens         7.5M        13.1M       147.6M       315.5M                    
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens   ? help     MCP ● 2 agents 
 "
 `;
 
@@ -152,7 +152,7 @@ exports[`160×50 snapshot, and every number on screen whole 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                                                          
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                                                          
                                                                                                                                                                 
- ACTIVITY · cost per 15 min · 24h                                                                         TOP MODELS · 24h                                      
+ ACTIVITY · cost per 15 min                                                    ◀ a  5h   24h   7d  d ▶    TOP MODELS · 24h                                      
  $1.47                                        █                                             ▃ ▃ ▃ ▃       Opus 4.8                    $7.66  76% ━━━━━━         
                                               █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
                                               █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
@@ -179,9 +179,9 @@ exports[`160×50 snapshot, and every number on screen whole 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
-                                                                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   enter details   tab card   a account   s settings   ? help   q quit                                    MCP ● 2 agents 
+ a/d window   w/s card   enter open   t cost/tokens                                                                                                             
+ 1-4/tab views   c account   x settings   ? help   q quit                                                                                        MCP ● 2 agents 
 "
 `;
 
@@ -205,7 +205,7 @@ exports[`60×20 snapshot, and every number on screen whole 1`] = `
                                                             
                                                             
 ────────────────────────────────────────────────────────────
- 1-4 views   a account   ? help   q quit     MCP ● 2 agents 
+ a/d window   w/s card   ? help              MCP ● 2 agents 
 "
 `;
 
@@ -229,7 +229,7 @@ exports[`50×20 snapshot, and every number on screen whole 1`] = `
                                                   
                                                   
 ──────────────────────────────────────────────────
- 1-4 views   ? help   q quit       MCP ● 2 agents 
+ a/d window   w/s card   ? help    MCP ● 2 agents 
 "
 `;
 

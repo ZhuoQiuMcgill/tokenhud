@@ -174,37 +174,50 @@ describe("what each size keeps (limits first)", () => {
 describe("keys", () => {
   const state = (c: Controller) => c.getState().viewState.overview as OverviewState;
 
-  test("←/→ cycle the chart through 5 h, 24 h and 7 d; t and ↑/↓ switch cost and tokens", async () => {
+  test("a/d cycle the chart through 5 h, 24 h and 7 d, its tab strip following; t switches cost and tokens", async () => {
     const c = controller();
     const { setup } = await frame(105, 50, c);
     const title = () =>
       chars(setup)
         .split("\n")
         .find((l) => l.includes("ACTIVITY")) ?? "";
-    expect(title()).toContain("cost per 15 min · 24h");
-    await settle(setup, () => c.key(key("right")));
-    expect(title()).toContain("cost per 2 h · 7d");
+    /** The strip's active tab: the cells drawn on the `tab` background. */
+    const active = () =>
+      (
+        roles(setup.captureSpans(), theme("dark"))
+          .split("\n")
+          .find((l) => l.includes("ACTIVITY")) ?? ""
+      ).match(/\[head\/tab\/b\]([^[]*)/)?.[1];
+    expect(title()).toContain("cost per 15 min");
+    expect(title()).toContain("◀ a  5h   24h   7d  d ▶");
+    expect(active()).toBe(" 24h ");
+    await settle(setup, () => c.key(key("d")));
+    expect(title()).toContain("cost per 2 h");
+    expect(active()).toBe(" 7d ");
     expect(chars(setup)).toContain("-7d");
     await settle(setup, () => c.key(key("right")));
-    expect(title()).toContain("cost per 4 min · 5h");
-    await settle(setup, () => c.key(key("left")));
+    expect(title()).toContain("cost per 4 min");
+    expect(active()).toBe(" 5h ");
+    await settle(setup, () => c.key(key("a")));
     expect(state(c).window).toBe("7d");
     await settle(setup, () => c.key(key("t")));
-    expect(title()).toContain("tokens per 2 h · 7d");
+    expect(title()).toContain("tokens per 2 h");
     expect(chars(setup)).toContain(" TOP MODELS");
+    // ↑/↓ select a card now; they no longer switch cost and tokens.
     await settle(setup, () => c.key(key("down")));
-    expect(title()).toContain("cost per 2 h · 7d");
+    expect(title()).toContain("tokens per 2 h");
+    expect(state(c)).toMatchObject({ tokens: true, card: 0 });
   });
 
   // Accounts selects by account id (T13); critique §8: an index here opened the wrong one.
-  test("tab selects a card; Enter opens Accounts on that card's account, every card", async () => {
+  test("w/s select a card; Enter opens Accounts on that card's account, every card", async () => {
     const cards = (views.overview as OverviewVM).cards ?? [];
     expect(cards.filter((c) => c.account !== null)).toHaveLength(5);
     for (const [i, card] of cards.entries()) {
       const c = controller();
       const { setup } = await frame(120, 45, c);
       await settle(setup, () => {
-        for (let k = 0; k <= i; k++) c.key(key("tab"));
+        for (let k = 0; k <= i; k++) c.key(key(k === 0 ? "s" : "down"));
       });
       expect(chars(setup)).toContain(`▸ ${card.label} · ${card.provider}`);
       await settle(setup, () => c.key(key("return")));
@@ -227,7 +240,9 @@ describe("keys", () => {
 
   test("Enter with no card selected opens the first; esc clears the selection", async () => {
     const c = controller();
-    c.key(key("tab"));
+    c.key(key("w"));
+    expect(state(c).card).toBe(0);
+    c.key(key("up"));
     expect(state(c).card).toBe(0);
     c.key(key("escape"));
     expect(state(c).card).toBeNull();
@@ -240,7 +255,7 @@ describe("keys", () => {
 
   test("the compact form marks the selected card", async () => {
     const c = controller();
-    c.key(key("tab"));
+    c.key(key("s"));
     const { setup } = await frame(80, 24, c);
     const out = roles(setup.captureSpans(), theme("dark")).split("\n");
     const personal = out.find((l) => l.includes("personal")) ?? "";

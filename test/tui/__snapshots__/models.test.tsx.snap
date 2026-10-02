@@ -4,7 +4,7 @@ exports[`frames 105×50 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- MODELS · all time · by cost                                  window  today  this week  this month  all  
+ MODELS · by cost                         ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
  model                 provider  input    $/M  output    $/M   cache   $/M       cost  share             
  gpt-5.5               codex      2.5M   5.00    1.6M  30.00   63.9M  0.50    $117.25  ━━━━━━━━━━  33.6% 
  gpt-5.6-sol           codex      2.8M   4.00    1.8M  20.00   72.0M  0.40    $108.18  ━━━━━━━━━━  31.0% 
@@ -48,9 +48,9 @@ exports[`frames 105×50 1`] = `
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   o sort   a account   s settings   ? help   q quit                MCP ● 1 agent 
+ a/d window   w/s model   enter rates   r sort                                                           
+ 1-4/tab views   c account   x settings   ? help   q quit                                  MCP ● 1 agent 
 "
 `;
 
@@ -58,7 +58,7 @@ exports[`frames 120×45 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- MODELS · all time · by cost                                    window  today  this week  this month  all  1h  5h  24h  
+ MODELS · by cost                                        ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
  model                     provider   input     $/M   output     $/M    cache    $/M        cost   share                
  gpt-5.5                   codex       2.5M    5.00     1.6M   30.00    63.9M   0.50     $117.25   ━━━━━━━━━━   33.6%   
  gpt-5.6-sol               codex       2.8M    4.00     1.8M   20.00    72.0M   0.40     $108.18   ━━━━━━━━━━   31.0%   
@@ -97,9 +97,9 @@ exports[`frames 120×45 1`] = `
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit    MCP ● 1 agent 
+ a/d window   w/s model   enter rates   r sort                                                                          
+ 1-4/tab views   c account   x settings   ? help   q quit                                                 MCP ● 1 agent 
 "
 `;
 
@@ -107,7 +107,7 @@ exports[`frames 80×24 1`] = `
 " tokenhud   1   2   3 Models   4                   all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- MODELS · all time · by cost                                                    
+ MODELS · by cost          ◀ a  today   week   month   all   1h   5h   24h  d ▶ 
  model                  provider input output  cache      cost share            
  gpt-5.5                codex     2.5M   1.6M  63.9M   $117.25 ━━━━━━━━━━ 33.6% 
  gpt-5.6-sol            codex     2.8M   1.8M  72.0M   $108.18 ━━━━━━━━━━ 31.0% 
@@ -127,7 +127,7 @@ exports[`frames 80×24 1`] = `
                                                                                 
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit             MCP ● 1 agent 
+ a/d window   w/s model   enter rates   r sort   ? help           MCP ● 1 agent 
 "
 `;
 
@@ -135,7 +135,7 @@ exports[`frames 160×50 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- MODELS · all time · by cost                                                                            window  today  this week  this month  all  1h  5h  24h  
+ MODELS · by cost                                                                                ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
  model                     provider   input     $/M   output     $/M    cache    $/M        cost   share                                                        
  gpt-5.5                   codex       2.5M    5.00     1.6M   30.00    63.9M   0.50     $117.25   ━━━━━━━━━━   33.6%                                           
  gpt-5.6-sol               codex       2.8M    4.00     1.8M   20.00    72.0M   0.40     $108.18   ━━━━━━━━━━   31.0%                                           
@@ -179,9 +179,9 @@ exports[`frames 160×50 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
-                                                                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit                                            MCP ● 1 agent 
+ a/d window   w/s model   enter rates   r sort                                                                                                                  
+ 1-4/tab views   c account   x settings   ? help   q quit                                                                                         MCP ● 1 agent 
 "
 `;
 
@@ -189,7 +189,7 @@ exports[`frames 80×24 with Enter: the selected model's cards, the table down to
 " tokenhud   1   2   3 Models   4                   all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- MODELS · all time · by cost                                                    
+ MODELS · by cost          ◀ a  today   week   month   all   1h   5h   24h  d ▶ 
  model                  provider input output  cache      cost share            
  gpt-5.5                codex     2.5M   1.6M  63.9M   $117.25 ━━━━━━━━━━ 33.6% 
  gpt-5.6-sol            codex     2.8M   1.8M  72.0M   $108.18 ━━━━━━━━━━ 31.0% 
@@ -209,6 +209,6 @@ exports[`frames 80×24 with Enter: the selected model's cards, the table down to
  │ first seen Aug 2 · 1,678 requests                                          │ 
  ╰────────────────────────────────────────────────────────────────────────────╯ 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit             MCP ● 1 agent 
+ a/d window   w/s model   enter rates   r sort   ? help           MCP ● 1 agent 
 "
 `;

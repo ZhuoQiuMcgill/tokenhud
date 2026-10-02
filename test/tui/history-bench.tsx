@@ -139,31 +139,31 @@ try {
     `  open History: p50 ${o.p50.toFixed(2)} p95 ${o.p95.toFixed(2)} max ${o.max.toFixed(2)} ms`,
   );
   verdict("open History (key → frame, p95 of 50)", o.p95, BUDGET.frame);
+  // T17: the table's tabs (a/d), and a week opened and closed (enter, esc).
   const group: number[] = [];
-  for (let i = 0; i < 60; i++) group.push(await press(["w", "m", "d"][i % 3] as string));
-  for (let i = 0; i < 20; i++)
-    group.push(await press(i % 2 ? "M" : "W", i % 2 ? "M" : "W"), await press("escape", "\u001b"));
+  for (let i = 0; i < 80; i++) group.push(await press(i % 10 < 5 ? "right" : "left"));
+  for (let i = 0; i < 10; i++)
+    group.push(await press("return", "\r"), await press("escape", "\u001b"));
   const g = stats(group);
   console.log(
-    `  grouping, W and M: p50 ${g.p50.toFixed(2)} p95 ${g.p95.toFixed(2)} max ${g.max.toFixed(2)} ms`,
+    `  tabs, a week opened and closed: p50 ${g.p50.toFixed(2)} p95 ${g.p95.toFixed(2)} max ${g.max.toFixed(2)} ms`,
   );
-  verdict("switch grouping (key → frame, p95 of 100)", g.p95, BUDGET.frame);
+  verdict("switch tabs (key → frame, p95 of 100)", g.p95, BUDGET.frame);
   // A model filter narrows every number on screen, worked out per frame from the view model.
-  for (const k of ["/", "o", "p", "u", "s", "return"]) await press(k);
+  for (const k of ["f", "o", "p", "u", "s", "return"]) await press(k);
   const filtered: number[] = [];
-  for (let i = 0; i < 60; i++) filtered.push(await press(["w", "m", "d"][i % 3] as string));
+  for (let i = 0; i < 60; i++) filtered.push(await press(i % 10 < 5 ? "right" : "left"));
   const fl = stats(filtered);
   console.log(
-    `  grouping with "/opus": p50 ${fl.p50.toFixed(2)} p95 ${fl.p95.toFixed(2)} max ${fl.max.toFixed(2)} ms`,
+    `  tabs with "opus": p50 ${fl.p50.toFixed(2)} p95 ${fl.p95.toFixed(2)} max ${fl.max.toFixed(2)} ms`,
   );
-  verdict("switch grouping, filtered by model (p95 of 60)", fl.p95, BUDGET.frame);
+  verdict("switch tabs, filtered by model (p95 of 60)", fl.p95, BUDGET.frame);
   await press("escape", "\u001b");
   const moves: number[] = [];
-  for (let i = 0; i < 50; i++)
-    moves.push(await press(["left", "up", "right", "down"][i % 4] as string));
+  for (let i = 0; i < 50; i++) moves.push(await press(["up", "down", "up", "up"][i % 4] as string));
   const m = stats(moves);
   console.log(
-    `  heat-map moves: p50 ${m.p50.toFixed(2)} p95 ${m.p95.toFixed(2)} max ${m.max.toFixed(2)} ms`,
+    `  row moves: p50 ${m.p50.toFixed(2)} p95 ${m.p95.toFixed(2)} max ${m.max.toFixed(2)} ms`,
   );
   setup.renderer.destroy();
 } finally {

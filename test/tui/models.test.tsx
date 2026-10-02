@@ -719,9 +719,9 @@ describe("the critique's smaller fixes", () => {
     );
   });
 
-  test("the footer keeps o sort at 105 columns", async () => {
+  test("the footer keeps r sort at 105 columns, on the view's line", async () => {
     const frame = await frameAt(105, 50);
-    expect(frame.split("\n")[49]).toContain("o sort");
+    expect(frame.split("\n")[48]).toContain("r sort");
   });
 });
 
@@ -765,11 +765,11 @@ describe("keys", () => {
     // The command rode on the view's state once: the state kept has none, so the next
     // key of the view doesn't step the window again.
     expect(Object.getOwnPropertySymbols(c.getState().viewState.models as object)).toEqual([]);
-    press(c, "o");
+    press(c, "r");
     expect(calls).toHaveLength(10);
   });
 
-  test("↑/↓ select in the order shown; o sorts; Enter shows the cards", () => {
+  test("↑/↓ select in the order shown; r sorts (o too, as before); Enter shows the cards", () => {
     const { c } = recording();
     const state = () => c.getState().viewState.models as ModelsState;
     expect(state()).toEqual({ selected: null, sort: "cost", cards: false });
@@ -778,13 +778,13 @@ describe("keys", () => {
     press(c, "up");
     press(c, "up");
     expect(state().selected).toBe(rowKey(vm.rows[0] as ModelRow));
-    press(c, "o");
+    press(c, "r");
     expect(state().sort).toBe("tokens");
     // The selection stays on its row; down is the next one in the new order.
     const next = vm.order.tokens[vm.order.tokens.indexOf(0) + 1] as number;
     press(c, "down");
     expect(state().selected).toBe(rowKey(vm.rows[next] as ModelRow));
-    press(c, "o");
+    press(c, "R");
     press(c, "o");
     expect(state().sort).toBe("cost");
     press(c, "return");

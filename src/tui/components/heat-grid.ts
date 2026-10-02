@@ -13,8 +13,13 @@ export interface HeatGridOptions extends ThemedOptions<HeatGridRenderable> {
   /** Week-major: index `week * 7 + day` (day 0 = Monday). null leaves the cell blank. */
   values?: readonly (number | null)[];
   weeks?: number;
-  /** The highlighted cell's index, or -1. */
+  /**
+   * The first highlighted cell's index; it may be before the first cell, as a month's first
+   * days can be. -1 (with a span of 1) highlights none.
+   */
   selected?: number;
+  /** How many cells from `selected` are highlighted: 1 for a day, a week's or a month's. */
+  span?: number;
   /** A month row above the grid; none when empty. */
   months?: readonly MonthLabel[];
   /** Mon / Wed / Fri labels in a 5-cell gutter on the left. */
@@ -32,13 +37,14 @@ export function heatLevel(v: number, hi: number): number {
 
 /**
  * A weeks × days grid of `■`, one cell per day, two columns per week (gen.py
- * `history_a()`), coloured on a 5-level scale (`heat0`…`heat4`), with the selected day drawn
- * in `head`. When fewer weeks fit than given, the most recent ones show.
+ * `history_a()`), coloured on a 5-level scale (`heat0`…`heat4`), with the selected days
+ * drawn bold in `head`. When fewer weeks fit than given, the most recent ones show.
  */
 export class HeatGridRenderable extends Themed {
   #values: readonly (number | null)[] = [];
   #weeks = 0;
   #selected = -1;
+  #span = 1;
   #months: readonly MonthLabel[] = [];
   #dayLabels = true;
 
@@ -47,6 +53,7 @@ export class HeatGridRenderable extends Themed {
     if (options.values) this.#values = options.values;
     if (options.weeks !== undefined) this.#weeks = options.weeks;
     if (options.selected !== undefined) this.#selected = options.selected;
+    if (options.span !== undefined) this.#span = options.span;
     if (options.months) this.#months = options.months;
     if (options.dayLabels !== undefined) this.#dayLabels = options.dayLabels;
   }
@@ -63,6 +70,11 @@ export class HeatGridRenderable extends Themed {
 
   set selected(v: number) {
     this.#selected = v ?? -1;
+    this.requestRender();
+  }
+
+  set span(v: number) {
+    this.#span = v ?? 1;
     this.requestRender();
   }
 
@@ -102,7 +114,7 @@ export class HeatGridRenderable extends Themed {
         const index = (first + w) * 7 + d;
         const v = this.#values[index];
         if (v === null || v === undefined) continue;
-        const selected = index === this.#selected;
+        const selected = index >= this.#selected && index < this.#selected + this.#span;
         const role: Role = selected ? "head" : (HEAT_ROLES[heatLevel(v, hi)] as Role);
         drawRun(
           buffer,

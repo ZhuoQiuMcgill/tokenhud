@@ -88,65 +88,89 @@ the store, the accounts it follows, unpriced models, and anything still only in 
 
 ## Keys
 
+Every view moves the same way, with the left hand on WASD or either hand on the arrows:
+
 | Key | Does |
 |---|---|
+| `a/d` or `←/→` | Switch the tab: what the view shows |
+| `w/s` or `↑/↓` | Move the selection: which row or card |
+| `enter` | Open the selection |
+| `esc` | Go back one step: close, un-drill, clear |
+
+Letters work the same with Caps Lock on. In a text field (History's model filter, the time
+zone filter, a new label) letters are just text.
+
+| Key | Does, in every view |
+|---|---|
 | `1-4` | Switch view: Overview, History, Models, Accounts |
-| `a` | Cycle the account scope: all accounts, then each account, then all again |
-| `s` | Open settings |
+| `tab` or `shift-tab` | Next view, or the previous one |
+| `c` | Cycle the account scope: all accounts, then each account, then all again |
+| `x` | Open settings |
 | `?` | Show the keys, the current view's included |
 | `q` or `Ctrl-C` | Quit |
 
-The footer shows the keys of the view you are in.
+A view with tabs shows them as a strip, `◀ a  …  d ▶`, over what they switch. The footer
+shows the keys of the view you are in.
 
 ### Overview
 
 | Key | Does |
 |---|---|
-| `←/→` | Change the activity span: the last 5 hours, 24 hours or 7 days |
-| `t` | Show cost or tokens; the top models follow (`↑/↓` too) |
-| `tab` | Select the next account card; `esc` clears the selection |
+| `a/d` | Switch the activity chart's window: the last 5 hours, 24 hours or 7 days |
+| `w/s` | Select an account card (none is selected at first) |
 | `enter` | Open the selected card's account (the first card's when none is selected) in Accounts |
+| `esc` | Clear the card selection |
+| `t` | Show cost or tokens in the activity chart and the top models |
 
 ### History
 
 | Key | Does |
 |---|---|
-| `tab` | Move between the heat map and the table |
-| `←→↑↓` | On the heat map, a week back or forward and a day up or down; in the table, a row |
-| `d/w/m` | Group the table by day, week or month |
-| `W/M` | List the days of this week, or of this month |
+| `a/d` | Switch the table: this week, this month, every day, the weeks or the months |
+| `w/s` | Select a row; the heat map highlights its day, week or month |
+| `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
 | `enter` | On a week or month, list its days; on a day, list its limit events |
-| `/` | Filter every number by model: type part of a model id, `enter` applies it |
-| `esc` | Close the open week, month or day, then clear the filter |
+| `esc` | Close the limit events, then the open week or month, then clear the filter |
+| `f` or `/` | Filter every number by model: type part of a model id, `enter` applies it |
 
 ### Models
 
 | Key | Does |
 |---|---|
-| `←/→` | Change the window: today, this week, this month or all time, then the last 1, 5 or 24 hours (their tabs show on a wide screen) |
-| `↑/↓` | Select a model |
+| `a/d` | Switch the window: today, this week, this month, all time, the last 1, 5 or 24 hours |
+| `w/s` | Select a model |
 | `enter` | Show or hide the selected model's rates and who used it |
-| `o` | Sort by cost, tokens or name |
+| `r` | Sort by cost, tokens or name |
 
 ### Accounts
 
 | Key | Does |
 |---|---|
-| `↑/↓` | Select an account |
-| `enter` | Scope every view to that account; again, back to all accounts |
-| `e` | Turn the account off or on |
-| `l` | Rename (label) it |
-| `h` | Mark it history only, or not |
+| `w/s` | Select an account; the last entry is "add a root…" |
+| `enter` | Open the account's action menu; on "add a root…", the settings account editor |
+
+### Account menu
+
+`enter` on an account, in the Accounts view or in settings under Accounts, opens a small
+menu: show only this account (again: all accounts), enable or disable it, rename it, and
+mark it history only or not.
+
+| Key | Does |
+|---|---|
+| `w/s` or `↑/↓` | Select an action |
+| `enter` | Run it |
+| `esc` | Close the menu |
 
 ### Settings
 
 | Key | Does |
 |---|---|
-| `↑/↓` | Move |
-| `enter` | Change the selected setting, or pick a value |
-| `esc` | Back; from the main list, back to the view |
-| `e`, `l`, `h` | Under Accounts: turn an account off or on, rename it, mark it history only |
-| `a`, `u` | Under Accounts: mark an account as the same subscription account as another (pick it from a list), or unlink it |
+| `w/s` or `↑/↓` | Move; in the time zone list, only the arrows (letters filter it) |
+| `a/d` or `←/→` | Step the selected setting's value in place |
+| `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
+| `enter` | Open the selected setting's list, pick a value, or open an account's action menu |
+| `esc` or `x` | Back; from the main list, back to the view |
+| `backspace` | Delete the last character of a filter or label |
 
 Settings are the refresh interval, the default spend window, whether to show cost, the
 theme (dark, light, high contrast), the time zone, whether to check for updates, and the
@@ -292,13 +316,13 @@ An account is one Claude Code or Codex config directory. tokenhud finds:
 
 Directories elsewhere go in `config.json` as `claude_roots` or `codex_roots`, for example
 `"claude_roots": [{"path": "/srv/claude-ci", "label": "ci"}]`. In the Accounts view, or in
-settings under Accounts, you can turn any account off, rename it, or mark it history only.
-`a` narrows every view to one account.
+settings under Accounts, `enter` opens an account's menu: turn it off, rename it, or mark it
+history only. `c` narrows every view to one account.
 
 **History-only accounts.** An account that isn't signed in on this machine any more (it now
 runs on another computer, say) keeps all of its history. Its card says "not signed in
 here" instead of showing an error, and tokenhud checks its limits only once a day, or never
-once you mark it history only (`h`).
+once you mark it history only (in its menu).
 
 **Several directories on one subscription account.** Two config dirs signed in to the same
 Claude (or ChatGPT) account share one set of limits: under WSL, `~/.claude` and the
