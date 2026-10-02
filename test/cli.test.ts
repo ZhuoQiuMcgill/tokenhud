@@ -23,6 +23,13 @@ function runHome(...args: string[]) {
       env: {
         PATH: process.env.PATH ?? "",
         HOME: home,
+        // Windows: the home is USERPROFILE, and Bun fills in the real one when it is
+        // missing. The child then read the real ~\.claude, and wrote Bun's transpiler cache
+        // under the real profile on the runner's slow C: disk, which once took the first
+        // --once past 5 s (T15). Temp files go in the throwaway home too.
+        USERPROFILE: home,
+        TEMP: home,
+        TMP: home,
         XDG_CONFIG_HOME: join(home, "config"),
         TOKENHUD_WSL_USERS: "",
       },
