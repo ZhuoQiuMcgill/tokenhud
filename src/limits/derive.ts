@@ -209,33 +209,41 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
- * The part of the day local time `t` falls in, and the day it belongs to (its local date as
- * a UTC midnight): the small hours belong to the night that began the evening before.
+ * The part of the day local time `t` falls in, the day it belongs to (a local date, as a
+ * UTC midnight; the small hours belong to the night that began the evening before), and
+ * the local date and hour themselves.
  */
-function partOf(t: number, offset: (t: number) => number): { day: number; part: string } {
+function partOf(t: number, offset: (t: number) => number) {
   const wall = t + offset(t);
   const hour = new Date(wall).getUTCHours();
-  const day = Math.floor(wall / DAY_MS) * DAY_MS - (hour < PARTS[0][0] ? DAY_MS : 0);
-  return { day, part: PARTS.findLast(([from]) => hour >= from)?.[1] ?? "night" };
+  const date = Math.floor(wall / DAY_MS) * DAY_MS;
+  const part = PARTS.findLast(([from]) => hour >= from)?.[1] ?? "night";
+  return { day: date - (hour < PARTS[0][0] ? DAY_MS : 0), part, date, hour };
 }
 
 /**
  * A weekly window's projected time, as precise as it is (T18): a day and a part of it,
- * never minutes. Within 24 hours of `now`: `~this afternoon`, `~tonight`, `~tomorrow
- * morning`. Further off, the weekday: `~Sun evening`, or `~next Wed morning` a week on.
+ * never minutes. Today: `~this morning`, `~this afternoon`, `~this evening`, `~tonight`.
+ * The next day, all of it: `~tomorrow morning` … `~tomorrow night`. Later: `~Sun evening`,
+ * and a week on, `~next Wed morning`.
  *
  * Mornings run from 06:00, afternoons from 12:00, evenings from 18:00, and nights from
- * 22:00 to 06:00. A night is named after the evening it follows, as people say it: 02:00 on
- * a Monday is "Sun night". So is the day: at 01:00, "tonight" is the night already running
- * and 09:00 is "tomorrow morning". `offset(t)` is the zone's (`Zone.offset`).
+ * 22:00 to 06:00. A night is named after the evening it begins, as people say it: 02:00 on
+ * a Monday is "Sun night". Days are calendar days, so at 05:00 a time two hours on is "this
+ * morning". In the small hours the night still running is "tonight", and the one coming
+ * after the day is named by its weekday instead (`~Fri night`). Each part of each day has
+ * one name. `offset(t)` is the zone's (`Zone.offset`).
  */
 export function roughly(t: number, now: number, offset: (t: number) => number): string {
   const { day, part } = partOf(t, offset);
-  const ahead = Math.round((day - partOf(now, offset).day) / DAY_MS);
-  if (t - now < DAY_MS) {
-    if (ahead <= 0) return part === "night" ? "~tonight" : `~this ${part}`;
-    return `~tomorrow ${part}`;
-  }
+  const today = partOf(now, offset);
+  const ahead = Math.round((day - today.date) / DAY_MS);
   const weekday = WEEKDAYS[new Date(day).getUTCDay()] as string;
+  if (ahead < 0) return "~tonight";
+  if (ahead === 0) {
+    if (part !== "night") return `~this ${part}`;
+    return today.hour < PARTS[0][0] ? `~${weekday} night` : "~tonight";
+  }
+  if (ahead === 1) return `~tomorrow ${part}`;
   return `~${ahead >= 7 ? "next " : ""}${weekday} ${part}`;
 }

@@ -261,7 +261,7 @@ describe("windowPace: the pace each window projects from", () => {
     since.push(new Date(from).toISOString());
     return { costPerHour: 16, tokensPerHour: 500_000 };
   };
-  const reset = at("2026-10-07T09:00:00Z");
+  const reset = at("2026-10-06T13:00:00Z");
 
   test("the 5-hour window, and one of unknown length: the last 30 minutes", () => {
     since.length = 0;
@@ -282,7 +282,7 @@ describe("windowPace: the pace each window projects from", () => {
       basis: "window_avg",
     });
     expect(windowPace(WEEK_MS, reset, reset - 1, recent, rate).basis).toBe("window_avg");
-    expect(since).toEqual(["2026-09-30T09:00:00.000Z", "2026-09-30T09:00:00.000Z"]);
+    expect(since).toEqual(["2026-09-29T13:00:00.000Z", "2026-09-29T13:00:00.000Z"]);
   });
 
   test("under 6 hours into the week: the last 30 minutes", () => {
@@ -302,22 +302,22 @@ describe("windowPace: the pace each window projects from", () => {
     expect(windowPace(WEEK_MS, reset, reset + 48 * HOUR, recent, rate).basis).toBe("window_avg");
     // Three hours in: too early to average.
     expect(windowPace(WEEK_MS, reset, reset + 3 * HOUR, recent, rate).basis).toBe("30m");
-    expect(since).toEqual(["2026-10-07T09:00:00.000Z"]);
+    expect(since).toEqual(["2026-10-06T13:00:00.000Z"]);
   });
 });
 
 /**
- * The user's report (2026-10-02), synthetic and rounded. A weekly window that began Wed
- * 05:00 in Toronto (09:00Z) is 54 hours old on Fri at 11:00 (15:00Z). $820 was spent in it
- * on Wednesday, then nothing until a burst of $60 in the last 30 minutes (two agents at
- * once). The capture a minute ago says 48 %: 0.48 / $880 per dollar, about $18 per 1 %.
+ * The user's report (2026-10-02), synthetic and rounded, at made-up times: a weekly window
+ * that opened Tue 13:00 UTC is 54 hours old on Thu at 19:00. $820 was spent in it on
+ * Wednesday, then nothing until a burst of $60 in the last 30 minutes (two agents at once).
+ * The capture a minute ago says 48 %: 0.48 / $880 per dollar, about $18 per 1 %.
  */
 describe("the user's case: a 30-minute burst no longer runs out a weekly limit tonight", () => {
-  const start = at("2026-09-30T09:00:00Z");
+  const start = at("2026-09-29T13:00:00Z");
   const reset = start + WEEK_MS;
-  const now = at("2026-10-02T15:00:00Z");
+  const now = at("2026-10-01T19:00:00Z");
   const spends: [number, number][] = [
-    [at("2026-09-30T20:00:00Z"), 820],
+    [at("2026-09-30T00:00:00Z"), 820],
     [now - 25 * MIN, 20],
     [now - 15 * MIN, 20],
     [now - 5 * MIN, 20],
@@ -339,30 +339,30 @@ describe("the user's case: a 30-minute burst no longer runs out a weekly limit t
     now,
     spent,
   };
-  const toronto = Zone.of("America/Toronto");
-  const local = (t: number) => roughly(t, now, (x) => toronto.offset(x));
+  /** In UTC. */
+  const label = (t: number) => roughly(t, now, () => 0);
 
-  test("the weekly window projects from the week's average: ~Sun evening, not tonight", () => {
+  test("the weekly window projects from the week's average: ~Sat night, not tonight", () => {
     const pace = windowPace(WEEK_MS, reset, now, recent, rate);
     // $880 over the 54 hours since the window began: $16.30 an hour.
     expect(pace.basis).toBe("window_avg");
     expect(pace.costPerHour).toBeCloseTo(880 / 54, 12);
     // 52 % left at 0.48 / 54 h of the window per hour: 0.52 * 54 / 0.48 = 58.5 h, so Sun
-    // Oct 4 at 21:30 in Toronto, before Wednesday's reset.
+    // Oct 4 at 05:30, Saturday night, before Tuesday's reset.
     const hits = projectExhaustion({ ...weekly, costPerHour: pace.costPerHour });
     expect(hits).toBe(now + 58.5 * HOUR);
-    expect(hits).toBe(at("2026-10-05T01:30:00Z"));
-    expect(local(hits as number)).toBe("~Sun evening");
+    expect(hits).toBe(at("2026-10-04T05:30:00Z"));
+    expect(label(hits as number)).toBe("~Sat night");
     // Before T18 the burst's $120 an hour was carried over the rest of the week:
-    // 0.52 / (0.48 / 880 * 120) = 7 h 56 min 40 s, at 18:56 tonight.
+    // 0.52 / (0.48 / 880 * 120) = 7 h 56 min 40 s, at 02:56 tonight.
     const before = projectExhaustion({ ...weekly, costPerHour: recent.costPerHour });
-    expect(before).toBe(at("2026-10-02T22:56:40Z"));
-    expect(local(before as number)).toBe("~this evening");
+    expect(before).toBe(at("2026-10-02T02:56:40Z"));
+    expect(label(before as number)).toBe("~tonight");
   });
 
   test("the 5-hour window, with the same burst, still projects from the last 30 minutes", () => {
-    // Its window opened at 12:00 (16:00Z reset - 5 h); only the burst falls in it: 30 % on
-    // $60 is 0.005 per dollar, and 0.7 / (0.005 * $120/h) = 70 min.
+    // Its window opened at 16:00 (the 21:00 reset - 5 h); only the burst falls in it: 30 %
+    // on $60 is 0.005 per dollar, and 0.7 / (0.005 * $120/h) = 70 min.
     const resetsAt = now + 2 * HOUR;
     const pace = windowPace(5 * HOUR, resetsAt, now, recent, rate);
     expect(pace).toEqual({ costPerHour: 120, tokensPerHour: 0, basis: "30m" });
@@ -377,7 +377,7 @@ describe("the user's case: a 30-minute burst no longer runs out a weekly limit t
   });
 
   test("a weekly window under 6 hours old falls back to the last 30 minutes", () => {
-    // The week began at 10:00 (14:00Z), 5 hours ago, and only the burst is in it.
+    // The week began at 14:00, 5 hours ago, and only the burst is in it.
     const young = now - 5 * HOUR + WEEK_MS;
     const pace = windowPace(WEEK_MS, young, now, recent, rate);
     expect(pace).toEqual({ costPerHour: 120, tokensPerHour: 0, basis: "30m" });
@@ -449,62 +449,73 @@ describe("the user's case: a 30-minute burst no longer runs out a weekly limit t
     expect(week?.pace_basis).toBe("window_avg");
     expect(week?.pace_cost_per_h).toBeCloseTo(880 / 54, 12);
     expect(week?.pace_tokens_per_h).toBeCloseTo((880 * 40_000) / 54, 6);
-    expect(week?.projected_exhaustion_at).toBe(at("2026-10-05T01:30:00Z"));
+    expect(week?.projected_exhaustion_at).toBe(at("2026-10-04T05:30:00Z"));
   });
 });
 
 describe("roughly: a weekly window's time, to a part of a day", () => {
   const toronto = Zone.of("America/Toronto");
-  /** Toronto wall-clock time on a day of Sep 27 – Oct 9 2026 (EDT, UTC-4). */
-  const t = (day: number, hhmm: string) => {
-    const [h, m] = hhmm.split(":").map(Number) as [number, number];
-    return Date.UTC(2026, day > 26 ? 8 : 9, day, h + 4, m);
-  };
-  const say = (when: number, now: number) => roughly(when, now, (x) => toronto.offset(x));
-  /** Friday Oct 2, 11:00. */
-  const FRI = t(2, "11:00");
+  /** Toronto wall-clock time in October 2026 (EDT, UTC-4): "08T10:00" is Thu Oct 8, 10:00. */
+  const L = (dayTime: string) => Date.parse(`2026-10-${dayTime}:00-04:00`);
+  const say = (when: string, now: string) => roughly(L(when), L(now), (x) => toronto.offset(x));
+  const THU = "08T10:00";
 
-  test("within 24 hours: this morning, afternoon or evening, tonight, tomorrow …", () => {
-    expect(say(t(2, "11:00"), FRI)).toBe("~this morning");
-    expect(say(t(2, "11:59"), FRI)).toBe("~this morning");
-    expect(say(t(2, "12:00"), FRI)).toBe("~this afternoon");
-    expect(say(t(2, "17:59"), FRI)).toBe("~this afternoon");
-    expect(say(t(2, "18:00"), FRI)).toBe("~this evening");
-    expect(say(t(2, "21:59"), FRI)).toBe("~this evening");
-    expect(say(t(2, "22:00"), FRI)).toBe("~tonight");
-    // The small hours are still Friday night.
-    expect(say(t(3, "05:59"), FRI)).toBe("~tonight");
-    expect(say(t(3, "06:00"), FRI)).toBe("~tomorrow morning");
-    expect(say(FRI + 24 * HOUR - 1, FRI)).toBe("~tomorrow morning");
+  test("today: this morning, this afternoon, this evening, tonight", () => {
+    expect(say("08T11:59", THU)).toBe("~this morning");
+    expect(say("08T12:00", THU)).toBe("~this afternoon");
+    expect(say("08T17:59", THU)).toBe("~this afternoon");
+    expect(say("08T18:00", THU)).toBe("~this evening");
+    expect(say("08T21:59", THU)).toBe("~this evening");
+    expect(say("08T22:00", THU)).toBe("~tonight");
+    // Tonight runs into the small hours.
+    expect(say("09T05:59", THU)).toBe("~tonight");
+    expect(say("09T06:00", THU)).toBe("~tomorrow morning");
   });
 
-  test("24 hours or more ahead: the weekday", () => {
-    expect(say(FRI + 24 * HOUR, FRI)).toBe("~Sat morning");
-    expect(say(t(3, "12:00"), FRI)).toBe("~Sat afternoon");
-    expect(say(t(4, "21:30"), FRI)).toBe("~Sun evening");
-    expect(say(t(4, "22:00"), FRI)).toBe("~Sun night");
+  test("tomorrow, all of it, then the weekday; a week on, next", () => {
+    // One morning, one name: within 24 hours and beyond them.
+    expect(say("09T08:00", THU)).toBe("~tomorrow morning");
+    expect(say("09T11:30", THU)).toBe("~tomorrow morning");
+    expect(say("09T12:00", THU)).toBe("~tomorrow afternoon");
+    expect(say("09T23:00", THU)).toBe("~tomorrow night");
+    expect(say("10T02:00", THU)).toBe("~tomorrow night");
+    expect(say("10T06:00", THU)).toBe("~Sat morning");
+    expect(say("11T21:30", THU)).toBe("~Sun evening");
+    expect(say("11T22:00", THU)).toBe("~Sun night");
     // 02:00 on Monday is Sunday night; 06:00 is Monday morning.
-    expect(say(t(5, "02:00"), FRI)).toBe("~Sun night");
-    expect(say(t(5, "06:00"), FRI)).toBe("~Mon morning");
+    expect(say("12T02:00", THU)).toBe("~Sun night");
+    expect(say("12T06:00", THU)).toBe("~Mon morning");
     // A week on, the same weekday is next week's.
-    expect(say(t(7, "09:00"), t(30, "10:00"))).toBe("~next Wed morning");
-    expect(say(t(6, "23:00"), t(30, "10:00"))).toBe("~Tue night");
+    expect(say("14T09:00", "07T10:00")).toBe("~next Wed morning");
+    expect(say("13T23:00", "07T10:00")).toBe("~Tue night");
   });
 
-  test("in the small hours, tonight is the night already running", () => {
-    const early = t(2, "01:00");
-    expect(say(t(2, "03:00"), early)).toBe("~tonight");
-    expect(say(t(2, "09:00"), early)).toBe("~tomorrow morning");
-    expect(say(t(2, "23:00"), early)).toBe("~tomorrow night");
-    // Over 24 hours ahead, still Friday night: named by its day.
-    expect(say(t(3, "05:00"), early)).toBe("~Fri night");
+  test("around midnight and early in the morning: the calendar day decides (critique m1)", () => {
+    // At 05:00, 07:00 is this morning; the night still running is tonight, and the next
+    // night has its weekday, so no two nights share a name.
+    expect(say("08T07:00", "08T05:00")).toBe("~this morning");
+    expect(say("08T05:30", "08T05:00")).toBe("~tonight");
+    expect(say("08T22:30", "08T05:00")).toBe("~Thu night");
+    expect(say("09T07:00", "08T05:00")).toBe("~tomorrow morning");
+    // At midnight.
+    expect(say("08T00:30", "08T00:00")).toBe("~tonight");
+    expect(say("08T06:00", "08T00:00")).toBe("~this morning");
+    expect(say("08T23:00", "08T00:00")).toBe("~Thu night");
+    expect(say("09T01:00", "08T00:00")).toBe("~Thu night");
+    expect(say("09T23:00", "08T00:00")).toBe("~tomorrow night");
+    // A minute before midnight, the night just begun is tonight.
+    expect(say("08T00:01", "07T23:59")).toBe("~tonight");
+    expect(say("08T06:00", "07T23:59")).toBe("~tomorrow morning");
+    // From 06:00 on, the day is today's.
+    expect(say("08T07:00", "08T06:00")).toBe("~this morning");
   });
 
   test("the zone's own clock decides, across a DST change", () => {
     // Toronto falls back on Sun Nov 1 2026 at 02:00 EDT. 05:59 EST is 10:59Z, 06:00 EST 11:00Z.
     const sat = Date.UTC(2026, 9, 31, 16); // Sat Oct 31, 12:00 EDT
-    expect(say(Date.UTC(2026, 10, 1, 10, 59), sat)).toBe("~tonight");
-    expect(say(Date.UTC(2026, 10, 1, 11), sat)).toBe("~tomorrow morning");
+    const there = (t: number) => roughly(t, sat, (x) => toronto.offset(x));
+    expect(there(Date.UTC(2026, 10, 1, 10, 59))).toBe("~tonight");
+    expect(there(Date.UTC(2026, 10, 1, 11))).toBe("~tomorrow morning");
     // The same instants in UTC are Sunday morning already.
     expect(roughly(Date.UTC(2026, 10, 1, 10, 59), sat, () => 0)).toBe("~tomorrow morning");
   });

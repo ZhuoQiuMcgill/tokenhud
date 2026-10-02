@@ -214,7 +214,7 @@ How close each account is to its limits, and what your usage is costing right no
 2. 🟧 **Meters.** The `5h` row is the 5-hour window, the `week` row the weekly one. Each bar is how much of that limit is used: blue below 50 %, amber from 50 %, red-orange from 80 %. A model's own weekly limit isn't on the card; the Accounts view lists it.
 3. 🟨 **Used, and time to reset.** `84%` is the share of the 5-hour limit used, as the provider reported it the last time tokenhud fetched the limits; `1h52m` is the time left until that window resets. On the weekly row, `41%` used and `5d21h` (5 days 21 hours) to go. Once a window has reset, the card reads 0 % and `—` until the next fetch.
 4. 🟩 **Pace.** The spend pace the verdict comes from, at API prices, as dollars per hour (tokens per hour with costs hidden). `pace` with `(30m)` is what the account spent in the last 30 minutes: `$6.8/h` here, and `$0/h` for nothing in that time. `avg` with `this week` is a weekly window's average since it began, idle time and nights included: the pace a weekly verdict comes from. Where a card is narrow, `(30m)` or `this week` goes first, then the word; the number stays.
-5. 🟦 **Verdict.** What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `100% at 12:13` (`hits 100% at …` on a wider card), the time the 5-hour window fills at its pace, with the day when it isn't today; `100% ~tonight`, the part of the day the weekly window fills at its average (`~tomorrow morning`, `~Sun evening`; never to the minute, which a week's average can't tell); `wk ~94%` (`week ends ~…`), the weekly window is on course to end its week at 80 % or more; `idle`, nothing spent in 30 minutes, or `idle · week N%` when a window is at 80 % or more all the same; `safe until reset` (`safe`), both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.
+5. 🟦 **Verdict.** What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `100% at 12:13` (`hits 100% at …` on a wider card), the time the 5-hour window fills at its pace, with the day when it isn't today; `100% ~tonight`, the part of the day the weekly window fills at its average (or tomorrow morning, Sunday evening and so on; never to the minute, which a week's average can't tell); `wk ~94%` (`week ends ~…` on a wider card), the weekly window is on course to end its week at 80 % or more; `idle`, nothing spent in 30 minutes, or `idle · week N%` when a window is at 80 % or more all the same; `safe` (`safe until …` on a wider card), both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.
 6. 🟪 **Stale limits.** The limits were fetched more than 15 minutes ago: `(52m old)` says how long ago, and the card shows them as they were then.
 7. 🟫 **Not signed in here.** A history-only account: one you marked history only, or one that isn't signed in on this machine (it runs on another computer now, say). Its limits can't be read here, so it has no meters, but its usage history stays. See [Accounts](#accounts).
 <!-- /shots:overview-card -->
@@ -235,9 +235,9 @@ For each window, tokenhud estimates how much of the limit a dollar uses: the win
 when the limits were last fetched, divided by what the account had spent in that window by
 then (at least $0.50, or there is no estimate). It adds what was spent since that fetch, and
 works out how long the rest of the window lasts at its pace. If that ends before the window
-resets, the card says when: to the minute for the 5-hour window (`hits 100% at …`), and to a
-part of the day for a weekly one (`~tonight`, `~tomorrow morning`, `~Sun evening`), as
-precise as a week's average can be. If after, the window is safe. For the weekly window it
+resets, the card says when: to the minute for the 5-hour window (`100% at 12:13`), and to a
+part of the day for a weekly one (`100% ~tonight`; or tomorrow morning, Sunday evening and
+so on), as precise as a week's average can be. If after, the window is safe. For the weekly window it
 also works out where the week would end at its pace: that is the `week ends ~N%` figure,
 shown from 80 %. Treat it as a rough guide:
 
@@ -310,7 +310,7 @@ its last 30 days.
   `unpriced`: none of its tokens has a price. See [Pricing](#pricing).
 - `≈` before a cost: part of it is priced from an estimate (`codex-auto-review`, priced as
   the model OpenAI said serves it).
-- `~` in `week ends ~94%` or `100% ~tonight`: a projection, the second to a part of the day.
+- `~` in `wk ~94%` or `100% ~tonight`: a projection, the second to a part of the day.
   Every time on a limits card is an estimate too.
 - **Grey (dim) text** is secondary: labels, notes, and what is old or inactive, such as a
   limits card's `(52m old)`, an inactive account's `○`, or a window past its reset.

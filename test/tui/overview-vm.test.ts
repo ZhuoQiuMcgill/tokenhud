@@ -268,9 +268,10 @@ describe("limit cards", () => {
 
 describe("a card's verdict and pace, window by window (T18)", () => {
   // The user's case, synthetic and rounded (test/limits/derive.test.ts works it through
-  // T8): Fri Oct 2, 11:00 in Toronto; the week began Wed 05:00 and resets next Wed 05:00.
-  const now = Date.parse("2026-10-02T15:00:00Z");
-  const reset = Date.parse("2026-10-07T09:00:00Z");
+  // T8), at made-up times: Thu Oct 1, 15:00 in Toronto; the week began 54 hours before, Tue
+  // 09:00, and resets the next Tuesday at 09:00.
+  const now = Date.parse("2026-10-01T19:00:00Z");
+  const reset = Date.parse("2026-10-06T13:00:00Z");
   const toronto = Zone.of("America/Toronto");
   const acct: AccountInfo = {
     id: 7,
@@ -280,7 +281,7 @@ describe("a card's verdict and pace, window by window (T18)", () => {
     historyOnly: false,
   };
   const byIdentity = new Map([[acct.identity, acct]]);
-  /** USD spent at each instant: $820 on Wednesday, and by default a $60 burst just now. */
+  /** USD spent at each instant: $820 the day after the week began, and a $60 burst just now. */
   const spendOf = (spends: readonly (readonly [number, number])[]): SpendSource => ({
     pace: () => ({ costPerHour: 0, tokensPerHour: 0 }),
     rate: () => ({ costPerHour: 0, tokensPerHour: 0 }),
@@ -288,7 +289,7 @@ describe("a card's verdict and pace, window by window (T18)", () => {
       spends.filter(([t]) => t >= from && t < to).reduce((sum, [, usd]) => sum + usd, 0),
   });
   const BURST = spendOf([
-    [Date.parse("2026-09-30T20:00:00Z"), 820],
+    [Date.parse("2026-09-30T00:00:00Z"), 820],
     [now - 25 * MIN, 20],
     [now - 15 * MIN, 20],
     [now - 5 * MIN, 20],
@@ -315,7 +316,7 @@ describe("a card's verdict and pace, window by window (T18)", () => {
     pace_cost_per_h: 880 / 54,
     pace_tokens_per_h: (880 * 40_000) / 54,
     pace_basis: "window_avg",
-    projected_exhaustion_at: Date.parse("2026-10-05T01:30:00Z"),
+    projected_exhaustion_at: Date.parse("2026-10-04T05:30:00Z"),
     stale_s: 60,
     ...over,
   });
@@ -330,12 +331,13 @@ describe("a card's verdict and pace, window by window (T18)", () => {
   });
   const cardOf = (l: AccountLimits, spend = BURST) => limitCard(l, byIdentity, spend, now, toronto);
 
-  test("the week's 100 % at its average pace, as a part of a day: ~Sun evening", () => {
+  test("the week's 100 % at its average pace, as a part of a day: ~Sat night", () => {
     const c = cardOf(limits([five(), week()]));
     expect(c.verdict).toEqual({
       kind: "hits",
-      at: Date.parse("2026-10-05T01:30:00Z"),
-      rough: "~Sun evening",
+      at: Date.parse("2026-10-04T05:30:00Z"),
+      // Sun 01:30 in Toronto: Saturday night.
+      rough: "~Sat night",
     });
     // The pace shown is the one the verdict comes from: the week's average, not the burst's.
     expect(c.pace).toEqual({
@@ -357,18 +359,18 @@ describe("a card's verdict and pace, window by window (T18)", () => {
       pace_cost_per_h: 120,
       pace_tokens_per_h: 4_800_000,
       pace_basis: "30m",
-      // Sat 03:10 in Toronto: Friday night.
+      // Fri 07:10 in Toronto.
       projected_exhaustion_at: now + (16 * 60 + 10) * MIN,
     });
     const c = cardOf(limits([five(), young]));
-    expect(c.verdict).toEqual({ kind: "hits", at: now + 970 * MIN, rough: "~tonight" });
+    expect(c.verdict).toEqual({ kind: "hits", at: now + 970 * MIN, rough: "~tomorrow morning" });
     expect(c.pace.basis).toBe("30m");
   });
 
   test("a quiet half hour no longer hides where the week is heading", () => {
     // Nothing in the last 30 minutes, but $6 an hour on average this week: 0.48 + (0.48 /
     // 880) * 6 * 114 h to the reset = 85.3 %.
-    const quiet = spendOf([[Date.parse("2026-09-30T20:00:00Z"), 880]]);
+    const quiet = spendOf([[Date.parse("2026-09-30T00:00:00Z"), 880]]);
     const c = cardOf(
       limits(
         [
@@ -386,7 +388,7 @@ describe("a card's verdict and pace, window by window (T18)", () => {
 
   test("idle with a window at 80 % or more names the fullest; otherwise just idle", () => {
     // Used elsewhere: 83 % on the meter, $0.30 on this machine, too little to project.
-    const elsewhere = spendOf([[Date.parse("2026-09-30T20:00:00Z"), 0.3]]);
+    const elsewhere = spendOf([[Date.parse("2026-09-30T00:00:00Z"), 0.3]]);
     const idle = (fiveHour: number, weekly: number) =>
       cardOf(
         limits(
