@@ -539,7 +539,12 @@ describe("json --refresh and the configured time zone", () => {
     expect(json<JsonUsageDocument>(env, "usage", "--refresh").totals.tokens.input).toBe(1500);
     // A refresh imports nothing and creates no config; the TUI's first run does that.
     expect(existsSync(env.config)).toBe(false);
-    expect(openStore(env.store).meta.imports).toEqual([]);
+    const store = openStore(env.store);
+    try {
+      expect(store.meta.imports).toEqual([]);
+    } finally {
+      store.close();
+    }
   });
 
   test("the config's time_zone applies to calendar periods; --tz overrides it", () => {

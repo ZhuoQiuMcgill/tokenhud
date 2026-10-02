@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   utimesSync,
@@ -537,10 +538,12 @@ describe("recovery", () => {
     const path = storePath();
     make(path, rows(3));
     const found = fileIdOf(path);
-    const other = `${path}.other`;
-    copyFileSync(path, other);
-    rmSync(path);
-    copyFileSync(other, path); // a new file (new inode) at the path
+    // Another process moved the file aside and put a fresh one in its place. The moved file
+    // keeps its inode, so the new one cannot reuse it (a deleted file's could be).
+    const moved = `${path}.moved`;
+    renameSync(path, moved);
+    copyFileSync(moved, path);
+    expect(fileIdOf(path)).not.toBe(found);
     expect(moveAside(path, found)).toBeNull();
     expect(existsSync(path)).toBe(true);
   });
