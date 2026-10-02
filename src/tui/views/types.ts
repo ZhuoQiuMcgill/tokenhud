@@ -8,6 +8,8 @@ import type { ViewId } from "../vm/types.ts";
 export interface ViewContext {
   /** Body width in cells. */
   readonly width: number;
+  /** Body rows the sections share; absent when unbounded (`--once` draws them whole). */
+  readonly height?: number;
   readonly bp: Breakpoint;
   readonly theme: Theme;
   readonly showCost: boolean;

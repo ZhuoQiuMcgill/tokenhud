@@ -740,8 +740,9 @@ describe("the heat map and the table share one selection", () => {
     state = history.keys("escape", state, vm) ?? state;
     expect(state).toMatchObject({ open: null, group: "week" });
     expect(history.keys("escape", state, vm)).toBeUndefined();
-    // Enter on a day row opens nothing.
-    expect(history.keys("return", press(vm, "tab"), vm)).toBeUndefined();
+    // Enter on a day lists its limit events (today has two); a day without any opens nothing.
+    expect(history.keys("return", press(vm, "tab"), vm)).toMatchObject({ events: true });
+    expect(history.keys("return", press(vm, "tab", "down"), vm)).toBeUndefined();
   });
 
   test("W and M keep a selection that's in this week or month, else jump to today", () => {
@@ -829,42 +830,66 @@ describe("the heat map and the table share one selection", () => {
 
 // ── the day card and the selection's edges ───────────────────────────────────────
 
+/** Today with 4 hits (10:00, 12:00, 14:00, 15:00 EST, each cleared 30 min later) and 4 marks. */
+function busyVM(): HistoryVM {
+  const today = vm.days.at(-1) as HistoryDay;
+  const at = (utc: string) => Date.parse(`2026-12-03T${utc}:00Z`);
+  const marks: HistoryEvent[] = ["13:00", "13:30", "14:00", "14:20"].map((t) => ({
+    account: "work",
+    kind: "passed_80",
+    window: "WEEKLY",
+    at: at(t),
+    resumedAt: null,
+  }));
+  const hits: HistoryEvent[] = ["15:00", "17:00", "19:00", "20:00"].map((t) => ({
+    account: "personal",
+    kind: "reached",
+    window: "5-HOUR",
+    at: at(t),
+    resumedAt: at(t) + 30 * 60_000,
+  }));
+  return { ...vm, days: [...vm.days.slice(0, -1), { ...today, events: [...marks, ...hits] }] };
+}
+const HIT_TIMES = ["10:00", "12:00", "14:00", "15:00"];
+
 describe("limit events on the card", () => {
   test("hits come first and are never hidden behind +N more; the card grows for them", async () => {
-    const today = vm.days.at(-1) as HistoryDay;
-    const at = (utc: string) => Date.parse(`2026-12-03T${utc}:00Z`);
-    const marks: HistoryEvent[] = ["13:00", "13:30", "14:00", "14:20"].map((t) => ({
-      account: "work",
-      kind: "passed_80",
-      window: "WEEKLY",
-      at: at(t),
-      resumedAt: null,
-    }));
-    const hits: HistoryEvent[] = ["15:00", "17:00", "19:00", "20:00"].map((t) => ({
-      account: "personal",
-      kind: "reached",
-      window: "5-HOUR",
-      at: at(t),
-      resumedAt: at(t) + 30 * 60_000,
-    }));
-    const busy: HistoryVM = {
-      ...vm,
-      days: [...vm.days.slice(0, -1), { ...today, events: [...marks, ...hits] }],
-    };
     for (const [width, height] of [
       [105, 50],
       [120, 45],
     ] as const) {
-      const { frame } = await frameOf(busy, width, height);
-      // 15:00Z is 10:00 EST.
-      for (const t of ["10:00", "12:00", "14:00", "15:00"]) {
-        expect(frame).toContain(`hit 100% at ${t}`);
-      }
+      const { frame } = await frameOf(busyVM(), width, height);
+      for (const t of HIT_TIMES) expect(frame).toContain(`hit 100% at ${t}`);
       expect(frame).toContain("+4 more");
       expect(frame.indexOf("hit 100% at 15:00")).toBeLessThan(frame.indexOf("+4 more"));
       expect(frame).not.toContain("passed 80%");
     }
   });
+
+  test.each([
+    [120, 24],
+    [105, 24],
+    [80, 24],
+  ] as const)(
+    "%i×%i: the card never pushes the heat map off; hits show or are counted, and Enter lists them",
+    async (width, height) => {
+      const { frame, c, setup } = await frameOf(busyVM(), width, height);
+      for (const l of frame.split("\n")) expect(Bun.stringWidth(l)).toBeLessThanOrEqual(width);
+      expect(frame).toContain(" Mon ■");
+      expect(frame).toContain("Thu Dec 3 · today");
+      const listed = HIT_TIMES.every((t) => frame.includes(`hit 100% at ${t}`));
+      expect(listed || frame.includes("4 limit hits")).toBe(true);
+      if (width < 120) expect(frame).toContain("4 limit hits");
+      await settle(setup, () => c.key(keyOf("return")));
+      const list = chars(setup);
+      expect(list).toContain("LIMIT EVENTS · Thu Dec 3");
+      for (const t of HIT_TIMES) expect(list).toContain(`hit 100% at ${t}`);
+      expect(list).toContain(" Mon ■");
+      expect(list).toMatchSnapshot();
+      await settle(setup, () => c.key(keyOf("escape")));
+      expect(chars(setup)).toContain(" Day   Week");
+    },
+  );
 });
 
 describe("one side is always highlighted (critique m4)", () => {

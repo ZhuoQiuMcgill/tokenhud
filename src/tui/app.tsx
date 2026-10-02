@@ -306,6 +306,7 @@ const Body = memo(function Body(props: BodyProps) {
   } else {
     const ctx: ViewContext = {
       width,
+      height: rows,
       bp: breakpoint(width),
       theme: t,
       showCost: config.show_cost,

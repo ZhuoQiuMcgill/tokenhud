@@ -10,6 +10,7 @@ import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column, MonthLabel } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
 import { clock, countdown, dayLabel, monthName, textWidth, tokens, truncate } from "../format.ts";
+import { sectionLine } from "../frame.ts";
 import { HEAT_ROLES, type Role } from "../theme.ts";
 import type {
   HistoryDay,
@@ -35,6 +36,8 @@ export interface HistoryState {
   readonly filter: string;
   /** The filter is being typed: every key goes to it. */
   readonly typing: boolean;
+  /** The selected day's limit events are listed in place of the table (Enter on a day). */
+  readonly events: boolean;
 }
 
 const GUTTER = 5;
@@ -49,6 +52,8 @@ const BAR_HIGH = 1.5;
 const PAGE = 10;
 const MAX_FILTER = 32;
 const LABEL = 9;
+/** The table's least height (tabs, header, 3 rows, rule, totals): the card leaves it. */
+const TABLE_LEAST = 7;
 const GROUP_KEYS: Readonly<Record<string, Group>> = { d: "day", w: "week", m: "month" };
 
 // ── days ─────────────────────────────────────────────────────────────────────────
@@ -478,16 +483,28 @@ function cardLines(
 ): Line[] {
   const label = (text: string) => seg(text.padEnd(LABEL), "mute");
   const lines = cardHead(vm, day, state, ctx, width);
-  // Limit events take the rows left, hits first; those that don't fit become "+N more",
-  // 80 % marks before any hit. The key hint goes last if a row is free.
+  // Limit events take the rows left, hits first; 80 % marks that don't fit become
+  // "+N more". Hits that don't all fit become one line counting them, listed by Enter.
   const room = rows - lines.length;
   const events = byImportance(day.events).map((e) => eventLines(e, ctx.tz, width - LABEL));
+  const hits = day.events.filter((e) => e.kind === "reached").length;
   let shown = events.length;
   const height = (n: number) =>
     events.slice(0, n).reduce((h, e) => h + e.length, 0) + (n < events.length ? 1 : 0);
   while (shown > 0 && height(shown) > room) shown--;
-  const body = events.slice(0, shown).flat();
+  let body = events.slice(0, shown).flat();
   if (shown < events.length) body.push([seg(`+${events.length - shown} more`, "high")]);
+  if (shown < hits) {
+    const count = limitCount(day);
+    const hitsOnly = limitCount(day, false);
+    const shapes = [
+      `${count} · enter lists them`,
+      `${hitsOnly} · enter lists them`,
+      count,
+      hitsOnly,
+    ];
+    body = [[seg(shapes.find((t) => textWidth(t) <= width - LABEL) ?? count, "high")]];
+  }
   if (body.length === 0) body.push([seg("none", "dim")]);
   body.forEach((segs, i) => {
     lines.push({ left: [label(i === 0 ? "limits" : ""), ...segs] });
@@ -527,6 +544,16 @@ function dayCard(
   );
 }
 
+/** `4 limit hits · 2 at 80%` (without the marks when `marks` is false); "" with none. */
+function limitCount(day: HistoryDay, marks = true): string {
+  const hits = day.events.filter((e) => e.kind === "reached").length;
+  const at80 = day.events.length - hits;
+  return [
+    ...(hits > 0 ? [`${hits} limit hit${hits === 1 ? "" : "s"}`] : []),
+    ...(marks && at80 > 0 ? [`${at80} at 80%`] : []),
+  ].join(" · ");
+}
+
 /**
  * The day card in one line, for screens too short for the card (critique m3): date,
  * cost, ratio, tokens, top model and limit events, dropping from the end to fit.
@@ -535,22 +562,18 @@ function summaryLine(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Line
   const day = selectedDay(vm, state);
   const ratio = ratioOf(day, baseline(vm, state.filter), ctx.showCost);
   const c = costText(day);
-  const hits = day.events.filter((e) => e.kind === "reached").length;
-  const marks = day.events.length - hits;
-  const limits = [
-    ...(hits > 0 ? [`${hits} limit hit${hits === 1 ? "" : "s"}`] : []),
-    ...(marks > 0 ? [`${marks} at 80%`] : []),
-  ].join(" · ");
+  const limits = limitCount(day);
   const parts: Seg[][] = [
     [seg(` ${cardTitle(vm, day, state)}`, "head", true)],
     ctx.showCost ? [seg(`  ${c.text}`, c.role, c.role === "cost")] : [],
     ratio === null ? [] : [seg(`  ${ratioText(ratio)} avg`, "dim")],
     [seg(`  ${tokens(day.tokens)} tokens`, "tokens")],
     limits === "" ? [] : [seg(`  ${limits}`, "high")],
+    limits === "" ? [] : [seg("  enter lists them", "dim")],
     [seg(`  ${ranked(day.models, ctx.showCost)[0]?.name ?? "—"}`, "fg")],
   ];
-  // Least important last: the top model goes first, then tokens, then the ratio.
-  const drop = [5, 3, 2];
+  // Least important last: the top model goes first, then tokens, the hint and the ratio.
+  const drop = [6, 3, 5, 2];
   const shapes: Seg[][] = [parts.flat()];
   const kept = [...parts];
   for (const i of drop) {
@@ -601,7 +624,12 @@ function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
   const beside = ctx.bp !== "narrow";
   // The grid ends in a blank cell, so one more makes the usual two-cell gap.
   const cardWidth = Math.min(CARD_MAX, ctx.width - gridWidth - 1);
-  const height = beside ? cardHeight(vm, state, ctx, cardWidth) : HEAT_HEIGHT;
+  // The card grows for the day's hits, but never past leaving the table its least, so it
+  // can't push the heat map off a short screen (critique R1). Hits it can't list then
+  // show as a count, listed in full by Enter.
+  const want = beside ? cardHeight(vm, state, ctx, cardWidth) : HEAT_HEIGHT;
+  const room = ctx.height === undefined ? want : ctx.height - 1 - TABLE_LEAST;
+  const height = want <= room ? want : HEAT_HEIGHT;
   return {
     id: "heat",
     priority: 2,
@@ -643,6 +671,27 @@ function cardSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
           {dayCard(vm, state, ctx, width, height)}
         </box>
       ),
+  };
+}
+
+/** Enter on a day: its limit events in full, hits first, in place of the table. */
+function eventsSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
+  const day = selectedDay(vm, state);
+  const lines: Line[] = [
+    sectionLine(`LIMIT EVENTS · ${cardTitle(vm, day, state)}`, "esc back"),
+    ...byImportance(day.events).flatMap((e) =>
+      eventLines(e, ctx.tz, ctx.width - 4).map(
+        (segs): Line => ({ left: [seg("   ", "fg"), ...segs] }),
+      ),
+    ),
+  ];
+  if (day.events.length === 0) lines.push({ left: [seg("   none", "dim")] });
+  return {
+    id: "events",
+    priority: 1,
+    height: lines.length,
+    minHeight: Math.min(lines.length, TABLE_LEAST),
+    render: (height) => <Lines theme={ctx.theme} lines={lines} height={height} />,
   };
 }
 
@@ -831,16 +880,23 @@ function tableSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sec
 function historyKeys(key: string, state: HistoryState, vm: HistoryVM): HistoryState | undefined {
   if (key === "tab") return { ...state, focus: state.focus === "heat" ? "table" : "heat" };
   const group = GROUP_KEYS[key];
-  if (group !== undefined) return { ...state, group, open: null };
-  if (key === "W") return openCurrent(vm, state, "week");
-  if (key === "M") return openCurrent(vm, state, "month");
+  if (group !== undefined) return { ...state, group, open: null, events: false };
+  if (key === "W") return { ...openCurrent(vm, state, "week"), events: false };
+  if (key === "M") return { ...openCurrent(vm, state, "month"), events: false };
   if (key === "/") return { ...state, typing: true };
   if (key === "return" || key === "enter") {
+    // A week or month row in the table opens its days; otherwise a day with limit events
+    // lists them in full.
     const list = listing(vm, state);
-    if (list.kind === "day" || selectedRow(vm, state, list) < 0) return undefined;
-    return { ...state, open: list.kind };
+    const row = list.kind !== "day" && selectedRow(vm, state, list) >= 0;
+    if (state.focus === "table" && row) return { ...state, open: list.kind as "week" | "month" };
+    if (!state.events && selectedDay(vm, state).events.length > 0) {
+      return { ...state, events: true };
+    }
+    return row ? { ...state, open: list.kind as "week" | "month" } : undefined;
   }
   if (key === "escape") {
+    if (state.events) return { ...state, events: false };
     if (state.open !== null) return { ...state, open: null };
     return state.filter === "" ? undefined : { ...state, filter: "" };
   }
@@ -859,16 +915,28 @@ export const history: View<HistoryVM, HistoryState> = {
     { key: "esc", label: "back" },
     { key: "←→↑↓", label: "move" },
   ],
-  initial: { focus: "heat", group: "day", open: null, day: null, filter: "", typing: false },
+  initial: {
+    focus: "heat",
+    group: "day",
+    open: null,
+    day: null,
+    filter: "",
+    typing: false,
+    events: false,
+  },
   capturing: (state) => state.typing,
   keys(key, state, vm) {
-    if (state.typing) return typed(key, state, vm);
+    if (state.typing) {
+      const next = typed(key, state, vm);
+      return next === undefined || vm === undefined ? next : settle(vm, next);
+    }
     if (vm === undefined) return undefined;
     const next = historyKeys(key, state, vm);
     return next === undefined ? undefined : settle(vm, next);
   },
   sections(vm, state, ctx) {
-    const sections = [heatSection(vm, state, ctx), tableSection(vm, state, ctx)];
+    const below = state.events ? eventsSection(vm, state, ctx) : tableSection(vm, state, ctx);
+    const sections = [heatSection(vm, state, ctx), below];
     if (ctx.bp === "narrow") sections.splice(1, 0, cardSection(vm, state, ctx));
     return sections;
   },
