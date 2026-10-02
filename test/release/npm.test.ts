@@ -12,6 +12,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,6 +40,10 @@ const RUNTIMES: ReadonlyArray<readonly [name: string, path: string]> = [
   ["bun", process.execPath],
   ...(NODE === null ? [] : [["node", NODE] as const]),
 ];
+
+test("the launcher starts with Bun's line: bun links it as published, with no Node", () => {
+  expect(readFileSync(SHIM, "utf8").split("\n")[0]).toBe("#!/usr/bin/env bun");
+});
 
 test("the launcher knows exactly the platforms releases are built for", () => {
   const list = /const SUPPORTED = \[([^\]]*)\]/.exec(readFileSync(SHIM, "utf8"))?.[1] ?? "";
@@ -126,9 +131,25 @@ describe.skipIf(process.platform === "win32").each(RUNTIMES)(
       expect(out.stdout).toBe("");
       expect(out.stderr).toContain(`@tokenhud/${id}`);
       expect(out.stderr).toContain("--omit=optional");
-      expect(out.stderr).toContain("npm install -g tokenhud      (a global install)");
+      expect(out.stderr).toContain("bun add -g tokenhud          (a global install with bun)");
+      expect(out.stderr).toContain("npm install -g tokenhud      (a global install with npm)");
       expect(out.stderr).toContain("npm install tokenhud         (in a project)");
     });
+
+    // Bun ignores `libc` and installs a glibc package on Alpine too (and the other way
+    // round, by hand): a binary for the other libc can't start, so it is never run.
+    test.skipIf(process.platform !== "linux")(
+      "a package for the other libc is not run: the missing one is named",
+      async () => {
+        const mine = id;
+        id = `${mine}-musl`;
+        platformPackage("echo ran");
+        id = mine;
+        const out = await result(launch("--version"));
+        expect([out.code, out.stdout]).toEqual([1, ""]);
+        expect(out.stderr).toContain(`@tokenhud/${mine},`);
+      },
+    );
 
     test("a binary killed by a signal: the launcher dies of the same signal", async () => {
       platformPackage("kill -TERM $$");
@@ -192,3 +213,66 @@ describe.skipIf(process.platform === "win32").each(RUNTIMES)(
     });
   },
 );
+
+// The package's preinstall (npm/tokenhud/preinstall.cjs): npm, which runs it under Node
+// before linking the command, gets a launcher that starts with Node's line; under Bun it
+// changes nothing.
+describe("the preinstall", () => {
+  const PREINSTALL = join(import.meta.dir, "..", "..", "npm", "tokenhud", "preinstall.cjs");
+  let pkg: string;
+  let launcher: string;
+  const published = readFileSync(SHIM, "utf8");
+
+  beforeEach(() => {
+    pkg = mkdtempSync(join(tmpdir(), "tokenhud-preinstall-test-"));
+    mkdirSync(join(pkg, "bin"));
+    launcher = join(pkg, "bin", "tokenhud.cjs");
+    copyFileSync(SHIM, launcher);
+    chmodSync(launcher, 0o755);
+    copyFileSync(PREINSTALL, join(pkg, "preinstall.cjs"));
+  });
+  afterEach(() => {
+    chmodSync(join(pkg, "bin"), 0o755);
+    rmSync(pkg, { recursive: true, force: true });
+  });
+
+  const preinstall = (runtime: string) =>
+    Bun.spawnSync([runtime, join(pkg, "preinstall.cjs")], {
+      cwd: pkg,
+      env: { ...process.env },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+  test.skipIf(NODE === null)(
+    "under Node: Node's line, the rest as published, still executable",
+    () => {
+      const run = preinstall(NODE as string);
+      expect([run.exitCode, run.stderr.toString()]).toEqual([0, ""]);
+      const text = readFileSync(launcher, "utf8");
+      expect(text).toBe(published.replace("#!/usr/bin/env bun\n", "#!/usr/bin/env node\n"));
+      if (process.platform !== "win32") expect(statSync(launcher).mode & 0o777).toBe(0o755);
+      expect(readdirSync(join(pkg, "bin"))).toEqual(["tokenhud.cjs"]);
+      // Again (a reinstall over it): unchanged.
+      expect(preinstall(NODE as string).exitCode).toBe(0);
+      expect(readFileSync(launcher, "utf8")).toBe(text);
+    },
+  );
+
+  test("under Bun (a trusted install): unchanged", () => {
+    const run = preinstall(process.execPath);
+    expect([run.exitCode, run.stderr.toString()]).toEqual([0, ""]);
+    expect(readFileSync(launcher, "utf8")).toBe(published);
+  });
+
+  test.skipIf(NODE === null || process.platform === "win32" || process.getuid?.() === 0)(
+    "a launcher it can't rewrite: the install goes on, and it says the command needs Bun",
+    () => {
+      chmodSync(join(pkg, "bin"), 0o555);
+      const run = preinstall(NODE as string);
+      expect(run.exitCode).toBe(0);
+      expect(run.stderr.toString()).toContain("the tokenhud command will need Bun");
+      expect(readFileSync(launcher, "utf8")).toBe(published);
+    },
+  );
+});

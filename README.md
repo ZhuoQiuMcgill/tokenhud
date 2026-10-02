@@ -16,13 +16,35 @@ history on first run.
 
 ## Install
 
-**Linux and macOS:**
+**With Bun** (recommended, once the packages are on npm):
+
+```sh
+bun add -g tokenhud
+```
+
+No Node is needed. Bun puts the `tokenhud` command in `~/.bun/bin` (`%USERPROFILE%\.bun\bin`
+on Windows), which Bun's installer adds to your PATH; `tokenhud doctor` says if it isn't
+there. Release candidates: `bun add -g tokenhud@next`.
+
+**With npm:**
+
+```sh
+npm install -g tokenhud     # or run it without installing: npx tokenhud, bunx tokenhud
+```
+
+Either way you get `tokenhud`, a small launcher, and the prebuilt binary for your machine in
+a platform package (`@tokenhud/linux-x64` and so on), which the package manager installs as
+an optional dependency: don't install with `--omit=optional`. Under npm the launcher runs on
+Node 18 or later: npm's install script switches it from Bun to Node, so with
+`--ignore-scripts` the command needs Bun on your PATH.
+
+**Without a package manager**, on Linux and macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ZhuoQiuMcgill/tokenhud/main/install.sh | sh
 ```
 
-**Windows** (PowerShell):
+On **Windows** (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/ZhuoQiuMcgill/tokenhud/main/install.ps1 | iex
@@ -33,7 +55,9 @@ Both download the binary for your machine from
 against the release's `SHA256SUMS`, and install it without sudo or admin rights:
 `install.sh` to `~/.local/bin/tokenhud` (it tells you if that isn't on your PATH),
 `install.ps1` to `%LOCALAPPDATA%\tokenhud\bin\tokenhud.exe`, which it adds to your user
-PATH. Running either again reinstalls, or updates to the newest release.
+PATH. Running either again reinstalls, or updates to the newest release. Install one way
+only: `tokenhud doctor` lists every tokenhud on your PATH (see [Update](#update-and-uninstall)
+for switching).
 
 | Variable | Effect |
 |---|---|
@@ -50,7 +74,12 @@ $env:TOKENHUD_VERSION = '0.1.0-rc.1'; irm https://raw.githubusercontent.com/Zhuo
 ```
 
 **Alpine and other musl-based Linux** need the C++ runtime the binary links against:
-`apk add libstdc++ libgcc`.
+`apk add libstdc++ libgcc`. With Bun or npm, name the musl binary's package as well, since
+it is not an optional dependency (Bun would download it on every Linux machine):
+
+```sh
+bun add -g @tokenhud/linux-x64-musl tokenhud     # on arm64: @tokenhud/linux-arm64-musl
+```
 
 **By hand:** download `tokenhud-<os>-<arch>` (`linux-x64`, `linux-arm64`, `linux-x64-musl`,
 `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`, `windows-x64.exe`, `windows-arm64.exe`)
@@ -60,17 +89,6 @@ executable and put it on your PATH. On macOS, a binary downloaded with a web bro
 quarantined, and macOS refuses to start it, because tokenhud's binaries are signed but not
 notarized. Clear the flag with `xattr -d com.apple.quarantine tokenhud-darwin-arm64` (or
 `-x64`). `install.sh` downloads with curl, which doesn't set the flag.
-
-**npm** (once the packages are published):
-
-```sh
-npm install -g tokenhud     # or run it without installing: npx tokenhud, bunx tokenhud
-```
-
-The `tokenhud` package is a small launcher that runs a prebuilt binary from a platform
-package (`@tokenhud/linux-x64` and so on), which npm installs as an optional dependency.
-Don't install it with `--omit=optional`. The launcher needs Node 18 or later; on a machine
-with Bun but no Node, use `bunx tokenhud`.
 
 ## First run
 
@@ -84,7 +102,8 @@ and on its first start:
 
 `tokenhud --once` prints the Overview once and exits: with colours in a terminal, as plain
 text when piped. `--width N` sets its width. `tokenhud doctor` reports what tokenhud found:
-the store, the accounts it follows, unpriced models, and anything still only in cc-usage.
+the store, the accounts it follows, unpriced models, anything still only in cc-usage, and
+every tokenhud on your PATH.
 
 ## Keys
 
@@ -522,21 +541,40 @@ tokenhud update --check     # is there a newer release?
 tokenhud update             # install it
 ```
 
-A binary from `install.sh` or `install.ps1` replaces itself: it downloads the new release,
-checks its SHA-256 against the release's `SHA256SUMS`, checks that it starts, and only then
-swaps it in. `--prerelease` includes release candidates. For an npm, npx or bunx install,
-`tokenhud update` prints the command that updates it instead.
+How `tokenhud update` updates depends on how tokenhud was installed:
+
+- **With Bun or npm** (globally): it runs the package manager for you,
+  `bun add -g --no-cache tokenhud@latest` or `npm install -g tokenhud@latest`, then checks
+  the version it installed and says which version it went from and to. `--no-cache` makes
+  Bun ask the registry rather than reuse an answer from a few minutes ago.
+- **With `install.sh` or `install.ps1`**: the binary replaces itself. It downloads the new
+  release, checks its SHA-256 against the release's `SHA256SUMS`, checks that it starts, and
+  only then swaps it in.
+- **Through npx or bunx, or as a project's dependency**: it prints the command that updates
+  it.
+
+`--prerelease` includes release candidates (npm's `next` tag). `--print` prints the command
+that updates your install and runs nothing. After updating, `tokenhud update` warns if
+another tokenhud comes first on your PATH, since a shell would still run that one.
 
 Nothing updates on its own. When a newer release is out, the TUI says so in its footer, in
 dim text; it asks GitHub at most once a day, and the "Check for updates" setting turns that
 off.
 
+**Switching from `install.sh` to Bun:** run `bun add -g tokenhud`, then `tokenhud doctor`.
+It lists every tokenhud on your PATH, with its version and how it was installed, marks the
+one a shell runs, and names the file the old install left, such as
+`~/.local/bin/tokenhud`. Delete that file (`rm ~/.local/bin/tokenhud`): doctor never deletes
+anything. Until you do, if `~/.local/bin` comes before `~/.bun/bin` on your PATH, typing
+`tokenhud` still runs the old copy. On Windows, delete `%LOCALAPPDATA%\tokenhud` and remove
+its `bin` folder from your user PATH.
+
 To uninstall:
 
-1. Remove the binary: `rm ~/.local/bin/tokenhud`; on Windows, delete
+1. Remove the program: `bun remove -g tokenhud` or `npm uninstall -g tokenhud`; for
+   `install.sh`'s binary, `rm ~/.local/bin/tokenhud`; on Windows, delete
    `%LOCALAPPDATA%\tokenhud` and remove its `bin` folder from your user PATH (Settings ›
-   System › About › Advanced system settings › Environment Variables). For npm:
-   `npm uninstall -g tokenhud`.
+   System › About › Advanced system settings › Environment Variables).
 2. Remove it from Claude Code, once per account: `claude plugin uninstall tokenhud@tokenhud`
    or `claude mcp remove -s user tokenhud`.
 3. If you no longer want your usage history, delete `~/.config/tokenhud/`.
@@ -556,7 +594,9 @@ bun src/cli.ts   # run from source
 `bun run build --target=<bun target>` cross-compiles one binary, for example
 `--target=bun-windows-x64` writes `dist/tokenhud.exe`. `bun run build --release` builds all
 eight release binaries and `SHA256SUMS` (install with `bun install --os="*" --cpu="*"`
-first), and `bun run build --smoke` runs the ones this machine can. `bun run format`
+first), and `bun run build --smoke` runs the ones this machine can.
+`test/release/npm-e2e.test.ts` installs and updates the npm packages with bun and with npm
+from a registry on localhost, as CI does; its header says how to run it. `bun run format`
 rewrites files in the project style. [VERSIONING.md](VERSIONING.md) describes releases.
 
 Repository layout:
@@ -573,6 +613,7 @@ src/query/         the query layer: periods, totals and groupings, priced to the
 src/store/         the SQLite usage store, its hourly rollup, backups and recovery
 src/pricing/       the dated price table and the cost engine
 src/update.ts      tokenhud update: install method, releases, verified replacement
+src/installs.ts    every tokenhud on PATH and how it was installed, for doctor and update
 test/              bun test suites
 scripts/build.ts   builds, checksums and smoke-tests the binaries
 install.sh         the Linux and macOS installer; install.ps1 is the Windows one

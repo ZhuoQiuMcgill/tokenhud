@@ -53,15 +53,30 @@ export function refuseRealClient(
   env: NodeJS.ProcessEnv = process.env,
   main: string = Bun.main,
 ): void {
-  if (env.TOKENHUD_TEST !== "1" && !inBunTest(env, main)) return;
+  if (testMayRun(executable, env, main)) return;
   const stubs = env.TOKENHUD_TEST_STUBS;
-  if (stubs && within(executable, dirname(stubs))) return;
   const name = basename(executable);
   if (stubs) {
     appendFileSync(join(stubs, TEST_SPAWN_LOG), `${name} (refused)\n`);
     throw new RefusedClient(`refused to run ${name} from a test: it is not a test stub`);
   }
   throw new RefusedClient(`refused to run ${name} from a test: the test guard is not installed`);
+}
+
+/**
+ * Whether `executable` may run: always outside tests; in one, only from under the dir that
+ * holds the guard's stubs (the test temp root), as `refuseRealClient` decides. Records
+ * nothing: for callers that skip what a test may not run, such as `tokenhud doctor` asking
+ * other tokenhud copies on PATH their version.
+ */
+export function testMayRun(
+  executable: string,
+  env: NodeJS.ProcessEnv = process.env,
+  main: string = Bun.main,
+): boolean {
+  if (env.TOKENHUD_TEST !== "1" && !inBunTest(env, main)) return true;
+  const stubs = env.TOKENHUD_TEST_STUBS;
+  return stubs !== undefined && stubs !== "" && within(executable, dirname(stubs));
 }
 
 /**

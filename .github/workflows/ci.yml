@@ -96,3 +96,48 @@ jobs:
             echo "::error::expected '$expected', got '$out'"
             exit 1
           fi
+
+  # `bun add -g tokenhud` and `npm install -g tokenhud` end to end
+  # (test/release/npm-e2e.test.ts): this OS's packages, staged by scripts/stage-npm.ts and
+  # packed by `bun pm pack`, from a fake npm registry on localhost. bun runs with no Node on
+  # PATH, npm with no Bun; each installs a build that says 0.0.1, runs --version, doctor and
+  # update --print, and `tokenhud update` moves it to this build through its package manager.
+  install:
+    name: install with bun and npm (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+
+      - name: Build this version, and an older one to update from
+        run: |
+          bun scripts/build.ts
+          mkdir -p e2e/new e2e/old
+          mv dist/tokenhud* e2e/new/
+          bun -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = "0.0.1"; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n")'
+          bun scripts/build.ts
+          mv dist/tokenhud* e2e/old/
+          git checkout -- package.json
+
+      # Both tests must run: one skipped (no npm on the runner) fails the job.
+      - name: Install, run and update with bun (no Node) and npm (no Bun)
+        env:
+          TOKENHUD_NPM_E2E_NEW: ${{ runner.os == 'Windows' && 'e2e/new/tokenhud.exe' || 'e2e/new/tokenhud' }}
+          TOKENHUD_NPM_E2E_OLD: ${{ runner.os == 'Windows' && 'e2e/old/tokenhud.exe' || 'e2e/old/tokenhud' }}
+        run: |
+          bun test test/release/npm-e2e.test.ts 2>&1 | tee npm-e2e.log
+          if ! grep -Eq '^ *2 pass' npm-e2e.log || ! grep -Eq '^ *0 fail' npm-e2e.log; then
+            echo "::error::both install tests (bun and npm) must run and pass"
+            exit 1
+          fi

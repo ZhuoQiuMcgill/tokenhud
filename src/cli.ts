@@ -8,7 +8,7 @@ const COMMAND_HELP: ReadonlyArray<readonly [usage: string, summary: string]> = [
   ["tokenhud mcp", "MCP server for Claude Code"],
   ["tokenhud import-cc-usage", "one-time import from cc-usage"],
   ["tokenhud doctor", "store health and data coverage"],
-  ["tokenhud update", "self-update (npm or binary)"],
+  ["tokenhud update", "update (bun, npm or a binary)"],
 ];
 
 type Command = (args: readonly string[]) => number | Promise<number>;
@@ -110,9 +110,9 @@ async function main(args: readonly string[]): Promise<number> {
   process.exit(await runTui());
 }
 
-// `tokenhud update` on Windows parks the replaced .exe beside the new one, since a running
-// .exe can't be deleted; the next start clears it away. Only a compiled binary: from source,
-// the exe is Bun's.
+// `tokenhud update` on Windows parks the replaced .exe beside the new one (or, for a bun or
+// npm install, beside its package tree), since a running .exe can't be deleted; the next
+// start clears it away. Only a compiled binary: from source, the exe is Bun's.
 if (process.platform === "win32") {
   const { isCompiled, removeStaleOld } = await import("./update.ts");
   if (isCompiled()) removeStaleOld(process.execPath);

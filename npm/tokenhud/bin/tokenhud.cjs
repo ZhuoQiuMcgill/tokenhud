@@ -1,8 +1,13 @@
-#!/usr/bin/env node
-// The `tokenhud` command of the npm package: finds the platform package npm installed as an
-// optional dependency (@tokenhud/<platform>-<arch>[-musl]) and runs its binary with the same
-// arguments, exit code and signals. tokenhud itself is a standalone binary; Node only
+#!/usr/bin/env bun
+// The `tokenhud` command of the npm package: finds the platform package installed as an
+// optional dependency (@tokenhud/<platform>-<arch>) and runs its binary with the same
+// arguments, exit code and signals. tokenhud itself is a standalone binary; this only
 // launches it.
+//
+// It runs under Bun or Node. The line above is Bun's, so `bun add -g tokenhud` works where
+// there is no Node: bun links this file as published and runs no install script of ours.
+// npm, which has Node and runs install scripts, switches the line to Node first
+// (preinstall.cjs), before it links the command.
 
 const { spawn } = require("node:child_process");
 const { readFileSync } = require("node:fs");
@@ -34,26 +39,26 @@ function isMusl() {
   }
 }
 
-function candidates() {
+/**
+ * The one platform package that runs here. A glibc binary can't start on musl, nor the
+ * other way round, so there is no second choice: Bun ignores the `libc` field and installs
+ * a glibc package on Alpine too, and that one must not be run.
+ */
+function platformId() {
   const base = `${process.platform}-${process.arch}`;
-  if (process.platform !== "linux") return [base];
-  // npm installs only the package for this libc; an npm too old to read `libc` installs
-  // both, and the matching one goes first.
-  return isMusl() ? [`${base}-musl`, base] : [base, `${base}-musl`];
+  return process.platform === "linux" && isMusl() ? `${base}-musl` : base;
 }
 
-function findBinary() {
+function findBinary(id) {
   const exe = process.platform === "win32" ? "tokenhud.exe" : "tokenhud";
-  for (const id of candidates()) {
-    if (!SUPPORTED.includes(id)) continue;
-    try {
-      return join(dirname(require.resolve(`@tokenhud/${id}/package.json`)), "bin", exe);
-    } catch {}
+  try {
+    return join(dirname(require.resolve(`@tokenhud/${id}/package.json`)), "bin", exe);
+  } catch {
+    return null;
   }
-  return null;
 }
 
-const id = candidates()[0];
+const id = platformId();
 if (!SUPPORTED.includes(id)) {
   console.error(
     `tokenhud: there is no tokenhud binary for ${id}. Supported: ${SUPPORTED.join(", ")}.`,
@@ -61,16 +66,24 @@ if (!SUPPORTED.includes(id)) {
   process.exit(1);
 }
 
-const bin = findBinary();
+const bin = findBinary(id);
 if (bin === null) {
   console.error(
-    `tokenhud: the package with the tokenhud binary for this machine, @tokenhud/${id},\n` +
-      "is not installed. npm installs it as an optional dependency, so it is missing when\n" +
-      "optional dependencies were skipped (--omit=optional, --no-optional, or a lockfile\n" +
-      "made on another platform). Reinstall tokenhud the same way, without --omit=optional:\n" +
-      "  npm install -g tokenhud      (a global install)\n" +
-      "  npm install tokenhud         (in a project)\n" +
-      "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install",
+    id.endsWith("-musl")
+      ? // Not an optional dependency: Bun would install it on every Linux (it ignores `libc`).
+        "tokenhud: on musl Linux (Alpine), the tokenhud binary is a package of its own,\n" +
+          `@tokenhud/${id}. Install it beside tokenhud:\n` +
+          `  bun add -g @tokenhud/${id} tokenhud\n` +
+          `  npm install -g @tokenhud/${id} tokenhud\n` +
+          "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install"
+      : `tokenhud: the package with the tokenhud binary for this machine, @tokenhud/${id},\n` +
+          "is not installed. It comes as an optional dependency, so it is missing when\n" +
+          "optional dependencies were skipped (--omit=optional, --no-optional, or a lockfile\n" +
+          "made on another platform). Reinstall tokenhud the same way, without --omit=optional:\n" +
+          "  bun add -g tokenhud          (a global install with bun)\n" +
+          "  npm install -g tokenhud      (a global install with npm)\n" +
+          "  npm install tokenhud         (in a project)\n" +
+          "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install",
   );
   process.exit(1);
 }

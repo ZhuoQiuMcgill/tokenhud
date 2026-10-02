@@ -1,9 +1,20 @@
-// `tokenhud update`: moves to the newest GitHub release. A standalone binary (install.sh,
-// install.ps1) replaces itself; an npm, npx or bunx install is told the command that
-// updates it, since its package manager owns the files. Never runs on its own.
+// `tokenhud update`: moves to the newest release. A standalone binary (install.sh,
+// install.ps1) replaces itself with the newest GitHub release. A global bun or npm install
+// belongs to its package manager, so tokenhud runs it (`bun add -g`, `npm install -g`) and
+// checks the version it installed. npx, bunx and a project's dependency are told the
+// command. Never runs on its own.
 
-import { chmodSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
+import {
+  COPY_METHODS,
+  isCopyOf,
+  type PathCopy,
+  removeCommand,
+  tokenhudsOnPath,
+} from "../installs.ts";
+import { refuseRealClient } from "../limits/clients.ts";
 import { assetName, targetById } from "../release.ts";
 import {
   compareVersions,
@@ -13,27 +24,35 @@ import {
   isCompiled,
   newestRelease,
   npmGlobalPrefix,
+  type PackageManagerUpdate,
+  packageManagerUpdate,
+  parkingPath,
   parseVersion,
+  platformPackageOf,
   type Release,
   type ReleaseSource,
   releaseSource,
   replaceBinary,
   stagingPath,
   UpdateError,
+  type Version,
   whenFree,
 } from "../update.ts";
 import { VERSION } from "../version.ts";
 
 export const UPDATE_HELP = `Usage:
-  tokenhud update [--check] [--prerelease]
+  tokenhud update [--check] [--prerelease] [--print]
 
-Updates tokenhud to the newest release on GitHub. A binary installed by install.sh or
-install.ps1 replaces itself, once the download matches the release's SHA-256 checksums.
-For an npm, npx or bunx install, it prints the command that updates it.
+Updates tokenhud to the newest release. A binary installed by install.sh or install.ps1
+replaces itself with the newest release on GitHub, once the download matches the release's
+SHA-256 checksums. A global bun or npm install is updated by its package manager: tokenhud
+runs bun add -g or npm install -g, then checks the version it installed. For npx, bunx or a
+project's dependency, it prints the command that updates it.
 
 Options:
   --check        only report whether an update is available
-  --prerelease   include prereleases (release candidates, betas)`;
+  --prerelease   include prereleases (release candidates, betas); npm's next tag
+  --print        print the command that updates this install, and run nothing`;
 
 /** What the command touches, so tests can fake an install, a release and an older version. */
 export interface UpdateDeps {
@@ -48,6 +67,8 @@ export interface UpdateDeps {
   readonly npmPrefix: () => string | null;
   /** What `bin --version` prints, or why it could not run. */
   readonly versionOf: (bin: string) => string;
+  /** Every tokenhud on PATH, in PATH order: to warn when another comes before this one. */
+  readonly copies: () => readonly PathCopy[];
   readonly out: (line: string) => void;
   readonly err: (line: string) => void;
 }
@@ -90,27 +111,186 @@ function defaultDeps(): UpdateDeps {
     fetch,
     npmPrefix: npmGlobalPrefix,
     versionOf,
+    copies: () => tokenhudsOnPath(process.env),
     out: (line) => process.stdout.write(`${line}\n`),
     err: (line) => process.stderr.write(`tokenhud update: ${line}\n`),
   };
 }
 
-/** The command that updates a package-manager install, or a hint; null for a binary. */
-function packageManagerHint(method: InstallMethod, tag: "latest" | "next"): string | null {
+/**
+ * For an install tokenhud leaves to the user (npx, bunx, a project's dependency): why, and
+ * the command that updates it. Null for the others, which `tokenhud update` updates.
+ */
+function hintFor(
+  method: InstallMethod,
+  tag: "latest" | "next",
+): { why: string; command: string } | null {
   switch (method.kind) {
     case "npm":
       return method.global
-        ? `installed with npm; update with:  npm install -g tokenhud@${tag}`
-        : `installed as a project dependency; in that project run:  npm install tokenhud@${tag}`;
-    case "bun-global":
-      return `installed with bun; update with:  bun add -g tokenhud@${tag}`;
+        ? null
+        : {
+            why: "installed as a project dependency; in that project run",
+            command: `npm install tokenhud@${tag}`,
+          };
     case "npx":
-      return `run through npx, which keeps a cached copy; for the newest one run:  npx tokenhud@${tag}`;
+      return {
+        why: "run through npx, which keeps a cached copy; for the newest one run",
+        command: `npx tokenhud@${tag}`,
+      };
     case "bunx":
-      return `run through bunx, which keeps a cached copy; for the newest one run:  bunx tokenhud@${tag}`;
+      return {
+        why: "run through bunx, which keeps a cached copy; for the newest one run",
+        command: `bunx tokenhud@${tag}`,
+      };
     default:
       return null;
   }
+}
+
+/**
+ * Whether every registry the environment names is on this machine. A test may run a real
+ * bun or npm only against one: the install test's fake registry, never npm's.
+ */
+function localRegistry(env: UpdateDeps["env"]): boolean {
+  const named = ["BUN_CONFIG_REGISTRY", "NPM_CONFIG_REGISTRY", "npm_config_registry"]
+    .map((name) => env[name])
+    .filter((url) => url !== undefined && url !== "");
+  return (
+    named.length > 0 && named.every((url) => /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(url as string))
+  );
+}
+
+/** Runs the package manager on this terminal: its exit code, or why it didn't run. */
+function runPackageManager(
+  update: PackageManagerUpdate,
+  method: InstallMethod,
+  deps: UpdateDeps,
+): number | string {
+  const [name, ...args] = update.argv as [string, ...string[]];
+  const path = deps.env.PATH ?? deps.env.Path;
+  let exe = Bun.which(name, path === undefined ? {} : { PATH: path });
+  if (exe === null && method.kind === "bun-global") {
+    // The bun that made this install, when PATH lacks it.
+    const own = join(method.root, "bin", deps.platform === "win32" ? "bun.exe" : "bun");
+    if (existsSync(own)) exe = own;
+  }
+  if (exe === null) return `${name} is not on PATH`;
+  try {
+    if (!localRegistry(deps.env)) refuseRealClient(exe);
+  } catch (error) {
+    return (error as Error).message;
+  }
+  // npm is npm.cmd on Windows, which only cmd.exe runs; it takes the path quoted as written.
+  const shim = deps.platform === "win32" && /\.(?:cmd|bat)$/i.test(exe);
+  const cmd = shim
+    ? [process.env.ComSpec ?? "cmd.exe", "/d", "/s", "/c", `""${exe}" ${args.join(" ")}"`]
+    : [exe, ...args];
+  try {
+    const run = Bun.spawnSync(cmd, {
+      env: { ...deps.env, ...update.env },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      windowsVerbatimArguments: shim,
+    });
+    return run.exitCode ?? `it was stopped by ${run.signalCode}`;
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+/**
+ * Warns when the tokenhud a shell runs is not the one just updated: an older install comes
+ * first on PATH, or (for bun) bun's bin directory isn't on PATH at all. Never removes one.
+ */
+function warnShadowed(method: InstallMethod, deps: UpdateDeps): void {
+  const first = deps.copies()[0];
+  if (first === undefined) {
+    if (method.kind === "bun-global") {
+      deps.err(
+        `WARNING: ${join(method.root, "bin")} is not on PATH, so the tokenhud command isn't ` +
+          "found: add it to PATH (bun's installer does)",
+      );
+    }
+    return;
+  }
+  if (isCopyOf(first, method, deps.execPath, deps.platform)) return;
+  deps.err(
+    `WARNING: ${first.path} (${COPY_METHODS[first.method]}) comes first on PATH, so ` +
+      "`tokenhud` runs that one, not the copy just updated. If you don't use it, remove it: " +
+      removeCommand(first, deps.platform),
+  );
+}
+
+/**
+ * Moves this .exe out of its package before the package manager replaces the package
+ * (`parkingPath` says why). Returns where it went, or null when it stayed.
+ */
+function park(exe: string, deps: UpdateDeps): string | null {
+  const to = parkingPath(exe);
+  if (to === null) return null;
+  try {
+    whenFree(() => renameSync(exe, to), deps.platform);
+    return to;
+  } catch (error) {
+    deps.err(`couldn't move ${exe} aside (${(error as Error).message}); updating anyway`);
+    return null;
+  }
+}
+
+/** After the package manager: puts the parked .exe back if nothing replaced it. */
+function unpark(parked: string, exe: string, deps: UpdateDeps): void {
+  try {
+    if (!existsSync(exe)) whenFree(() => renameSync(parked, exe), deps.platform);
+    else rmSync(parked, { force: true });
+  } catch {
+    // Still running: the next start deletes it (removeStaleOld).
+  }
+}
+
+function updateThroughPackageManager(
+  update: PackageManagerUpdate,
+  method: InstallMethod,
+  tag: "latest" | "next",
+  current: Version,
+  deps: UpdateDeps,
+): number {
+  const command = update.argv.join(" ");
+  deps.out(`running: ${command}`);
+  const exe = deps.execPath;
+  const parked = deps.platform === "win32" ? park(exe, deps) : null;
+  let result: number | string;
+  try {
+    result = runPackageManager(update, method, deps);
+  } finally {
+    if (parked !== null) unpark(parked, exe, deps);
+  }
+  if (result !== 0) {
+    deps.err(
+      typeof result === "number"
+        ? `${command} failed (exit ${result})`
+        : `couldn't run ${command}: ${result}`,
+    );
+    return 1;
+  }
+  const says = deps.versionOf(exe);
+  const installed = /^tokenhud (\S+)$/.exec(says)?.[1];
+  const version = installed === undefined ? null : parseVersion(installed);
+  if (installed === undefined || version === null) {
+    deps.err(`${command} finished, but ${exe} --version said: ${says}`);
+    return 1;
+  }
+  const order = compareVersions(version, current);
+  deps.out(
+    order === 0
+      ? `tokenhud ${deps.version} is up to date`
+      : order > 0
+        ? `updated tokenhud ${deps.version} → ${installed}`
+        : `installed tokenhud ${installed}, older than ${deps.version}: the ${tag} tag points at an older release`,
+  );
+  warnShadowed(method, deps);
+  return 0;
 }
 
 export async function runUpdate(
@@ -119,6 +299,7 @@ export async function runUpdate(
 ): Promise<number> {
   let check: boolean;
   let prerelease: boolean;
+  let print: boolean;
   try {
     const { values, positionals } = parseArgs({
       args: [...args],
@@ -127,6 +308,7 @@ export async function runUpdate(
       options: {
         check: { type: "boolean", default: false },
         prerelease: { type: "boolean", default: false },
+        print: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
       },
     });
@@ -137,21 +319,38 @@ export async function runUpdate(
     if (positionals.length > 0) throw new Error(`unexpected argument '${positionals[0]}'`);
     check = values.check;
     prerelease = values.prerelease;
+    print = values.print;
   } catch (error) {
     deps.err((error as Error).message);
     return 2;
   }
 
-  const method = installMethod(deps.execPath, deps.compiled, deps.npmPrefix);
+  const method = installMethod(deps.execPath, deps.compiled, deps.npmPrefix, deps.env);
   if (method.kind === "source") {
     deps.err("this is tokenhud running from source; update the checkout with git pull");
     return 1;
   }
-  const hint = packageManagerHint(method, prerelease ? "next" : "latest");
+  const tag = prerelease ? "next" : "latest";
+  const managed = packageManagerUpdate(method, tag, platformPackageOf(deps.execPath));
+  const hint = hintFor(method, tag);
+  if (print) {
+    // Asks nothing over the network: the command doesn't depend on what is released.
+    deps.out(
+      managed?.argv.join(" ") ??
+        hint?.command ??
+        `tokenhud update${prerelease ? " --prerelease" : ""}`,
+    );
+    return 0;
+  }
   const current = parseVersion(deps.version);
   if (current === null) {
     deps.err(`can't compare versions: this build's version '${deps.version}' isn't semver`);
     return 1;
+  }
+  // The package manager knows what its registry has; GitHub's newest release may not be
+  // published there yet, so it isn't asked.
+  if (managed !== null && !check) {
+    return updateThroughPackageManager(managed, method, tag, current, deps);
   }
 
   let source: ReleaseSource;
@@ -169,13 +368,14 @@ export async function runUpdate(
     );
   }
 
+  const hintLine = hint === null ? null : `${hint.why}:  ${hint.command}`;
   let release: Release | null;
   try {
     release = await newestRelease(source, prerelease, deps.fetch);
   } catch (error) {
     if (!(error instanceof UpdateError)) throw error;
     deps.err(error.message);
-    if (hint !== null) deps.out(hint);
+    if (hintLine !== null) deps.out(hintLine);
     return 1;
   }
   if (release === null) {
@@ -196,13 +396,19 @@ export async function runUpdate(
     );
     return 0;
   }
-  if (check || hint !== null) {
+  if (check || hintLine !== null) {
     deps.out(`update available: tokenhud ${deps.version} → ${latest}`);
-    if (hint !== null) deps.out(hint);
-    else deps.out(`run: tokenhud update${prerelease ? " --prerelease" : ""}`);
+    if (hintLine !== null) deps.out(hintLine);
+    else if (managed !== null) {
+      deps.out(
+        `run: tokenhud update${prerelease ? " --prerelease" : ""}  (it runs ${managed.argv.join(" ")})`,
+      );
+    } else deps.out(`run: tokenhud update${prerelease ? " --prerelease" : ""}`);
     return 0;
   }
-  return selfUpdate(release, latest, source, deps);
+  const code = await selfUpdate(release, latest, source, deps);
+  if (code === 0) warnShadowed(method, deps);
+  return code;
 }
 
 async function selfUpdate(

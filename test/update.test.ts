@@ -21,7 +21,10 @@ import {
   installMethod,
   isCompiled,
   newestRelease,
+  packageManagerUpdate,
+  parkingPath,
   parseVersion,
+  platformPackageOf,
   type Release,
   type ReleaseSource,
   releaseSource,
@@ -29,7 +32,7 @@ import {
   replaceBinary,
   type Version,
 } from "../src/update.ts";
-import { guard } from "./guard.ts";
+import { guard, takeSpawned } from "./guard.ts";
 
 guard();
 
@@ -110,7 +113,11 @@ describe("install method", () => {
     ],
     [
       "/home/u/.bun/install/global/node_modules/@tokenhud/linux-x64-musl/bin/tokenhud",
-      { kind: "bun-global" },
+      { kind: "bun-global", root: "/home/u/.bun" },
+    ],
+    [
+      "C:\\Users\\u\\.bun\\install\\global\\node_modules\\@tokenhud\\win32-x64\\bin\\tokenhud.exe",
+      { kind: "bun-global", root: "C:\\Users\\u\\.bun" },
     ],
   ])("%s is %j, without asking npm", (path, expected) => {
     const p = prefix("/usr/local");
@@ -149,6 +156,82 @@ describe("install method", () => {
   test("npm that can't be asked counts as global", () => {
     const exe = "/opt/node/lib/node_modules/tokenhud/node_modules/@tokenhud/linux-x64/bin/tokenhud";
     expect(installMethod(exe, true, prefix(null).ask)).toEqual({ kind: "npm", global: true });
+  });
+
+  test("bun's global packages under BUN_INSTALL, wherever it points; not elsewhere", () => {
+    const exe = "/opt/bun/install/global/node_modules/@tokenhud/linux-x64/bin/tokenhud";
+    const ask = prefix("/usr/local");
+    expect(installMethod(exe, true, ask.ask, { BUN_INSTALL: "/opt/bun/" })).toEqual({
+      kind: "bun-global",
+      root: "/opt/bun",
+    });
+    expect(ask.calls).toEqual([]);
+    // The same layout without BUN_INSTALL naming it is some other install/global dir.
+    expect(installMethod(exe, true, prefix("/usr/local").ask, {})).toEqual({
+      kind: "npm",
+      global: false,
+    });
+    const win = "D:\\Bun\\install\\global\\node_modules\\@tokenhud\\win32-x64\\bin\\tokenhud.exe";
+    expect(installMethod(win, true, prefix(null).ask, { BUN_INSTALL: "d:\\bun" })).toEqual({
+      kind: "bun-global",
+      root: "D:\\Bun",
+    });
+  });
+
+  test("the platform package a binary comes from", () => {
+    expect(
+      platformPackageOf(
+        "/home/u/.bun/install/global/node_modules/@tokenhud/linux-x64-musl/bin/tokenhud",
+      ),
+    ).toBe("@tokenhud/linux-x64-musl");
+    expect(
+      platformPackageOf(
+        "C:\\npm\\node_modules\\tokenhud\\node_modules\\@tokenhud\\win32-x64\\bin\\tokenhud.exe",
+      ),
+    ).toBe("@tokenhud/win32-x64");
+    expect(platformPackageOf("/home/u/.local/bin/tokenhud")).toBeNull();
+  });
+});
+
+describe("the package manager's command", () => {
+  const bun = { kind: "bun-global", root: "/home/u/.bun" } as const;
+  const npm = { kind: "npm", global: true } as const;
+
+  test("bun: add -g without its cached registry answers, in the bun install that has tokenhud", () => {
+    expect(packageManagerUpdate(bun, "latest", "@tokenhud/linux-x64")).toEqual({
+      argv: ["bun", "add", "-g", "--no-cache", "tokenhud@latest"],
+      env: { BUN_INSTALL: "/home/u/.bun" },
+    });
+  });
+
+  test("npm: install -g; --prerelease's tag is next", () => {
+    expect(packageManagerUpdate(npm, "next", "@tokenhud/darwin-arm64")).toEqual({
+      argv: ["npm", "install", "-g", "tokenhud@next"],
+      env: {},
+    });
+  });
+
+  test("a musl binary's package is named too: it is not a dependency of tokenhud", () => {
+    expect(packageManagerUpdate(bun, "next", "@tokenhud/linux-arm64-musl")?.argv).toEqual([
+      "bun",
+      "add",
+      "-g",
+      "--no-cache",
+      "tokenhud@next",
+      "@tokenhud/linux-arm64-musl@next",
+    ]);
+  });
+
+  test("none for what tokenhud leaves to the user, or updates itself", () => {
+    for (const method of [
+      { kind: "npm", global: false },
+      { kind: "npx" },
+      { kind: "bunx" },
+      { kind: "binary" },
+      { kind: "source" },
+    ] as const) {
+      expect(packageManagerUpdate(method, "latest", null)).toBeNull();
+    }
   });
 });
 
@@ -457,6 +540,7 @@ describe("tokenhud update", () => {
         process.platform !== "win32" && (statSync(bin).mode & 0o111) === 0
           ? "EACCES: permission denied"
           : `tokenhud ${readFileSync(bin, "utf8").replace(/^NEW /, "")}`,
+      copies: () => [],
       out: (line) => out.push(line),
       // The fake GitHub is an override, so every run warns first; tests look at the rest.
       err: (line) => (line.startsWith("WARNING:") ? warnings : err).push(line),
@@ -560,15 +644,29 @@ describe("tokenhud update", () => {
     },
   );
 
-  test("an npm install gets the npm command instead of a self-update", async () => {
+  test("--check on an npm install asks GitHub, and names what tokenhud update runs", async () => {
     using server = serve({ "v0.1.0": "NEW 0.1.0" }, { stable: "v0.1.0" });
     const exe =
       "/usr/local/lib/node_modules/tokenhud/node_modules/@tokenhud/linux-x64/bin/tokenhud";
     const { d, out } = deps(server.port, { execPath: exe, npmPrefix: () => "/usr/local" });
-    expect(await runUpdate([], d)).toBe(0);
+    expect(await runUpdate(["--check"], d)).toBe(0);
     expect(out).toEqual([
       "update available: tokenhud 0.0.9 → 0.1.0",
-      "installed with npm; update with:  npm install -g tokenhud@latest",
+      "run: tokenhud update  (it runs npm install -g tokenhud@latest)",
+    ]);
+  });
+
+  test("a binary updated while an older copy comes first on PATH: a warning naming it", async () => {
+    using server = serve({ "v0.1.0": "NEW 0.1.0" }, { stable: "v0.1.0" });
+    const other = { path: "/home/u/.local/bin/tokenhud", method: "binary" as const };
+    const { d, out, err, warnings } = deps(server.port, { copies: () => [other] });
+    expect(await runUpdate([], d)).toBe(0);
+    expect(out.at(-1)).toStartWith("updated tokenhud 0.0.9 → 0.1.0");
+    expect(err).toEqual([]);
+    expect(warnings.slice(1)).toEqual([
+      "WARNING: /home/u/.local/bin/tokenhud (a standalone binary) comes first on PATH, so " +
+        "`tokenhud` runs that one, not the copy just updated. If you don't use it, remove it: " +
+        "rm /home/u/.local/bin/tokenhud",
     ]);
   });
 
@@ -710,5 +808,313 @@ describe("the TUI's once-a-day update check", () => {
     const f = fakeFetch({ [`${API}/releases/latest`]: json(rawRelease("v0.1.0")) });
     expect(await check({ fetch: f.fn })).toBeNull();
     expect(f.asked.length).toBe(1);
+  });
+});
+
+describe("tokenhud update on a bun or npm install", () => {
+  const windows = process.platform === "win32";
+  const noNetwork = (() => {
+    throw new Error("no network in this test");
+  }) as unknown as typeof fetch;
+
+  /** A bun global install of tokenhud 0.0.9 under `<dir>/<root>`; returns the root and its binary. */
+  function bunInstall(root = ".bun", id = "linux-x64") {
+    const home = join(dir, root);
+    const bin = join(home, "install", "global", "node_modules", "@tokenhud", id, "bin");
+    mkdirSync(bin, { recursive: true });
+    const exe = join(bin, windows ? "tokenhud.exe" : "tokenhud");
+    writeFileSync(exe, "tokenhud 0.0.9");
+    return { home, exe };
+  }
+
+  /**
+   * A stub `name` (bun or npm) in `where`: it logs its arguments, BUN_INSTALL and whether
+   * `exe` was there while it ran, then "installs" `installs` by writing it to `exe` (as
+   * `tokenhud <version>`), and exits `code`.
+   */
+  function stub(
+    name: string,
+    exe: string,
+    over: { installs?: string | null; code?: number; where?: string } = {},
+  ) {
+    const where = over.where ?? join(dir, "stubs");
+    mkdirSync(where, { recursive: true });
+    const log = join(dir, `${name}.log`);
+    const installs = over.installs === undefined ? "0.1.0" : over.installs;
+    const code = over.code ?? 0;
+    if (windows) {
+      const lines = [
+        "@echo off",
+        `>>"${log}" echo %*`,
+        `>>"${log}" echo BUN_INSTALL=%BUN_INSTALL%`,
+        `if exist "${exe}" (>>"${log}" echo exe present) else (>>"${log}" echo exe absent)`,
+        ...(installs === null ? [] : [`>"${exe}" echo tokenhud ${installs}`]),
+        `exit /b ${code}`,
+      ];
+      writeFileSync(join(where, `${name}.cmd`), `${lines.join("\r\n")}\r\n`);
+    } else {
+      const lines = [
+        "#!/bin/sh",
+        `printf '%s\\n' "$*" >> '${log}'`,
+        `printf 'BUN_INSTALL=%s\\n' "$BUN_INSTALL" >> '${log}'`,
+        `if [ -e '${exe}' ]; then echo exe present >> '${log}'; else echo exe absent >> '${log}'; fi`,
+        ...(installs === null ? [] : [`printf 'tokenhud ${installs}' > '${exe}'`]),
+        `exit ${code}`,
+      ];
+      writeFileSync(join(where, name), `${lines.join("\n")}\n`);
+      chmodSync(join(where, name), 0o755);
+    }
+    const ran = () =>
+      existsSync(log)
+        ? readFileSync(log, "utf8")
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l !== "")
+        : [];
+    return { dir: where, ran };
+  }
+
+  function deps(exe: string, path: string, over: Partial<UpdateDeps> = {}) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const env: Record<string, string | undefined> = { ...process.env, PATH: path };
+    for (const name of Object.keys(env)) {
+      if (/^(path|bun_install|bun_config_registry|npm_config_registry)$/i.test(name)) {
+        if (name !== "PATH") delete env[name];
+      }
+    }
+    const d: UpdateDeps = {
+      env,
+      version: "0.0.9",
+      execPath: exe,
+      compiled: true,
+      platform: process.platform,
+      target: "linux-x64",
+      fetch: noNetwork,
+      npmPrefix: () => null,
+      // The stubs write the version the "installed" binary would print.
+      versionOf: (bin) => (existsSync(bin) ? readFileSync(bin, "utf8").trim() : "ENOENT"),
+      copies: () => [],
+      out: (line) => out.push(line),
+      err: (line) => err.push(line),
+      ...over,
+    };
+    return { d, out, err };
+  }
+
+  test("a bun install: runs bun add -g in that bun install, checks the version, says old → new", async () => {
+    const { home, exe } = bunInstall();
+    const bun = stub("bun", exe);
+    const onPath = { path: join(home, "bin", "tokenhud"), method: "bun" as const };
+    const { d, out, err } = deps(exe, bun.dir, { copies: () => [onPath] });
+    expect(await runUpdate([], d)).toBe(0);
+    expect(bun.ran()).toEqual([
+      "add -g --no-cache tokenhud@latest",
+      `BUN_INSTALL=${home}`,
+      // On Windows it is moved out of the package meanwhile (tested below).
+      windows ? "exe absent" : "exe present",
+    ]);
+    expect(out).toEqual([
+      "running: bun add -g --no-cache tokenhud@latest",
+      "updated tokenhud 0.0.9 → 0.1.0",
+    ]);
+    expect(err).toEqual([]);
+  });
+
+  test("an npm install with --prerelease: npm install -g tokenhud@next", async () => {
+    const prefix = join(dir, "npm");
+    const bin = join(
+      prefix,
+      "lib",
+      "node_modules",
+      "tokenhud",
+      "node_modules",
+      "@tokenhud",
+      "linux-x64",
+      "bin",
+    );
+    mkdirSync(bin, { recursive: true });
+    const exe = join(bin, "tokenhud");
+    writeFileSync(exe, "tokenhud 0.0.9");
+    const npm = stub("npm", exe, { installs: "0.1.0-rc.2" });
+    const { d, out } = deps(exe, npm.dir, { npmPrefix: () => prefix });
+    expect(await runUpdate(["--prerelease"], d)).toBe(0);
+    expect(npm.ran()[0]).toBe("install -g tokenhud@next");
+    expect(out).toEqual([
+      "running: npm install -g tokenhud@next",
+      "updated tokenhud 0.0.9 → 0.1.0-rc.2",
+    ]);
+  });
+
+  test("a musl binary: its package is updated by name too", async () => {
+    const { exe } = bunInstall(".bun", "linux-x64-musl");
+    const bun = stub("bun", exe);
+    const { d } = deps(exe, bun.dir);
+    expect(await runUpdate([], d)).toBe(0);
+    expect(bun.ran()[0]).toBe("add -g --no-cache tokenhud@latest @tokenhud/linux-x64-musl@latest");
+  });
+
+  test("the same version again: up to date", async () => {
+    const { exe } = bunInstall();
+    const bun = stub("bun", exe, { installs: "0.0.9" });
+    const { d, out } = deps(exe, bun.dir);
+    expect(await runUpdate([], d)).toBe(0);
+    expect(out.at(-1)).toBe("tokenhud 0.0.9 is up to date");
+  });
+
+  test("a package manager that fails: exit 1 with its exit code", async () => {
+    const { exe } = bunInstall();
+    const bun = stub("bun", exe, { installs: null, code: 3 });
+    const { d, out, err } = deps(exe, bun.dir);
+    expect(await runUpdate([], d)).toBe(1);
+    expect(out).toEqual(["running: bun add -g --no-cache tokenhud@latest"]);
+    expect(err).toEqual(["bun add -g --no-cache tokenhud@latest failed (exit 3)"]);
+  });
+
+  test("a binary that doesn't say a version afterwards: exit 1, with what it said", async () => {
+    const { exe } = bunInstall();
+    const bun = stub("bun", exe, { installs: null });
+    const { d, err } = deps(exe, bun.dir, { versionOf: () => "exit 127: not found" });
+    expect(await runUpdate([], d)).toBe(1);
+    expect(err).toEqual([
+      `bun add -g --no-cache tokenhud@latest finished, but ${exe} --version said: exit 127: not found`,
+    ]);
+  });
+
+  test("bun not on PATH: the bun of that install runs; with neither, nothing runs", async () => {
+    const { home, exe } = bunInstall();
+    const empty = join(dir, "empty");
+    mkdirSync(empty);
+    const none = deps(exe, empty);
+    expect(await runUpdate([], none.d)).toBe(1);
+    expect(none.err).toEqual([
+      "couldn't run bun add -g --no-cache tokenhud@latest: bun is not on PATH",
+    ]);
+    const own = stub(windows ? "bun.exe" : "bun", exe, { where: join(home, "bin") });
+    if (windows) return; // A .cmd can't stand in for bun.exe; the lookup is the same.
+    const { d, out } = deps(exe, empty);
+    expect(await runUpdate([], d)).toBe(0);
+    expect(own.ran()[0]).toBe("add -g --no-cache tokenhud@latest");
+    expect(out.at(-1)).toBe("updated tokenhud 0.0.9 → 0.1.0");
+  });
+
+  test("a real bun or npm is never run from a test: refused before it starts", async () => {
+    const { exe } = bunInstall();
+    // The real bun: Bun's own directory. The registry is local in name only, so a broken
+    // refusal still couldn't reach npm's.
+    const { d, err } = deps(exe, join(process.execPath, ".."), {
+      env: {
+        PATH: join(process.execPath, ".."),
+        BUN_CONFIG_REGISTRY: "http://[::1]:9/",
+        npm_config_registry: "http://[::1]:9/",
+      },
+    });
+    expect(await runUpdate([], d)).toBe(1);
+    expect(err[0]).toContain("refused to run bun");
+    expect(takeSpawned()).toEqual([expect.stringMatching(/^bun(\.exe)? \(refused\)$/)]);
+    expect(readFileSync(exe, "utf8")).toBe("tokenhud 0.0.9");
+  });
+
+  test("Windows: the running .exe is moved out of the package meanwhile, and deleted after", async () => {
+    const { home, exe } = bunInstall();
+    const bun = stub("bun", exe);
+    const { d, out } = deps(exe, bun.dir, { platform: "win32" });
+    expect(await runUpdate([], d)).toBe(0);
+    expect(bun.ran()[2]).toBe("exe absent");
+    expect(out.at(-1)).toBe("updated tokenhud 0.0.9 → 0.1.0");
+    expect(readFileSync(exe, "utf8").trim()).toBe("tokenhud 0.1.0");
+    // Not running here, so it is deleted at once; a running one waits for the next start.
+    expect(readdirSync(join(home, "install", "global"))).toEqual(["node_modules"]);
+  });
+
+  test("Windows: put back when the package manager fails without replacing it", async () => {
+    const { home, exe } = bunInstall();
+    const bun = stub("bun", exe, { installs: null, code: 1 });
+    const { d } = deps(exe, bun.dir, { platform: "win32" });
+    expect(await runUpdate([], d)).toBe(1);
+    expect(bun.ran()[2]).toBe("exe absent");
+    expect(readFileSync(exe, "utf8")).toBe("tokenhud 0.0.9");
+    expect(readdirSync(join(home, "install", "global"))).toEqual(["node_modules"]);
+  });
+
+  test("a parked .exe left by a running copy is deleted by the next start", () => {
+    const { home, exe } = bunInstall();
+    const parked = parkingPath(exe, 4242) as string;
+    expect(parked).toBe(join(home, "install", "global", "tokenhud-update-4242.old"));
+    writeFileSync(parked, "old");
+    writeFileSync(join(home, "install", "global", "package.json"), "{}");
+    removeStaleOld(exe);
+    expect(readdirSync(join(home, "install", "global")).sort()).toEqual([
+      "node_modules",
+      "package.json",
+    ]);
+    expect(parkingPath("/home/u/.local/bin/tokenhud")).toBeNull();
+  });
+
+  test("after updating: a warning when another copy comes first on PATH, or none does", async () => {
+    const { home, exe } = bunInstall();
+    const bun = stub("bun", exe);
+    const curl = { path: join(dir, "local", "tokenhud"), method: "binary" as const };
+    const shadowed = deps(exe, bun.dir, { copies: () => [curl] });
+    expect(await runUpdate([], shadowed.d)).toBe(0);
+    expect(shadowed.err).toEqual([
+      `WARNING: ${curl.path} (a standalone binary) comes first on PATH, so ` +
+        "`tokenhud` runs that one, not the copy just updated. If you don't use it, remove it: " +
+        (windows ? `del "${curl.path}"` : `rm ${curl.path}`),
+    ]);
+    const missing = deps(exe, bun.dir);
+    expect(await runUpdate([], missing.d)).toBe(0);
+    expect(missing.err).toEqual([
+      `WARNING: ${join(home, "bin")} is not on PATH, so the tokenhud command isn't found: ` +
+        "add it to PATH (bun's installer does)",
+    ]);
+    const own = { path: join(home, "bin", "tokenhud"), method: "bun" as const };
+    const first = deps(exe, bun.dir, { copies: () => [own, curl] });
+    expect(await runUpdate([], first.d)).toBe(0);
+    expect(first.err).toEqual([]);
+  });
+
+  test("--print prints the command, and runs and asks nothing", async () => {
+    const { exe: bunExe } = bunInstall();
+    const bun = stub("bun", bunExe);
+    const cases: Array<[string, string[], Partial<UpdateDeps>, string]> = [
+      [bunExe, [], {}, "bun add -g --no-cache tokenhud@latest"],
+      [bunExe, ["--prerelease"], {}, "bun add -g --no-cache tokenhud@next"],
+      [
+        "/usr/lib/node_modules/tokenhud/node_modules/@tokenhud/linux-x64/bin/tokenhud",
+        [],
+        { npmPrefix: () => "/usr" },
+        "npm install -g tokenhud@latest",
+      ],
+      [
+        "/home/u/app/node_modules/@tokenhud/linux-x64/bin/tokenhud",
+        ["--prerelease"],
+        { npmPrefix: () => "/usr" },
+        "npm install tokenhud@next",
+      ],
+      [
+        "/home/u/.npm/_npx/1/node_modules/@tokenhud/linux-x64/bin/tokenhud",
+        [],
+        {},
+        "npx tokenhud@latest",
+      ],
+      [
+        "/tmp/bunx-1000-tokenhud@latest/node_modules/@tokenhud/linux-x64/bin/tokenhud",
+        [],
+        {},
+        "bunx tokenhud@latest",
+      ],
+      ["/home/u/.local/bin/tokenhud", ["--prerelease"], {}, "tokenhud update --prerelease"],
+    ];
+    for (const [exe, args, over, printed] of cases) {
+      const { d, out, err } = deps(exe, bun.dir, over);
+      expect([exe, await runUpdate(["--print", ...args], d), out, err]).toEqual([
+        exe,
+        0,
+        [printed],
+        [],
+      ]);
+    }
+    expect(bun.ran()).toEqual([]);
   });
 });
