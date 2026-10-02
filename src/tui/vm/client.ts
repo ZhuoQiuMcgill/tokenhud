@@ -7,8 +7,10 @@ import type { VmFatal, VmMessage, VmRequest, VmStart } from "./types.ts";
  *
  * A Worker that dies (an uncaught throw or rejection, an exit, any of Bun's Worker
  * fragility) is reported once as `down` with a one-line reason, and started again after
- * 1 s, 2 s, 5 s, then every 30 s until it posts view models again, which resets the
- * back-off. Its session is rebuilt from the store, so nothing is lost: the start message
+ * 1 s, 2 s, 5 s, then every 30 s. The back-off starts over only once a Worker has stayed
+ * up for a minute after its first view models, so one that posts them and dies soon after,
+ * every time (a crash in a tick or `changed` path), still backs off (critique r1). Its
+ * session is rebuilt from the store, so nothing is lost: the start message
  * carries the latest settings, config and mode, because the supervisor folds every
  * `settings`, `config` and `mode` request into it on the way through. Requests sent while
  * it is down are dropped for the same reason.
@@ -20,6 +22,8 @@ export interface VmWorker {
 }
 
 export const RESTART_BACKOFF_MS: readonly number[] = [1000, 2000, 5000, 30_000];
+/** How long a Worker must stay up after its first view models before the back-off resets. */
+export const STABLE_MS = 60_000;
 
 export interface SupervisorOptions {
   start: VmStart;
@@ -30,6 +34,8 @@ export interface SupervisorOptions {
   url?: string;
   schedule?: (fn: () => void, ms: number) => unknown;
   cancel?: (handle: unknown) => void;
+  /** Monotonic ms, for how long a Worker stayed up. */
+  now?: () => number;
 }
 
 const WORKER_URL = workerUrl("tui/vm/worker.ts");
@@ -38,9 +44,12 @@ export function superviseVmWorker(options: SupervisorOptions): VmWorker {
   const backoff = options.backoffMs ?? RESTART_BACKOFF_MS;
   const schedule = options.schedule ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = options.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+  const now = options.now ?? (() => performance.now());
   let start: VmStart = options.start;
   let worker: Worker | null = null;
   let failures = 0;
+  /** When the running Worker posted its first view models; null before it has. */
+  let upSince: number | null = null;
   let retry: unknown = null;
   let stopping = false;
   let resolveStopped: () => void = () => {};
@@ -50,6 +59,8 @@ export function superviseVmWorker(options: SupervisorOptions): VmWorker {
 
   const down = (reason: string) => {
     worker = null;
+    if (upSince !== null && now() - upSince >= STABLE_MS) failures = 0;
+    upSince = null;
     const delay = backoff[Math.min(failures, backoff.length - 1)] as number;
     failures++;
     options.onMessage({ type: "down", reason, retryInMs: delay });
@@ -80,7 +91,7 @@ export function superviseVmWorker(options: SupervisorOptions): VmWorker {
         reason = message.message;
         return;
       }
-      if (message.type === "views") failures = 0;
+      if (message.type === "views") upSince ??= now();
       options.onMessage(message);
       if (message.type === "stopped") resolveStopped();
     };

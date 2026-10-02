@@ -7,7 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
-import { RESTART_BACKOFF_MS, superviseVmWorker, type VmWorker } from "../../src/tui/vm/client.ts";
+import {
+  RESTART_BACKOFF_MS,
+  STABLE_MS,
+  superviseVmWorker,
+  type VmWorker,
+} from "../../src/tui/vm/client.ts";
 import type { VmMessage, VmStart } from "../../src/tui/vm/types.ts";
 import { type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
 import { chars, cleanupRenderers, render, settle } from "./render.ts";
@@ -129,4 +134,50 @@ test("a Worker that keeps dying is retried after 1 s, 2 s, 5 s, then every 30 s"
   expect(RESTART_BACKOFF_MS).toEqual([1000, 2000, 5000, 30_000]);
   expect(delays.slice(0, 6)).toEqual([1000, 2000, 5000, 30_000, 30_000, 30_000]);
   expect(new Set(downs)).toEqual(new Set(["injected fault"]));
+}, 30_000);
+
+// Critique r1: a Worker that posts its view models and dies soon after, on every start, used
+// to reset the back-off with each start and so was restarted every second for ever.
+test("a Worker that dies right after every start still backs off 1 s, 2 s, 5 s, then 30 s", async () => {
+  fixture = makeFixtureStore();
+  dir = mkdtempSync(join(tmpdir(), "tokenhud-supervisor-"));
+  const delays: number[] = [];
+  let starts = 0;
+  vm = superviseVmWorker({
+    start: start(fixture, join(dir, "mcp"), { kind: "boot", marker: join(dir, "x") }),
+    onMessage: (m) => {
+      if (m.type === "views") starts++;
+    },
+    url: FAULT_WORKER,
+    schedule: (fn, ms) => {
+      delays.push(ms);
+      return setTimeout(fn, 0);
+    },
+  });
+  await until(() => delays.length >= 5, "five failures");
+  // Every one of them got as far as its view models before it died.
+  expect(starts).toBeGreaterThanOrEqual(5);
+  expect(delays.slice(0, 5)).toEqual([1000, 2000, 5000, 30_000, 30_000]);
+}, 30_000);
+
+test("the back-off starts over once a Worker has stayed up a minute", async () => {
+  fixture = makeFixtureStore();
+  dir = mkdtempSync(join(tmpdir(), "tokenhud-supervisor-"));
+  const delays: number[] = [];
+  let clock = 0;
+  vm = superviseVmWorker({
+    start: start(fixture, join(dir, "mcp"), { kind: "boot", marker: join(dir, "x") }),
+    // Each Worker "stays up" a minute between its first view models and its death.
+    onMessage: (m) => {
+      if (m.type === "views") clock += STABLE_MS;
+    },
+    url: FAULT_WORKER,
+    now: () => clock,
+    schedule: (fn, ms) => {
+      delays.push(ms);
+      return setTimeout(fn, 0);
+    },
+  });
+  await until(() => delays.length >= 3, "three failures");
+  expect(delays.slice(0, 3)).toEqual([1000, 1000, 1000]);
 }, 30_000);
