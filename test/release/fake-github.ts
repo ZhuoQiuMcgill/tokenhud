@@ -17,6 +17,8 @@ export interface FakeRelease {
   readonly tag: string;
   /** Serve every binary with a byte changed, so checksums fail. */
   readonly tamper?: boolean;
+  /** List the binaries but answer 404 for them, as a half-uploaded release would. */
+  readonly missingBinaries?: boolean;
 }
 
 export function fakeGitHub(release: FakeRelease, hostname = "127.0.0.1"): FakeGitHub {
@@ -56,6 +58,9 @@ export function fakeGitHub(release: FakeRelease, hostname = "127.0.0.1"): FakeGi
       }
       const file = join(release.dir, asset[2] as string);
       if (!existsSync(file)) return new Response("Not Found", { status: 404 });
+      if (release.missingBinaries && asset[2] !== "SHA256SUMS") {
+        return new Response("Not Found", { status: 404 });
+      }
       if (release.tamper && asset[2] !== "SHA256SUMS") {
         const bytes = new Uint8Array(await Bun.file(file).arrayBuffer());
         bytes[bytes.length - 1] = (bytes[bytes.length - 1] as number) ^ 0xff;

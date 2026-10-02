@@ -10,8 +10,9 @@
 #                            latest stable release)
 #   TOKENHUD_INSTALL         the folder to install into (default: %LOCALAPPDATA%\tokenhud\bin)
 #   TOKENHUD_NO_MODIFY_PATH  set to 1 to leave the user PATH alone
-#   TOKENHUD_DOWNLOAD_BASE   where releases are downloaded from (default: the repository's
-#                            GitHub Releases); for testing against a local copy
+#   TOKENHUD_DOWNLOAD_BASE   for tests: where releases are downloaded from instead of the
+#                            repository's GitHub Releases. Must be https:// unless
+#                            TOKENHUD_INSECURE_TEST=1 (which allows http://)
 #
 # Errors are thrown, never `exit`: piped into iex, exit would close the user's shell.
 
@@ -24,8 +25,20 @@ function Install-Tokenhud {
     [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
   $repo = 'ZhuoQiuMcgill/tokenhud'
+  $github = "https://github.com/$repo/releases"
   $base = if ($env:TOKENHUD_DOWNLOAD_BASE) { $env:TOKENHUD_DOWNLOAD_BASE.TrimEnd('/') }
-          else { "https://github.com/$repo/releases" }
+          else { $github }
+  if ($base -ne $github) {
+    [Console]::ForegroundColor = 'Yellow'
+    [Console]::Error.WriteLine('')
+    [Console]::Error.WriteLine("WARNING: downloading from $base (TOKENHUD_DOWNLOAD_BASE), not from GitHub.")
+    [Console]::Error.WriteLine('WARNING: its SHA256SUMS comes from the same place, so use only a source you trust.')
+    [Console]::Error.WriteLine('')
+    [Console]::ResetColor()
+  }
+  if (-not ($base -match '^https://' -or ($env:TOKENHUD_INSECURE_TEST -eq '1' -and $base -match '^http://'))) {
+    throw "tokenhud install: TOKENHUD_DOWNLOAD_BASE must be an https:// URL, not $base (TOKENHUD_INSECURE_TEST=1 allows http:// for tests)"
+  }
   $dir = if ($env:TOKENHUD_INSTALL) { $env:TOKENHUD_INSTALL }
          else { Join-Path $env:LOCALAPPDATA 'tokenhud\bin' }
   $dir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($dir).TrimEnd('\')
@@ -54,20 +67,46 @@ function Install-Tokenhud {
     $url = "$base/latest/download"
   }
 
-  New-Item -ItemType Directory -Force -Path $dir | Out-Null
+  # Downloads $uri to $out, or returns its text: ok, and on failure the HTTP status (0 when
+  # the server couldn't be reached) and why.
+  function Get-Download([string]$uri, [string]$out) {
+    try {
+      if ($out) {
+        Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $out
+        return @{ ok = $true }
+      }
+      $content = (Invoke-WebRequest -UseBasicParsing -Uri $uri).Content
+      if ($content -is [byte[]]) { $content = [Text.Encoding]::UTF8.GetString($content) }
+      return @{ ok = $true; text = $content }
+    } catch {
+      $response = $_.Exception.Response
+      $status = if ($response) { [int]$response.StatusCode } else { 0 }
+      return @{ ok = $false; status = $status; why = $_.Exception.Message }
+    }
+  }
+
   $exe = Join-Path $dir 'tokenhud.exe'
   # Staged beside the target, so putting it in place is a rename on the same volume.
   $tmp = Join-Path $dir ("tokenhud-install-$PID.exe")
   try {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    [IO.File]::WriteAllText($tmp, '')
+  } catch {
+    throw "tokenhud install: can't write to $dir; choose a folder you own with TOKENHUD_INSTALL"
+  }
+  try {
     Write-Host "Downloading $asset ($tag)"
-    try {
-      $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$url/SHA256SUMS").Content
-    } catch {
-      $why = $_.Exception.Message
-      if ($env:TOKENHUD_VERSION) { throw "tokenhud install: release $tag not found at $base ($why)" }
-      throw "tokenhud install: no stable release found at $base ($why); pick one with TOKENHUD_VERSION"
+    $got = Get-Download "$url/SHA256SUMS" $null
+    if (-not $got.ok) {
+      if ($got.status -eq 404 -and -not $env:TOKENHUD_VERSION) {
+        throw "tokenhud install: no stable release found at $base; pick a release with TOKENHUD_VERSION"
+      }
+      if ($got.status -eq 404) {
+        throw "tokenhud install: release $tag not found at ${base}: is TOKENHUD_VERSION right?"
+      }
+      throw "tokenhud install: couldn't download from ${base}: $($got.why)"
     }
-    if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
+    $sums = $got.text
     $expected = $null
     foreach ($line in ($sums -split "`r?`n")) {
       if ($line -match '^([0-9A-Fa-f]{64}) [ *](.+)$' -and $Matches[2] -eq $asset) {
@@ -77,7 +116,11 @@ function Install-Tokenhud {
     }
     if (-not $expected) { throw "tokenhud install: release $tag has no $asset" }
 
-    Invoke-WebRequest -UseBasicParsing -Uri "$url/$asset" -OutFile $tmp
+    $got = Get-Download "$url/$asset" $tmp
+    if (-not $got.ok -and $got.status -eq 404) {
+      throw "tokenhud install: release $tag lists $asset, but the server doesn't have it"
+    }
+    if (-not $got.ok) { throw "tokenhud install: couldn't download $asset from ${base}: $($got.why)" }
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $tmp).Hash.ToLowerInvariant()
     if ($actual -ne $expected) {
       throw "tokenhud install: $asset failed its checksum (expected $expected, got $actual); nothing was installed"
