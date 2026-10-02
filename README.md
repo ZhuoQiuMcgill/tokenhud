@@ -91,7 +91,11 @@ $env:TOKENHUD_VERSION = '0.1.0-rc.1'; irm https://raw.githubusercontent.com/Zhuo
 **By hand:** download `tokenhud-<os>-<arch>` (`linux-x64`, `linux-arm64`, `linux-x64-musl`,
 `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`, `windows-x64.exe`, `windows-arm64.exe`)
 and `SHA256SUMS` from a release, check it with `sha256sum --check --ignore-missing
-SHA256SUMS`, make it executable and put it on your PATH.
+SHA256SUMS` (`shasum -a 256 --check --ignore-missing SHA256SUMS` on macOS), make it
+executable and put it on your PATH. On macOS, a binary downloaded with a web browser is
+quarantined, and macOS refuses to start it, because tokenhud's binaries are signed but not
+notarized. Clear the flag with `xattr -d com.apple.quarantine tokenhud-darwin-arm64` (or
+`-x64`). `install.sh` downloads with curl, which doesn't set the flag.
 
 **npm** (once the packages are published):
 
@@ -125,26 +129,50 @@ the store, the accounts it follows, unpriced models, and anything still only in 
 | `1-4` | Switch view: Overview, History, Models, Accounts |
 | `a` | Cycle the account scope: all accounts, then each account, then all again |
 | `s` | Open settings |
-| `?` | Show the keys |
+| `?` | Show the keys, the current view's included |
 | `q` or `Ctrl-C` | Quit |
 
-In a view:
+The footer shows the keys of the view you are in.
+
+### History
 
 | Key | Does |
 |---|---|
-| `↑/↓` | History: move between days. Models and Accounts: select a row |
-| `←/→` | History: move a week back or forward |
+| `tab` | Move between the heat map and the table |
+| `←→↑↓` | On the heat map, a week back or forward and a day up or down; in the table, a row |
+| `d/w/m` | Group the table by day, week or month |
+| `W/M` | List the days of this week, or of this month |
+| `enter` | On a week or month, list its days; on a day, list its limit events |
+| `/` | Filter every number by model: type part of a model id, `enter` applies it |
+| `esc` | Close the open week, month or day, then clear the filter |
 
-In settings:
+### Models
+
+| Key | Does |
+|---|---|
+| `←/→` | Change the window: today, this week, this month or all time (and the last 1, 5 or 24 hours on a wide screen) |
+| `↑/↓` | Select a model |
+| `enter` | Show or hide the selected model's rates and who used it |
+| `o` | Sort by cost, tokens or name |
+
+### Accounts
+
+| Key | Does |
+|---|---|
+| `↑/↓` | Select an account |
+| `enter` | Scope every view to that account; again, back to all accounts |
+| `e` | Turn the account off or on |
+| `l` | Rename (label) it |
+| `h` | Mark it history only, or not |
+
+### Settings
 
 | Key | Does |
 |---|---|
 | `↑/↓` | Move |
 | `enter` | Change the selected setting, or pick a value |
 | `esc` | Back; from the main list, back to the view |
-| `e` | Accounts: turn an account off or on |
-| `l` | Accounts: rename (label) an account |
-| `h` | Accounts: mark an account history only, or not |
+| `e`, `l`, `h` | Under Accounts: turn an account off or on, rename it, mark it history only |
 
 Settings are the refresh interval, the default spend window, whether to show cost, the
 theme (dark, light, high contrast), the time zone, whether to check for updates, and the
@@ -156,12 +184,16 @@ accounts. They are saved in `~/.config/tokenhud/config.json`.
    times, spend pace and when it would run out at that pace), the MCP agents using
    tokenhud, spend for today, this week, this month and all time, the last 24 hours of
    activity, the top models, and recent limit events.
-2. **History**: a 26-week calendar heat map, the selected day in detail, and a table by day,
-   week or month.
-3. **Models**: every model's tokens and cost with its rates, and how its use splits across
-   accounts.
-4. **Accounts**: every account with its config directory, history, limits and recent
-   spend.
+2. **History**: a 26-week calendar heat map of daily cost, a card for the selected day
+   (cost, tokens, models and any limit hits), and a table by day, week or month with each
+   period compared to the 30-day average. A model filter narrows every number to one model.
+3. **Models**: a rate board: every model's input, output and cache tokens with the rate it
+   is billed at, its cost and its share, for the window you pick. The selected model's card
+   shows all of its rates, where they come from, and how its use splits across accounts.
+4. **Accounts**: every account with its status and highest limit use; the selected one in
+   detail: its config directory and history, its limit windows and when they reset, its
+   weekly usage at the last 8 resets, 30 days of spend, its models, and its agents' recent
+   MCP calls.
 
 The layout adapts to the terminal: it is laid out for half of a 1080p screen (about 105 ×
 50), the top half of a portrait monitor (about 120 × 45), 80 × 24 and wider. Costs
@@ -179,14 +211,14 @@ An account is one Claude Code or Codex config directory. tokenhud finds:
   skips them.
 
 Directories elsewhere go in `config.json` as `claude_roots` or `codex_roots`, for example
-`"claude_roots": [{"path": "/srv/claude-ci", "label": "ci"}]`. In settings, under Accounts,
-you can turn any account off, rename it, or mark it history only. `a` narrows every view
-to one account.
+`"claude_roots": [{"path": "/srv/claude-ci", "label": "ci"}]`. In the Accounts view, or in
+settings under Accounts, you can turn any account off, rename it, or mark it history only.
+`a` narrows every view to one account.
 
 **History-only accounts.** An account that isn't signed in on this machine any more (it now
 runs on another computer, say) keeps all of its history. Its card says "not signed in
 here" instead of showing an error, and tokenhud checks its limits only once a day, or never
-once you mark it history only (`h` in settings).
+once you mark it history only (`h`).
 
 ## Use with Claude Code
 
