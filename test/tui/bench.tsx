@@ -15,6 +15,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
+import { LOCK_FILE_NAME, lockHolder } from "../../src/lock.ts";
 import { openStore } from "../../src/store/store.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState } from "../../src/tui/controller.ts";
@@ -124,7 +125,9 @@ try {
   // Idle: let the ingest Worker settle, then a quiet minute.
   await Bun.sleep(5000);
   const quietFrom = Math.max(...events(tracePath, "switch").map((e) => e.at)) + 5000;
-  const pid = JSON.parse(readFileSync(join(home.configDir, "ingest.lock"), "utf8")).pid as number;
+  const holder = lockHolder(join(home.configDir, LOCK_FILE_NAME));
+  if (holder === null) throw new Error("no ingest lock holder recorded");
+  const pid = holder.pid;
   const rss0 = readFileSync(`/proc/${pid}/status`, "utf8").match(/VmRSS:\s+(\d+)/)?.[1];
   const c0 = cpuSeconds(pid);
   const w0 = performance.now();

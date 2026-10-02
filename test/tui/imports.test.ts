@@ -12,39 +12,48 @@ const SRC = join(ROOT, "src");
 const transpiler = new Bun.Transpiler({ loader: "tsx" });
 
 /**
- * Every module reachable from `entry`: repo files as paths relative to src/, packages and
- * builtins by specifier. Type-only imports are erased, as at run time.
+ * Every module reachable from `entry`, with who imports it: repo files as paths relative to
+ * src/, packages and builtins by specifier. Type-only imports are erased, as at run time.
  */
-function graph(entry: string, options: { dynamic: boolean }): Set<string> {
+function graph(entry: string, options: { dynamic: boolean }): Map<string, Set<string>> {
+  const importers = new Map<string, Set<string>>();
   const seen = new Set<string>();
-  const queue = [resolve(entry)];
+  const queue: [string, string][] = [[resolve(entry), ""]];
+  const note = (id: string, by: string) => {
+    if (!importers.has(id)) importers.set(id, new Set());
+    if (by !== "") importers.get(id)?.add(by);
+  };
   while (queue.length > 0) {
-    const file = queue.pop() as string;
+    const [file, by] = queue.pop() as [string, string];
     const id = relative(SRC, file).split("\\").join("/");
+    note(id, by);
     if (seen.has(id)) continue;
     seen.add(id);
     if (!/\.tsx?$/.test(file)) continue;
     for (const imp of transpiler.scanImports(readFileSync(file, "utf8"))) {
       if (imp.kind === "dynamic-import" && !options.dynamic) continue;
-      if (imp.path.startsWith(".")) queue.push(resolve(dirname(file), imp.path));
-      else seen.add(imp.path);
+      if (imp.path.startsWith(".")) queue.push([resolve(dirname(file), imp.path), id]);
+      else note(imp.path, id);
     }
   }
-  return seen;
+  return importers;
 }
 
 const FORBIDDEN = [
   /^query\//,
   /^store\//,
   /^commands\//,
-  /^bun:sqlite$/,
   /^tui\/vm\/(compute|session|worker)\.ts$/,
   /^tui\/once\.tsx$/,
   /^ingest\/(?!client\.ts$|worker-url\.ts$)/,
 ];
 
-function forbidden(modules: Set<string>): string[] {
-  return [...modules].filter((m) => FORBIDDEN.some((f) => f.test(m)));
+function forbidden(modules: Map<string, Set<string>>): string[] {
+  const out = [...modules.keys()].filter((m) => FORBIDDEN.some((f) => f.test(m)));
+  // SQLite only for the single-writer lock, an OS-level lock held through a lock database
+  // that holds no usage data.
+  const sqlite = [...(modules.get("bun:sqlite") ?? [])].filter((by) => by !== "lock.ts");
+  return [...out, ...sqlite.map((by) => `bun:sqlite from ${by}`)];
 }
 
 describe("the UI thread's import graph", () => {
@@ -59,24 +68,31 @@ describe("the UI thread's import graph", () => {
       "lock.ts",
       "@opentui/core",
     ]) {
-      expect(ui).toContain(m);
+      expect(ui.has(m)).toBe(true);
     }
   });
 
   test("never reaches the query layer, the store, SQLite or the view-model computations", () => {
     expect(forbidden(ui)).toEqual([]);
+    // The one SQLite user is the lock (an OS-level lock, not the store).
+    expect([...(ui.get("bun:sqlite") ?? [])]).toEqual(["lock.ts"]);
+  });
+
+  test("the check can see a forbidden SQLite import", () => {
+    const fake = new Map([["bun:sqlite", new Set(["lock.ts", "tui/app.tsx"])]]);
+    expect(forbidden(fake)).toEqual(["bun:sqlite from tui/app.tsx"]);
   });
 
   test("the CLI loads no command and no query code before it knows what to run", () => {
     const cli = graph(join(SRC, "cli.ts"), { dynamic: false });
     expect(forbidden(cli)).toEqual([]);
-    expect([...cli].filter((m) => m.startsWith("tui/"))).toEqual([]);
+    expect([...cli.keys()].filter((m) => m.startsWith("tui/"))).toEqual([]);
   });
 
   test("the check can see what it forbids: the view-model Worker does reach the queries", () => {
     const worker = graph(join(SRC, "tui", "vm", "worker.ts"), { dynamic: true });
-    expect(worker).toContain("query/engine.ts");
-    expect(worker).toContain("bun:sqlite");
+    expect(worker.has("query/engine.ts")).toBe(true);
+    expect(worker.get("bun:sqlite")?.size).toBeGreaterThan(0);
   });
 });
 

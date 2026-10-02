@@ -1,207 +1,141 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { lockHolder, lockPath, processAlive, STALE_MS, WriterLock } from "../../src/lock.ts";
+import { LOCK_FILE_NAME, lockHolder, lockPath, WriterLock } from "../../src/lock.ts";
+import { round } from "./stress.ts";
 
 const dirs: string[] = [];
+const held: WriterLock[] = [];
 afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  for (const lock of held.splice(0)) lock.release();
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 5 });
 });
 
 function lockFile(): string {
   const dir = mkdtempSync(join(tmpdir(), "tokenhud-lock-test-"));
   dirs.push(dir);
-  return join(dir, "tokenhud", "ingest.lock");
+  return join(dir, "tokenhud", LOCK_FILE_NAME);
 }
 
-/** A pid that existed and has exited. */
-function deadPid(): number {
-  const proc = Bun.spawnSync([process.execPath, "-e", ""]);
-  expect(processAlive(proc.pid)).toBe(false);
-  return proc.pid;
+function take(path: string, owner: "tui" | "mcp" = "tui"): WriterLock | null {
+  const lock = WriterLock.tryAcquire({ path, owner });
+  if (lock !== null) held.push(lock);
+  return lock;
 }
 
-function plant(path: string, holder: Record<string, unknown>): void {
-  writeFileSync(path, JSON.stringify(holder));
+/**
+ * Another process holding the lock (or failing to); resolves once it has said which. The
+ * path is written into its source, and its HOME and config dir point into the test's temp
+ * dir, so nothing it does can reach a real config.
+ */
+async function otherProcess(path: string) {
+  const script = `
+import { WriterLock } from ${JSON.stringify(join(import.meta.dir, "..", "..", "src", "lock.ts"))};
+const lock = WriterLock.tryAcquire({ path: ${JSON.stringify(path)}, owner: "tui" });
+process.stdout.write(lock === null ? "busy\\n" : "held\\n");
+await Bun.sleep(60_000);
+`;
+  const home = join(path, "..", "..", "home");
+  const proc = Bun.spawn([process.execPath, "-e", script], {
+    stdout: "pipe",
+    env: { PATH: process.env.PATH ?? "", HOME: home, XDG_CONFIG_HOME: join(home, "config") },
+  });
+  const reader = proc.stdout.getReader();
+  const { value } = await reader.read();
+  reader.releaseLock();
+  return { proc, said: new TextDecoder().decode(value).trim() };
 }
-
-const fresh = (over: Record<string, unknown> = {}) => ({
-  pid: process.pid,
-  host: hostname(),
-  owner: "tui",
-  token: "someone-else",
-  started_at: Date.now(),
-  heartbeat_at: Date.now(),
-  ...over,
-});
 
 test("the lock lives in tokenhud's config dir", () => {
   expect(lockPath({ XDG_CONFIG_HOME: "/x/cfg" }, "/home/h")).toBe(
-    join("/x/cfg", "tokenhud", "ingest.lock"),
+    join("/x/cfg", "tokenhud", "ingest.lock.db"),
   );
-  expect(lockPath({}, "/home/h")).toBe(join("/home/h", ".config", "tokenhud", "ingest.lock"));
+  expect(lockPath({}, "/home/h")).toBe(join("/home/h", ".config", "tokenhud", "ingest.lock.db"));
 });
 
-describe("acquire and release", () => {
-  test("a free lock is taken: owner pid, host, token and heartbeat on disk", () => {
+describe("in one process", () => {
+  test("one holder at a time; released, it can be taken again", () => {
     const path = lockFile();
-    const lock = WriterLock.tryAcquire({ path, owner: "tui" });
-    expect(lock?.held).toBe(true);
-    const disk = JSON.parse(readFileSync(path, "utf8"));
-    expect(disk).toMatchObject({
-      pid: process.pid,
-      host: hostname(),
-      owner: "tui",
-      token: lock?.token,
-    });
-    expect(disk.heartbeat_at).toBe(disk.started_at);
-    expect(lockHolder(path)).toMatchObject({ pid: process.pid, owner: "tui" });
-    // No temp files are left beside it.
-    expect(readdirSync(join(path, ".."))).toEqual(["ingest.lock"]);
-  });
-
-  test("a held lock can't be taken; once released it can", () => {
-    const path = lockFile();
-    const first = WriterLock.tryAcquire({ path, owner: "tui" }) as WriterLock;
-    expect(WriterLock.tryAcquire({ path, owner: "mcp" })).toBeNull();
+    const first = take(path) as WriterLock;
+    expect(first.held).toBe(true);
+    expect(take(path, "mcp")).toBeNull();
     first.release();
     expect(first.held).toBe(false);
-    expect(lockHolder(path)).toBeNull();
-    expect(WriterLock.tryAcquire({ path, owner: "mcp" })?.held).toBe(true);
+    expect(take(path, "mcp")?.held).toBe(true);
     first.release(); // a second release does nothing
-    expect(lockHolder(path)?.owner).toBe("mcp");
-  });
-});
-
-describe("stale locks are taken over", () => {
-  test("the holder's process is gone (same host)", () => {
-    const path = lockFile();
-    WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-    plant(path, fresh({ pid: deadPid() }));
-    expect(lockHolder(path)).toBeNull();
-    const lock = WriterLock.tryAcquire({ path, owner: "tui" });
-    expect(lock?.held).toBe(true);
-    expect(JSON.parse(readFileSync(path, "utf8")).token).toBe(lock?.token);
+    expect(take(path)).toBeNull();
   });
 
-  test("the heartbeat is older than STALE_MS, even with the pid alive (a suspended or reused pid)", () => {
-    const path = lockFile();
-    WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-    plant(path, fresh({ heartbeat_at: Date.now() - STALE_MS + 5000 }));
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })).toBeNull();
-    plant(path, fresh({ heartbeat_at: Date.now() - STALE_MS - 1 }));
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })?.held).toBe(true);
-  });
-
-  test("another host's lock goes by its heartbeat alone", () => {
-    const path = lockFile();
-    WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-    plant(path, fresh({ host: "some-other-host", pid: deadPid() }));
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })).toBeNull();
-    plant(path, fresh({ host: "some-other-host", heartbeat_at: Date.now() - STALE_MS - 1 }));
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })?.held).toBe(true);
-  });
-
-  test("a damaged file counts as held until it is STALE_MS old", () => {
-    const path = lockFile();
-    WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-    writeFileSync(path, "{not json");
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })).toBeNull();
-    const old = (Date.now() - STALE_MS - 5000) / 1000;
-    utimesSync(path, old, old);
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })?.held).toBe(true);
-  });
-});
-
-describe("heartbeat", () => {
-  test("refreshes heartbeat_at in place", () => {
+  test("the holder record names the holder, for display; it goes on release", () => {
     const path = lockFile();
     let now = 1_000_000;
-    const lock = WriterLock.tryAcquire({ path, owner: "tui", now: () => now }) as WriterLock;
+    const lock = WriterLock.tryAcquire({ path, owner: "mcp", now: () => now }) as WriterLock;
+    held.push(lock);
+    expect(lockHolder(path)).toEqual({
+      pid: process.pid,
+      host: hostname(),
+      owner: "mcp",
+      startedAt: 1_000_000,
+      heartbeatAt: 1_000_000,
+    });
     now += 10_000;
     expect(lock.heartbeat()).toBe(true);
-    expect(JSON.parse(readFileSync(path, "utf8")).heartbeat_at).toBe(1_010_000);
-    expect(readdirSync(join(path, ".."))).toEqual(["ingest.lock"]);
+    expect(lockHolder(path)?.heartbeatAt).toBe(1_010_000);
+    lock.release();
+    expect(lock.heartbeat()).toBe(false);
+    expect(lockHolder(path)).toBeNull();
+    // The lock file itself is never deleted: a waiter must lock this same file.
+    expect(existsSync(path)).toBe(true);
   });
 
-  test("a holder that was taken over finds out on its next beat, and its release leaves the new lock", () => {
-    const path = lockFile();
-    let now = Date.now();
-    const old = WriterLock.tryAcquire({ path, owner: "tui", now: () => now }) as WriterLock;
-    // It was suspended past STALE_MS: a second instance takes over.
-    now += STALE_MS + 1;
-    const taker = WriterLock.tryAcquire({ path, owner: "tui", now: () => now }) as WriterLock;
-    expect(taker.held).toBe(true);
-    expect(old.heartbeat()).toBe(false);
-    expect(old.held).toBe(false);
-    old.release();
-    expect(JSON.parse(readFileSync(path, "utf8")).token).toBe(taker.token);
-  });
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "an unwritable config dir is an error, not a busy lock",
+    () => {
+      const path = lockFile();
+      mkdirSync(join(path, ".."), { recursive: true });
+      chmodSync(join(path, ".."), 0o500);
+      try {
+        expect(() => WriterLock.tryAcquire({ path, owner: "tui" })).toThrow();
+      } finally {
+        chmodSync(join(path, ".."), 0o700);
+      }
+    },
+  );
 });
 
-describe("contention between processes", () => {
-  async function race(path: string, n: number): Promise<string[]> {
-    const dir = mkdtempSync(join(tmpdir(), "tokenhud-lock-race-"));
-    dirs.push(dir);
-    const files = (prefix: string) => readdirSync(dir).filter((f) => f.startsWith(prefix));
-    const until = async (pred: () => boolean) => {
-      const deadline = Date.now() + 30_000;
-      while (!pred()) {
-        if (Date.now() > deadline) throw new Error("the contenders did not report in time");
-        await Bun.sleep(10);
-      }
-    };
-    const procs = Array.from({ length: n }, () =>
-      Bun.spawn([process.execPath, join(import.meta.dir, "contender.ts"), path, dir]),
-    );
-    await until(() => files("ready-").length === n); // every one started and waiting
-    writeFileSync(join(dir, "go"), "");
-    await until(() => files("result-").length === n);
-    const results = files("result-").map((f) => readFileSync(join(dir, f), "utf8"));
-    writeFileSync(join(dir, "done"), "");
-    await Promise.all(procs.map((p) => p.exited));
-    return results;
-  }
-
-  test("of 8 processes starting together, exactly one takes a free lock", async () => {
+describe("across processes", () => {
+  test("a lock another process holds is busy, and freed by the kernel when it is killed", async () => {
     const path = lockFile();
-    WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-    const results = await race(path, 8);
-    expect(results.filter((r) => r === "won")).toHaveLength(1);
-    expect(results.filter((r) => r === "lost")).toHaveLength(7);
-  });
-
-  test("of 12 processes finding the same stale lock, exactly one takes it over (3 rounds)", async () => {
-    // Before the takeover file, a taker could move a fresh lock aside for a moment, and a
-    // third process could win the empty slot: two holders in about one round in four.
-    for (let round = 0; round < 3; round++) {
-      const path = lockFile();
-      WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-      plant(path, fresh({ pid: deadPid() }));
-      const results = await race(path, 12);
-      expect(results.filter((r) => r === "won")).toHaveLength(1);
-      // The winner has released it; no takeover or temp file is left behind.
-      expect(readdirSync(join(path, ".."))).toEqual([]);
+    const other = await otherProcess(path);
+    try {
+      expect(other.said).toBe("held");
+      expect(take(path)).toBeNull();
+      expect(lockHolder(path)?.pid).toBe(other.proc.pid);
+      other.proc.kill("SIGKILL");
+      await other.proc.exited;
+      // No waiting out a heartbeat: the lock is free as soon as the process is gone.
+      expect(take(path)?.held).toBe(true);
+      expect(JSON.parse(readFileSync(`${path}.holder.json`, "utf8")).pid).toBe(process.pid);
+    } finally {
+      other.proc.kill("SIGKILL");
     }
   });
-});
 
-describe("the takeover file", () => {
-  test("is removed after a takeover, and one left by a crashed taker is cleared once old", () => {
+  test("a lock this process holds is busy for another process", async () => {
     const path = lockFile();
-    WriterLock.tryAcquire({ path, owner: "tui" })?.release();
-    plant(path, fresh({ pid: deadPid() }));
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })?.held).toBe(true);
-    expect(readdirSync(join(path, ".."))).toEqual(["ingest.lock"]);
-
-    const turn = `${path}.takeover`;
-    plant(path, fresh({ pid: deadPid() }));
-    writeFileSync(turn, "{}");
-    // A taker is (apparently) at work: leave it to them.
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })).toBeNull();
-    const old = (Date.now() - 10_000) / 1000;
-    utimesSync(turn, old, old);
-    expect(WriterLock.tryAcquire({ path, owner: "tui" })?.held).toBe(true);
+    take(path);
+    const other = await otherProcess(path);
+    other.proc.kill("SIGKILL");
+    expect(other.said).toBe("busy");
   });
+
+  test("16 contenders with random kill -9s never hold it at the same moment (6 rounds)", async () => {
+    // `bun test/lock/stress.ts 300` runs the full acceptance count.
+    for (let r = 0; r < 6; r++) {
+      const result = await round(16, 300, 4);
+      expect(result.overlaps).toBe(0);
+      expect(result.holds).toBeGreaterThan(0);
+    }
+  }, 120_000);
 });

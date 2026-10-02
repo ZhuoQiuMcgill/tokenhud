@@ -142,12 +142,6 @@ export async function runApp(boot: Boot): Promise<number> {
     startIngest();
   }
 
-  function demote(): void {
-    void stopIngest();
-    controller.setMode("reader");
-    vm.send({ type: "mode", mode: "reader" });
-  }
-
   // ── refresh tick and lock heartbeat ────────────────────────────────────────────
 
   function tick(): void {
@@ -166,9 +160,8 @@ export async function runApp(boot: Boot): Promise<number> {
 
   let refresh = boot.config.refresh_interval;
   let tickTimer = setInterval(tick, refresh * 1000);
-  const beatTimer = setInterval(() => {
-    if (lock?.held && !lock.heartbeat()) demote();
-  }, HEARTBEAT_MS);
+  // The lock is the kernel's and can't be lost; the beat only refreshes "who holds it".
+  const beatTimer = setInterval(() => lock?.heartbeat(), HEARTBEAT_MS);
   let theme_ = boot.config.theme;
   const unsubscribe = controller.subscribe(() => {
     const { config } = controller.getState();
