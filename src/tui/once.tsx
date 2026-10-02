@@ -62,6 +62,8 @@ export async function renderOverview(input: OnceInput): Promise<string> {
       accounts: input.accounts,
       scope: scoped?.id ?? null,
       window: config.default_window,
+      prices: input.prices,
+      sources: null,
     }),
   );
   const width = Math.max(MIN_WIDTH, input.width);

@@ -112,30 +112,30 @@ exports[`105×50 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- MODELS · all time                                                                86.4% of tokens priced 
- model                          input    $/M   output    $/M    cache   $/M         cost share           
- gpt-5.5                         2.5M   5.00     1.6M  30.00    63.9M  0.50      $117.25 ━━━━━━━━━━ 34.9%
- gpt-5.6-sol                     2.8M   4.00     1.8M  20.00    72.0M  0.40      $108.18 ━━━━━━━━━━ 32.2%
- claude-sonnet-4-6               1.7M   3.00     1.0M  15.00    40.7M  0.30       $42.76 ━━━━━━━━━━ 12.7%
- claude-opus-4-8                 993K   5.00     579K  25.00    25.4M  0.50       $42.02 ━━━━━━━━━━ 12.5%
- claude-haiku-4-5                1.9M   1.00     1.2M   5.00    47.6M  0.10       $16.53 ━━━━━━━━━━  4.9%
- claude-opus-4-8 (fast)          110K  10.00      70K  50.00     2.7M  1.00        $9.47 ━━━━━━━━━━  2.8%
- claude-mystery-9 *              1.6M      —     997K      —    39.6M     —     unpriced ━━━━━━━━━━  0.0%
- ────────────────────────────────────────────────────────────────────────────────────────────────────────
- Total                          11.7M      —     7.2M      —   291.8M     —     $336.20*                 
+ MODELS · all time · by cost                                  window  today  this week  this month  all  
+ model                  provider  input    $/M  output    $/M   cache   $/M      cost  share             
+ gpt-5.5                codex      2.5M   5.00    1.6M  30.00   63.9M  0.50   $117.25  ━━━━━━━━━━  34.9% 
+ gpt-5.6-sol            codex      2.8M   4.00    1.8M  20.00   72.0M  0.40   $108.18  ━━━━━━━━━━  32.2% 
+ Sonnet 4.6             claude     1.7M   3.00    1.0M  15.00   40.7M  0.30    $42.76  ━━━━━━━━━━  12.7% 
+ Opus 4.8               claude     993K   5.00    579K  25.00   25.4M  0.50    $42.02  ━━━━━━━━━━  12.5% 
+ Haiku 4.5              claude     1.9M   1.00    1.2M   5.00   47.6M  0.10    $16.53  ━━━━━━━━━━   4.9% 
+ Opus 4.8 (fast)        claude     110K  10.00     70K  50.00    2.7M  1.00     $9.47  ━━━━━━━━━━   2.8% 
+ Mystery 9 *            claude     1.6M      —    997K      —   39.6M     —  unpriced  ━━━━━━━━━━   0.0% 
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────── 
+ Total                            11.7M           7.2M         291.8M        $336.20*                    
                                                                                                          
+ $/M = base rate · cache = read rate; writes and long-context requests cost more                         
+ * no published rate: tokens counted, cost excluded · 86.4% of tokens priced                             
                                                                                                          
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
+ ╭─ gpt-5.5 · rates ─────────────────────────────────────╮  ╭─ gpt-5.5 · who used it ──────────────────╮ 
+ │ input    $5.00 · output $30.00                        │  │ codex-win ━━━━━━━━━━━━━━━━━━  54% $62.87 │ 
+ │ cache    read $0.50 (0.1× input)                      │  │ codex     ━━━━━━━━━━━━━━━━━━  46% $54.38 │ 
+ │ write    5m $6.25 · 1h $10.00                         │  │ first seen Aug 2 · 1,483 requests        │ 
+ │ fast     $12.50 · $75.00 · read $1.25                 │  │                                          │ 
+ │ long     >272K: input 2×, output 1.5×                 │  │                                          │ 
+ │ source   developers.openai.com · checked 2026-10-01   │  │                                          │ 
+ │                                                       │  │                                          │ 
+ ╰───────────────────────────────────────────────────────╯  ╰──────────────────────────────────────────╯ 
                                                                                                          
                                                                                                          
                                                                                                          
@@ -158,7 +158,7 @@ exports[`105×50 view 3 (models) 1`] = `
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ select   a account   s settings   ? help   q quit                        MCP ● 2 agents 
+ 1-4 views   ←/→ window   o sort   a account   s settings   ? help   q quit               MCP ● 2 agents 
 "
 `;
 
@@ -166,19 +166,19 @@ exports[`105×50 view 4 (accounts) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- ACCOUNTS · all time                                                 * not all tokens priced · ▸ = scope 
-   account                                  provider         cost   tokens share            first  last  
-   codex-win                                codex         $115.60    74.6M ━━━━━━━━━━   34% Aug 2  Sep 28
-   codex                                    codex         $109.83    70.0M ━━━━━━━━━━   33% Aug 2  Sep 29
-   personal                                 claude        $45.28*    63.1M ━━━━━━━━━━   13% Jul 31 Sep 29
-   work                                     claude        $43.16*    66.7M ━━━━━━━━━━   13% Aug 1  Sep 28
-   old-laptop (history only)                claude        $22.34*    36.3M ━━━━━━━━━━    7% Aug 2  Sep 9 
-                                                                                                         
- codex-win                                                                                               
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                                        
-                                                                                                         
-                                                                                                         
-                                                                                                         
+ ACCOUNTS        ○ inactive here  │  codex-win · codex                                                   
+                                  │                                                                      
+ ○ codex-win          codex     — │  root      not found on this machine: history only                   
+ ○ codex              codex     — │  history   1,609 records since Aug 2                                 
+ ○ personal           claude    — │                                                                      
+ ○ work               claude    — │  limits    not fetched: no root on this machine                      
+ ○ old-laptop         claude    — │                                                                      
+ + add a root…                    │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                    
+                                  │                                                                      
+ enter scope to it                │  models    gpt-5.5 59% · gpt-5.6-sol 41%                             
+ e enable/disable                 │                                                                      
+ l rename label                   │                                                                      
+ h history only                   │                                                                      
                                                                                                          
                                                                                                          
                                                                                                          
@@ -212,7 +212,7 @@ exports[`105×50 view 4 (accounts) 1`] = `
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   a account   s settings   ? help   q quit                       MCP ● 2 agents 
+ 1-4 views   ↑/↓ account   enter scope   a account   s settings   ? help   q quit         MCP ● 2 agents 
 "
 `;
 
@@ -318,30 +318,30 @@ exports[`120×45 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- MODELS · all time                                                                               86.4% of tokens priced 
- model                                         input    $/M   output    $/M    cache   $/M         cost share           
- gpt-5.5                                        2.5M   5.00     1.6M  30.00    63.9M  0.50      $117.25 ━━━━━━━━━━ 34.9%
- gpt-5.6-sol                                    2.8M   4.00     1.8M  20.00    72.0M  0.40      $108.18 ━━━━━━━━━━ 32.2%
- claude-sonnet-4-6                              1.7M   3.00     1.0M  15.00    40.7M  0.30       $42.76 ━━━━━━━━━━ 12.7%
- claude-opus-4-8                                993K   5.00     579K  25.00    25.4M  0.50       $42.02 ━━━━━━━━━━ 12.5%
- claude-haiku-4-5                               1.9M   1.00     1.2M   5.00    47.6M  0.10       $16.53 ━━━━━━━━━━  4.9%
- claude-opus-4-8 (fast)                         110K  10.00      70K  50.00     2.7M  1.00        $9.47 ━━━━━━━━━━  2.8%
- claude-mystery-9 *                             1.6M      —     997K      —    39.6M     —     unpriced ━━━━━━━━━━  0.0%
- ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Total                                         11.7M      —     7.2M      —   291.8M     —     $336.20*                 
+ MODELS · all time · by cost                                    window  today  this week  this month  all  1h  5h  24h  
+ model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                   
+ gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.25   ━━━━━━━━━━   34.9%      
+ gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   32.2%      
+ Sonnet 4.6              claude      1.7M    3.00     1.0M   15.00    40.7M   0.30     $42.76   ━━━━━━━━━━   12.7%      
+ Opus 4.8                claude      993K    5.00     579K   25.00    25.4M   0.50     $42.02   ━━━━━━━━━━   12.5%      
+ Haiku 4.5               claude      1.9M    1.00     1.2M    5.00    47.6M   0.10     $16.53   ━━━━━━━━━━    4.9%      
+ Opus 4.8 (fast)         claude      110K   10.00      70K   50.00     2.7M   1.00      $9.47   ━━━━━━━━━━    2.8%      
+ Mystery 9 *             claude      1.6M       —     997K       —    39.6M      —   unpriced   ━━━━━━━━━━    0.0%      
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────      
+ Total                              11.7M             7.2M           291.8M          $336.20*                           
                                                                                                                         
+ $/M = base rate · cache = read rate; writes and long-context requests cost more                                        
+ * no published rate: tokens counted, cost excluded · 86.4% of tokens priced                                            
                                                                                                                         
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
+ ╭─ gpt-5.5 · rates ──────────────────────────────────────────╮  ╭─ gpt-5.5 · who used it ────────────────────────────╮ 
+ │ input    $5.00 · output $30.00                             │  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  54% $62.87 │ 
+ │ cache    read $0.50 (0.1× input)                           │  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  46% $54.38 │ 
+ │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,483 requests                  │ 
+ │ fast     $12.50 · $75.00 · read $1.25                      │  │                                                    │ 
+ │ long     >272K: input 2×, output 1.5×                      │  │                                                    │ 
+ │ source   developers.openai.com · checked 2026-10-01        │  │                                                    │ 
+ │                                                            │  │                                                    │ 
+ ╰────────────────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────────╯ 
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -359,7 +359,7 @@ exports[`120×45 view 3 (models) 1`] = `
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ select   a account   s settings   ? help   q quit                                       MCP ● 2 agents 
+ 1-4 views   ←/→ window   o sort   enter rates   a account   s settings   ? help   q quit                MCP ● 2 agents 
 "
 `;
 
@@ -367,19 +367,19 @@ exports[`120×45 view 4 (accounts) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ACCOUNTS · all time                                                                * not all tokens priced · ▸ = scope 
-   account                                                 provider         cost   tokens share            first  last  
-   codex-win                                               codex         $115.60    74.6M ━━━━━━━━━━   34% Aug 2  Sep 28
-   codex                                                   codex         $109.83    70.0M ━━━━━━━━━━   33% Aug 2  Sep 29
-   personal                                                claude        $45.28*    63.1M ━━━━━━━━━━   13% Jul 31 Sep 29
-   work                                                    claude        $43.16*    66.7M ━━━━━━━━━━   13% Aug 1  Sep 28
-   old-laptop (history only)                               claude        $22.34*    36.3M ━━━━━━━━━━    7% Aug 2  Sep 9 
-                                                                                                                        
- codex-win                                                                                                              
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                                                       
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
+ ACCOUNTS         ○ inactive here  │  codex-win · codex                                                                 
+                                   │                                                                                    
+ ○ codex-win           codex     — │  root      not found on this machine: history only                                 
+ ○ codex               codex     — │  history   1,609 records since Aug 2                                               
+ ○ personal            claude    — │                                                                                    
+ ○ work                claude    — │  limits    not fetched: no root on this machine                                    
+ ○ old-laptop          claude    — │                                                                                    
+ + add a root…                     │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                  
+                                   │                                                                                    
+ enter scope to it                 │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                           
+ e enable/disable                  │                                                                                    
+ l rename label                    │                                                                                    
+ h history only                    │                                                                                    
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -408,7 +408,7 @@ exports[`120×45 view 4 (accounts) 1`] = `
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   a account   s settings   ? help   q quit                                      MCP ● 2 agents 
+ 1-4 views   ↑/↓ account   enter scope   e enable   a account   s settings   ? help   q quit             MCP ● 2 agents 
 "
 `;
 
@@ -472,19 +472,19 @@ exports[`80×24 view 3 (models) 1`] = `
 " tokenhud   1   2   3 Models   4                   all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- MODELS · all time                                       86.4% of tokens priced 
- model                     input   output    cache         cost share           
- gpt-5.5                    2.5M     1.6M    63.9M      $117.25 ━━━━━━━━━━ 34.9%
- gpt-5.6-sol                2.8M     1.8M    72.0M      $108.18 ━━━━━━━━━━ 32.2%
- claude-sonnet-4-6          1.7M     1.0M    40.7M       $42.76 ━━━━━━━━━━ 12.7%
- claude-opus-4-8            993K     579K    25.4M       $42.02 ━━━━━━━━━━ 12.5%
- claude-haiku-4-5           1.9M     1.2M    47.6M       $16.53 ━━━━━━━━━━  4.9%
- claude-opus-4-8 (fast)     110K      70K     2.7M        $9.47 ━━━━━━━━━━  2.8%
- claude-mystery-9 *         1.6M     997K    39.6M     unpriced ━━━━━━━━━━  0.0%
- ───────────────────────────────────────────────────────────────────────────────
- Total                     11.7M     7.2M   291.8M     $336.20*                 
+ MODELS · all time · by cost                                                    
+ model             provider  input  output   cache      cost  share             
+ gpt-5.5           codex      2.5M    1.6M   63.9M   $117.25  ━━━━━━━━━━  34.9% 
+ gpt-5.6-sol       codex      2.8M    1.8M   72.0M   $108.18  ━━━━━━━━━━  32.2% 
+ Sonnet 4.6        claude     1.7M    1.0M   40.7M    $42.76  ━━━━━━━━━━  12.7% 
+ Opus 4.8          claude     993K    579K   25.4M    $42.02  ━━━━━━━━━━  12.5% 
+ Haiku 4.5         claude     1.9M    1.2M   47.6M    $16.53  ━━━━━━━━━━   4.9% 
+ Opus 4.8 (fast)   claude     110K     70K    2.7M     $9.47  ━━━━━━━━━━   2.8% 
+ Mystery 9 *       claude     1.6M    997K   39.6M  unpriced  ━━━━━━━━━━   0.0% 
+ ────────────────────────────────────────────────────────────────────────────── 
+ Total                       11.7M    7.2M  291.8M  $336.20*                    
                                                                                 
-                                                                                
+ * no published rate: tokens counted, cost excluded · 86.4% of tokens priced    
                                                                                 
                                                                                 
                                                                                 
@@ -500,19 +500,19 @@ exports[`80×24 view 4 (accounts) 1`] = `
 " tokenhud   1   2   3   4 Accounts                 all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- ACCOUNTS · all time                        * not all tokens priced · ▸ = scope 
-   account         provider         cost   tokens share            first  last  
-   codex-win       codex         $115.60    74.6M ━━━━━━━━━━   34% Aug 2  Sep 28
-   codex           codex         $109.83    70.0M ━━━━━━━━━━   33% Aug 2  Sep 29
-   personal        claude        $45.28*    63.1M ━━━━━━━━━━   13% Jul 31 Sep 29
-   work            claude        $43.16*    66.7M ━━━━━━━━━━   13% Aug 1  Sep 28
-   old-laptop (hi… claude        $22.34*    36.3M ━━━━━━━━━━    7% Aug 2  Sep 9 
-                                                                                
- codex-win                                                                      
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                               
-                                                                                
-                                                                                
-                                                                                
+ ACCOUNTS ○ inactive here  │  codex-win · codex                                 
+                           │                                                    
+ ○ codex-win   codex     — │  root      not found on this machine: history only 
+ ○ codex       codex     — │  history   1,609 records since Aug 2               
+ ○ personal    claude    — │                                                    
+ ○ work        claude    — │  limits    not fetched: no root on this machine    
+ ○ old-laptop  claude    — │                                                    
+ + add a root…             │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25  
+                           │                                                    
+ enter scope to it         │  models    gpt-5.5 59% · gpt-5.6-sol 41%           
+ e enable/disable          │                                                    
+ l rename label            │                                                    
+ h history only            │                                                    
                                                                                 
                                                                                 
                                                                                 
@@ -636,30 +636,30 @@ exports[`160×50 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- MODELS · all time                                                                                                                       86.4% of tokens priced 
- model                                                                                 input    $/M   output    $/M    cache   $/M         cost share           
- gpt-5.5                                                                                2.5M   5.00     1.6M  30.00    63.9M  0.50      $117.25 ━━━━━━━━━━ 34.9%
- gpt-5.6-sol                                                                            2.8M   4.00     1.8M  20.00    72.0M  0.40      $108.18 ━━━━━━━━━━ 32.2%
- claude-sonnet-4-6                                                                      1.7M   3.00     1.0M  15.00    40.7M  0.30       $42.76 ━━━━━━━━━━ 12.7%
- claude-opus-4-8                                                                        993K   5.00     579K  25.00    25.4M  0.50       $42.02 ━━━━━━━━━━ 12.5%
- claude-haiku-4-5                                                                       1.9M   1.00     1.2M   5.00    47.6M  0.10       $16.53 ━━━━━━━━━━  4.9%
- claude-opus-4-8 (fast)                                                                 110K  10.00      70K  50.00     2.7M  1.00        $9.47 ━━━━━━━━━━  2.8%
- claude-mystery-9 *                                                                     1.6M      —     997K      —    39.6M     —     unpriced ━━━━━━━━━━  0.0%
- ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- Total                                                                                 11.7M      —     7.2M      —   291.8M     —     $336.20*                 
+ MODELS · all time · by cost                                                                            window  today  this week  this month  all  1h  5h  24h  
+ model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                                                           
+ gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.25   ━━━━━━━━━━   34.9%                                              
+ gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   32.2%                                              
+ Sonnet 4.6              claude      1.7M    3.00     1.0M   15.00    40.7M   0.30     $42.76   ━━━━━━━━━━   12.7%                                              
+ Opus 4.8                claude      993K    5.00     579K   25.00    25.4M   0.50     $42.02   ━━━━━━━━━━   12.5%                                              
+ Haiku 4.5               claude      1.9M    1.00     1.2M    5.00    47.6M   0.10     $16.53   ━━━━━━━━━━    4.9%                                              
+ Opus 4.8 (fast)         claude      110K   10.00      70K   50.00     2.7M   1.00      $9.47   ━━━━━━━━━━    2.8%                                              
+ Mystery 9 *             claude      1.6M       —     997K       —    39.6M      —   unpriced   ━━━━━━━━━━    0.0%                                              
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────                                              
+ Total                              11.7M             7.2M           291.8M          $336.20*                                                                   
                                                                                                                                                                 
+ $/M = base rate · cache = read rate; writes and long-context requests cost more                                                                                
+ * no published rate: tokens counted, cost excluded · 86.4% of tokens priced                                                                                    
                                                                                                                                                                 
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
+ ╭─ gpt-5.5 · rates ──────────────────────────────────────────╮  ╭─ gpt-5.5 · who used it ────────────────────────────────────╮                                 
+ │ input    $5.00 · output $30.00                             │  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  54% $62.87 │                                 
+ │ cache    read $0.50 (0.1× input)                           │  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  46% $54.38 │                                 
+ │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,483 requests                          │                                 
+ │ fast     $12.50 · $75.00 · read $1.25                      │  │                                                            │                                 
+ │ long     >272K: input 2×, output 1.5×                      │  │                                                            │                                 
+ │ source   developers.openai.com · checked 2026-10-01        │  │                                                            │                                 
+ │                                                            │  │                                                            │                                 
+ ╰────────────────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────────────────╯                                 
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
@@ -682,7 +682,7 @@ exports[`160×50 view 3 (models) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ select   a account   s settings   ? help   q quit                                                                               MCP ● 2 agents 
+ 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit                                           MCP ● 2 agents 
 "
 `;
 
@@ -690,19 +690,19 @@ exports[`160×50 view 4 (accounts) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- ACCOUNTS · all time                                                                                                        * not all tokens priced · ▸ = scope 
-   account                                                                                         provider         cost   tokens share            first  last  
-   codex-win                                                                                       codex         $115.60    74.6M ━━━━━━━━━━   34% Aug 2  Sep 28
-   codex                                                                                           codex         $109.83    70.0M ━━━━━━━━━━   33% Aug 2  Sep 29
-   personal                                                                                        claude        $45.28*    63.1M ━━━━━━━━━━   13% Jul 31 Sep 29
-   work                                                                                            claude        $43.16*    66.7M ━━━━━━━━━━   13% Aug 1  Sep 28
-   old-laptop (history only)                                                                       claude        $22.34*    36.3M ━━━━━━━━━━    7% Aug 2  Sep 9 
-                                                                                                                                                                
- codex-win                                                                                                                                                      
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                                                                                               
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
+ ACCOUNTS         ○ inactive here  │  codex-win · codex                                                                                                         
+                                   │                                                                                                                            
+ ○ codex-win           codex     — │  root      not found on this machine: history only                                                                         
+ ○ codex               codex     — │  history   1,609 records since Aug 2                                                                                       
+ ○ personal            claude    — │                                                                                                                            
+ ○ work                claude    — │  limits    not fetched: no root on this machine                                                                            
+ ○ old-laptop          claude    — │                                                                                                                            
+ + add a root…                     │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                                                          
+                                   │                                                                                                                            
+ enter scope to it                 │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                                                                   
+ e enable/disable                  │                                                                                                                            
+ l rename label                    │                                                                                                                            
+ h history only                    │                                                                                                                            
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
@@ -736,7 +736,7 @@ exports[`160×50 view 4 (accounts) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   a account   s settings   ? help   q quit                                                                              MCP ● 2 agents 
+ 1-4 views   ↑/↓ account   enter scope   e enable   l label   h history only   a account   s settings   ? help   q quit                          MCP ● 2 agents 
 "
 `;
 
@@ -792,19 +792,19 @@ exports[`narrow 50×20 view 3 (models): every number whole 1`] = `
 " tokenhud   1   2   3 Models   4           ● live 
 ──────────────────────────────────────────────────
                                                   
- MODELS · all time         86.4% of tokens priced 
- model                    input         cost      
- gpt-5.5                   2.5M      $117.25 34.9%
- gpt-5.6-sol               2.8M      $108.18 32.2%
- claude-sonnet-4-6         1.7M       $42.76 12.7%
- claude-opus-4-8           993K       $42.02 12.5%
- claude-haiku-4-5          1.9M       $16.53  4.9%
- claude-opus-4-8 (fas…     110K        $9.47  2.8%
- claude-mystery-9 *        1.6M     unpriced  0.0%
- ─────────────────────────────────────────────────
- Total                    11.7M     $336.20*      
+ MODELS · all time · by cost                      
+ model             input  output      cost        
+ gpt-5.5            2.5M    1.6M   $117.25  34.9% 
+ gpt-5.6-sol        2.8M    1.8M   $108.18  32.2% 
+ Sonnet 4.6         1.7M    1.0M    $42.76  12.7% 
+ Opus 4.8           993K    579K    $42.02  12.5% 
+ Haiku 4.5          1.9M    1.2M    $16.53   4.9% 
+ Opus 4.8 (fast)    110K     70K     $9.47   2.8% 
+ Mystery 9 *        1.6M    997K  unpriced   0.0% 
+ ──────────────────────────────────────────────── 
+ Total             11.7M    7.2M  $336.20*        
                                                   
-                                                  
+ * no published rate · 86.4% of tokens priced     
                                                   
                                                   
 ──────────────────────────────────────────────────
@@ -816,21 +816,21 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
 " tokenhud   1   2   3   4 Accounts         ● live 
 ──────────────────────────────────────────────────
                                                   
- ACCOUNTS · all time                    ▸ = scope 
-   account              cost   tokens       last  
-   codex-win         $115.60    74.6M   34% Sep 28
-   codex             $109.83    70.0M   33% Sep 29
-   personal          $45.28*    63.1M   13% Sep 29
-   work              $43.16*    66.7M   13% Sep 28
-   old-laptop …      $22.34*    36.3M    7% Sep 9 
+ ACCOUNTS                         ○ inactive here 
+ ○ codex-win                           codex     —
+ ○ codex                               codex     —
+ ○ personal                            claude    —
+ ○ work                                claude    —
+ 2 more ↓                                         
                                                   
- codex-win                                        
+ codex-win · codex                                
+                                                  
+ root      not found on this machine: history only
+ history   1,609 records since Aug 2              
+                                                  
+ limits    not fetched: no root on this machine   
+                                                  
  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25 
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
 ──────────────────────────────────────────────────
  1-4 views   ? help   q quit       MCP ● 2 agents 
 "
@@ -888,19 +888,19 @@ exports[`narrow 60×20 view 3 (models): every number whole 1`] = `
 " tokenhud   1   2   3 Models   4    all accounts ▾   ● live 
 ────────────────────────────────────────────────────────────
                                                             
- MODELS · all time                   86.4% of tokens priced 
- model                     input   output         cost      
- gpt-5.5                    2.5M     1.6M      $117.25 34.9%
- gpt-5.6-sol                2.8M     1.8M      $108.18 32.2%
- claude-sonnet-4-6          1.7M     1.0M       $42.76 12.7%
- claude-opus-4-8            993K     579K       $42.02 12.5%
- claude-haiku-4-5           1.9M     1.2M       $16.53  4.9%
- claude-opus-4-8 (fast)     110K      70K        $9.47  2.8%
- claude-mystery-9 *         1.6M     997K     unpriced  0.0%
- ───────────────────────────────────────────────────────────
- Total                     11.7M     7.2M     $336.20*      
+ MODELS · all time · by cost                                
+ model               input  output   cache      cost        
+ gpt-5.5              2.5M    1.6M   63.9M   $117.25  34.9% 
+ gpt-5.6-sol          2.8M    1.8M   72.0M   $108.18  32.2% 
+ Sonnet 4.6           1.7M    1.0M   40.7M    $42.76  12.7% 
+ Opus 4.8             993K    579K   25.4M    $42.02  12.5% 
+ Haiku 4.5            1.9M    1.2M   47.6M    $16.53   4.9% 
+ Opus 4.8 (fast)      110K     70K    2.7M     $9.47   2.8% 
+ Mystery 9 *          1.6M    997K   39.6M  unpriced   0.0% 
+ ────────────────────────────────────────────────────────── 
+ Total               11.7M    7.2M  291.8M  $336.20*        
                                                             
-                                                            
+ * no published rate · 86.4% of tokens priced               
                                                             
                                                             
 ────────────────────────────────────────────────────────────
@@ -912,21 +912,21 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
 " tokenhud   1   2   3   4 Accounts                   ● live 
 ────────────────────────────────────────────────────────────
                                                             
- ACCOUNTS · all time    * not all tokens priced · ▸ = scope 
-   account                 cost   tokens       first  last  
-   codex-win            $115.60    74.6M   34% Aug 2  Sep 28
-   codex                $109.83    70.0M   33% Aug 2  Sep 29
-   personal             $45.28*    63.1M   13% Jul 31 Sep 29
-   work                 $43.16*    66.7M   13% Aug 1  Sep 28
-   old-laptop (hi…      $22.34*    36.3M    7% Aug 2  Sep 9 
+ ACCOUNTS                                   ○ inactive here 
+ ○ codex-win                                     codex     —
+ ○ codex                                         codex     —
+ ○ personal                                      claude    —
+ ○ work                                          claude    —
+ 2 more ↓                                                   
                                                             
- codex-win                                                  
+ codex-win · codex                                          
+                                                            
+ root      not found on this machine: history only          
+ history   1,609 records since Aug 2                        
+                                                            
+ limits    not fetched: no root on this machine             
+                                                            
  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25           
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
 ────────────────────────────────────────────────────────────
  1-4 views   a account   ? help   q quit     MCP ● 2 agents 
 "

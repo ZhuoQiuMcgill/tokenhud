@@ -244,6 +244,8 @@ function computeAt(now: number, scope: number | null = null, path = storePath): 
           scope,
           window: "all",
           limitEvents: (range) => readAccountEvents(db, stored, range),
+          prices: table,
+          sources: null,
         }).vm,
     );
   } finally {

@@ -40,9 +40,9 @@ function setup(config: Config = defaultConfig()) {
 }
 
 const accounts: AccountInfo[] = [
-  { id: 1, label: "personal", provider: "claude", historyOnly: false },
-  { id: 2, label: "work", provider: "claude", historyOnly: false },
-  { id: 4, label: "codex", provider: "codex", historyOnly: false },
+  { id: 1, label: "personal", provider: "claude", identity: "id-personal", historyOnly: false },
+  { id: 2, label: "work", provider: "claude", identity: "id-work", historyOnly: false },
+  { id: 4, label: "codex", provider: "codex", identity: "id-codex", historyOnly: false },
 ];
 
 describe("global keys", () => {

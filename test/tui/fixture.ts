@@ -1,13 +1,16 @@
 // A deterministic store for the TUI's view-model, frame and --once tests: five made-up
 // accounts (one history-only), sixty days of usage up to a fixed "now", priced, unpriced
 // and fast-tier models. Identities and labels are obviously fake.
+import type { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Config, defaultConfig } from "../../src/config.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
+import type { UsageQueries } from "../../src/query/engine.ts";
 import { Zone } from "../../src/query/tz.ts";
 import { openStore, openStoreReader, type UsageRow } from "../../src/store/store.ts";
+import type { AccountSources } from "../../src/tui/vm/accounts.ts";
 import { COMPUTE, type ComputeContext } from "../../src/tui/vm/compute.ts";
 import { createQueries, displayAccounts, readStoreAccounts } from "../../src/tui/vm/session.ts";
 import {
@@ -102,8 +105,9 @@ export function makeFixtureStore(rows: readonly UsageRow[] = fixtureRows()): Fix
   };
 }
 
+/** The bundled table as the app loads it (no overrides): estimated aliases included. */
 export function bundledTable(): PriceTable {
-  return new PriceTable(bundledPricing().models);
+  return new PriceTable(bundledPricing().models, bundledPricing().aliases);
 }
 
 /** Every view model of the fixture store at NOW, the way the view-model Worker computes them. */
@@ -111,11 +115,14 @@ export function fixtureViews(
   storePath: string,
   config: Config = fixtureConfig(),
   scope: number | null = null,
+  /** What the Accounts view reads besides usage, over the fixture's connection. */
+  sources: ((db: Database, q: UsageQueries) => AccountSources) | null = null,
 ): { views: ViewModels; accounts: AccountInfo[] } {
   const db = openStoreReader(storePath);
   if (db === null) throw new Error("fixture store missing");
   try {
-    const q = createQueries(db, bundledTable(), TZ, () => NOW);
+    const prices = bundledTable();
+    const q = createQueries(db, prices, TZ, () => NOW);
     const accounts = displayAccounts(readStoreAccounts(db), new Map(), config);
     const ctx: ComputeContext = {
       q,
@@ -124,6 +131,8 @@ export function fixtureViews(
       accounts,
       scope,
       window: config.default_window,
+      prices,
+      sources: sources?.(db, q) ?? null,
     };
     const views: ViewModels = {};
     q.snapshot(() => {

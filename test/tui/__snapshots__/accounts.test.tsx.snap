@@ -1,0 +1,372 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`frames 105×50, personal selected 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+ ACCOUNTS        ○ inactive here  │  personal · claude                           limits fetched 11:38:30 
+                                  │                                                                      
+ ● codex              codex   83% │  root      ~/.claude  (watched)                                      
+ ● personal           claude  62% │  history   1,630 records since Jul 31                                
+ ● work               claude  92% │                                                                      
+ ○ codex-win          codex     — │  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28    
+ ○ old-laptop         claude    — │  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00
+ + add a root…                    │  FABLE WEEKLY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    0%   resets Mon 09:00
+                                  │                                                                      
+ enter scope to it                │  weekly usage when it reset · last 8 weeks                           
+ e enable/disable                 │            ██████                  ██████          ▁▁▁▁▁▁            
+ l rename label                   │            ██████                  ██████          ██████            
+ h history only                   │            ██████                  ██████          ██████  ▁▁▁▁▁▁    
+                                  │            ██████                  ██████          ██████  ██████    
+                                  │    —       100%    —       —       100%    —       ≥80%    27%       
+                                  │    Aug 17  Aug 24  Aug 31  Sep 7   Sep 14  Sep 21  Sep 28  now       
+                                  │    only weeks past 80 % or at 100 % are recorded; — = no record      
+                                  │                                                                      
+                                  │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*                   
+                                  │                                                                      
+                                  │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · +2 more    
+                                  │                                                                      
+                                  │  agents    ● get_limits at 11:39:48 · 2 calls in 10 min              
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   a account   s settings   ? help   q quit          MCP ● 1 agent 
+"
+`;
+
+exports[`frames 120×45, personal selected 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+ ACCOUNTS         ○ inactive here  │  personal · claude                                         limits fetched 11:38:30 
+                                   │                                                                                    
+ ● codex               codex   83% │  root      ~/.claude  (watched)                                                    
+ ● personal            claude  62% │  history   1,630 records since Jul 31                                              
+ ● work                claude  92% │                                                                                    
+ ○ codex-win           codex     — │  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28    
+ ○ old-laptop          claude    — │  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00
+ + add a root…                     │  FABLE WEEKLY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    0%   resets Mon 09:00
+                                   │                                                                                    
+ enter scope to it                 │  weekly usage when it reset · last 8 weeks                                         
+ e enable/disable                  │            ██████                  ██████          ▁▁▁▁▁▁                          
+ l rename label                    │            ██████                  ██████          ██████                          
+ h history only                    │            ██████                  ██████          ██████  ▁▁▁▁▁▁                  
+                                   │            ██████                  ██████          ██████  ██████                  
+                                   │    —       100%    —       —       100%    —       ≥80%    27%                     
+                                   │    Aug 17  Aug 24  Aug 31  Sep 7   Sep 14  Sep 21  Sep 28  now                     
+                                   │    only weeks past 80 % or at 100 % are recorded; — = no record                    
+                                   │                                                                                    
+                                   │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*                                 
+                                   │                                                                                    
+                                   │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · Haiku 4.5 4% · +1 more   
+                                   │                                                                                    
+                                   │  agents    ● get_limits at 11:39:48 · 2 calls in 10 min                            
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   e enable   l label   a account   s settings   ? help   q quit    MCP ● 1 agent 
+"
+`;
+
+exports[`frames 80×24, personal selected 1`] = `
+" tokenhud   1   2   3   4 Accounts                 all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────
+                                                                                
+ ACCOUNTS ○ inactive here  │  personal · claude         limits fetched 11:38:30 
+                           │                                                    
+ ● codex       codex   83% │  root      ~/.claude  (watched)                    
+ ● personal    claude  62% │  history   1,630 records since Jul 31              
+ ● work        claude  92% │                                                    
+ ○ codex-win   codex     — │  5-HOUR       ━━━━━━━━━━━━   62%   resets 13:28    
+ ○ old-laptop  claude    — │  WEEKLY       ━━━━━━━━━━━━   27%   resets Mon 09:00
+ + add a root…             │  FABLE WEEKLY ━━━━━━━━━━━━    0%   resets Mon 09:00
+                           │                                                    
+ enter scope to it         │  weekly usage when it reset · last 8 weeks         
+ e enable/disable          │          ████              ████        ▄▄▄▄        
+ l rename label            │          ████              ████        ████  ▄▄▄▄  
+ h history only            │    —     100%  —     —     100%  —     ≥80%  27%   
+                           │    8/17  8/24  8/31  9/7   9/14  9/21  9/28  now   
+                           │    only weeks past 80 % or at 100 % are recorded   
+                           │                                                    
+                           │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65* 
+                           │                                                    
+                           │  models    Opus 5.5 40% · Opus 4.8 34% · +3 more   
+────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   a account   s settings   ? help   q quit             MCP ● 1 agent 
+"
+`;
+
+exports[`frames 160×50, personal selected 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                                                                
+ ACCOUNTS         ○ inactive here  │  personal · claude                                                                                 limits fetched 11:38:30 
+                                   │                                                                                                                            
+ ● codex               codex   83% │  root      ~/.claude  (watched)                                                                                            
+ ● personal            claude  62% │  history   1,630 records since Jul 31                                                                                      
+ ● work                claude  92% │                                                                                                                            
+ ○ codex-win           codex     — │  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28                                            
+ ○ old-laptop          claude    — │  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00                                        
+ + add a root…                     │  FABLE WEEKLY ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    0%   resets Mon 09:00                                        
+                                   │                                                                                                                            
+ enter scope to it                 │  weekly usage when it reset · last 8 weeks                                                                                 
+ e enable/disable                  │            ██████                  ██████          ▁▁▁▁▁▁                                                                  
+ l rename label                    │            ██████                  ██████          ██████                                                                  
+ h history only                    │            ██████                  ██████          ██████  ▁▁▁▁▁▁                                                          
+                                   │            ██████                  ██████          ██████  ██████                                                          
+                                   │    —       100%    —       —       100%    —       ≥80%    27%                                                             
+                                   │    Aug 17  Aug 24  Aug 31  Sep 7   Sep 14  Sep 21  Sep 28  now                                                             
+                                   │    only weeks past 80 % or at 100 % are recorded; — = no record                                                            
+                                   │                                                                                                                            
+                                   │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*                                                                         
+                                   │                                                                                                                            
+                                   │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · Haiku 4.5 4% · Mystery 9 *                                       
+                                   │                                                                                                                            
+                                   │  agents    ● get_limits at 11:39:48 · 2 calls in 10 min                                                                    
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+                                                                                                                                                                
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   e enable   l label   h history only   a account   s settings   ? help   q quit                           MCP ● 1 agent 
+"
+`;
+
+exports[`frames 105×50, old-laptop: not signed in here 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+ ACCOUNTS        ○ inactive here  │  old-laptop · claude                                                 
+                                  │                                                                      
+ ● codex              codex   83% │  root      ~/.claude-old  (watched, history only)                    
+ ● personal           claude  62% │  history   795 records since Aug 2                                   
+ ● work               claude  92% │                                                                      
+ ○ codex-win          codex     — │  not signed in here                                                  
+ ○ old-laptop         claude    — │                                                                      
+ + add a root…                    │  spend 30d ▁▁▇▅▃█▁▄▇▅▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁  $7.52*                    
+                                  │                                                                      
+ enter scope to it                │  models    Sonnet 4.6 63% · Opus 4.8 26% · Haiku 4.5 11% · +1 more   
+ e enable/disable                 │                                                                      
+ l rename label                   │  agents    no MCP calls in the last 10 min                           
+ h history only                   │                                                                      
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   a account   s settings   ? help   q quit          MCP ● 1 agent 
+"
+`;
+
+exports[`frames 105×50, codex-win: this root is disabled 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+ ACCOUNTS        ○ inactive here  │  codex-win · codex                                                   
+                                  │                                                                      
+ ● codex              codex   83% │  root      /mnt/c/Users/someone/.codex  (disabled)                   
+ ● personal           claude  62% │  history   1,609 records since Aug 2                                 
+ ● work               claude  92% │                                                                      
+ ○ codex-win          codex     — │  limits    not fetched: this root is disabled (e enables it)         
+ ○ old-laptop         claude    — │                                                                      
+ + add a root…                    │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                    
+                                  │                                                                      
+ enter scope to it                │  models    gpt-5.5 59% · gpt-5.6-sol 41%                             
+ e enable/disable                 │                                                                      
+ l rename label                   │  agents    no MCP calls in the last 10 min                           
+ h history only                   │                                                                      
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   a account   s settings   ? help   q quit          MCP ● 1 agent 
+"
+`;
+
+exports[`frames 105×50, work: last fetch failed: HTTP 429 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+ ACCOUNTS        ○ inactive here  │  work · claude                               limits fetched 11:38:30 
+                                  │                                                                      
+ ● codex              codex   83% │  root      /mnt/c/Users/someone/.claude  (polled)                    
+ ● personal           claude  62% │  history   1,483 records since Aug 1                                 
+ ● work               claude  92% │                                                                      
+ ○ codex-win          codex     — │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   92%   resets 12:15    
+ ○ old-laptop         claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Fri 12:00
+ + add a root…                    │            last fetch failed: HTTP 429                               
+                                  │                                                                      
+ enter scope to it                │  weekly usage when it reset · last 8 weeks                           
+ e enable/disable                 │                                                                      
+ l rename label                   │                                                            ▂▂▂▂▂▂    
+ h history only                   │                                                            ██████    
+                                  │                                                            ██████    
+                                  │    —       —       —       —       —       —       —       58%       
+                                  │    Aug 14  Aug 21  Aug 28  Sep 4   Sep 11  Sep 18  Sep 25  now       
+                                  │    no limit events recorded yet: only this week is known             
+                                  │                                                                      
+                                  │  spend 30d ▂▃▁▁▁▄▁▃▁▁▃▆█▁▁▂▁█▃▂▁▆▁▁▁▁▂▁▂▁  $19.53*                   
+                                  │                                                                      
+                                  │  models    Opus 4.8 51% · Sonnet 4.6 34% · Haiku 4.5 15% · +1 more   
+                                  │                                                                      
+                                  │  agents    no MCP calls in the last 10 min                           
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   a account   s settings   ? help   q quit          MCP ● 1 agent 
+"
+`;
+
+exports[`frames 60×20: the detail under the list, numbers whole 1`] = `
+" tokenhud   1   2   3   4 Accounts                   ● live 
+────────────────────────────────────────────────────────────
+                                                            
+ ACCOUNTS                                   ○ inactive here 
+ ● codex                                         codex   83%
+ ● personal                                      claude  62%
+ ● work                                          claude  92%
+ 3 more ↓                                                   
+                                                            
+ personal · claude                  limits fetched 11:38:30 
+                                                            
+ root      ~/.claude  (watched)                             
+ history   1,630 records since Jul 31                       
+                                                            
+ 5-HOUR       ━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28    
+ WEEKLY       ━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00
+                                                            
+ spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*          
+────────────────────────────────────────────────────────────
+ 1-4 views   a account   ? help   q quit      MCP ● 1 agent 
+"
+`;

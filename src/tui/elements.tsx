@@ -12,6 +12,10 @@ export interface TableProps<R> {
   readonly selected?: number;
   readonly totals?: R | null;
   readonly header?: boolean;
+  /** Cells between columns (default 1). */
+  readonly gap?: number;
+  /** Say when rows are off screen (`5 more ↓`). */
+  readonly more?: boolean;
   readonly width?: number;
   readonly marginLeft?: number;
 }

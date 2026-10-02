@@ -25,6 +25,44 @@ export interface Section extends SectionSpec {
 }
 
 /**
+ * What a view's key asks of the shell beyond the view's own state, carried by that state
+ * (`withCommand`):
+ * - `window`: the Models window, one step along `WINDOW_CHOICES` (config's
+ *   `default_window`);
+ * - `scope`: the global account scope (null: every account); the scope already set
+ *   toggles back to every account;
+ * - `root`: an edit of the root an account comes from (by identity), as the settings
+ *   account editor makes it: enable or disable it, rename it, toggle history-only;
+ * - `settings`: the settings account editor.
+ */
+export type ViewCommand =
+  | { readonly type: "window"; readonly step: 1 | -1 }
+  | { readonly type: "scope"; readonly account: number | null }
+  | {
+      readonly type: "root";
+      readonly identity: string;
+      readonly label: string;
+      readonly edit: "enable" | "rename" | "history";
+    }
+  | { readonly type: "settings" };
+
+const COMMAND: unique symbol = Symbol("view command");
+
+/** `state`, carrying a command for the shell, which takes it off before keeping the state. */
+export function withCommand<S extends object>(state: S, command: ViewCommand): S {
+  return { ...state, [COMMAND]: command };
+}
+
+/** A view's answer to a key: its new state, and the command it carries, if any. */
+export function viewAnswer<S>(answer: S): { state: S; command: ViewCommand | null } {
+  if (typeof answer !== "object" || answer === null || !(COMMAND in answer)) {
+    return { state: answer, command: null };
+  }
+  const { [COMMAND]: command, ...state } = answer as S & { [COMMAND]: ViewCommand };
+  return { state: state as S, command };
+}
+
+/**
  * A view behind the small interface T11–T13 implement (T10 notes): its sections, the view
  * model it draws, and its keys. `S` is the view's own UI state (a selection, say), kept by
  * the shell so a view switch is a pure re-render.
@@ -37,7 +75,8 @@ export interface Section extends SectionSpec {
  *    `q` quit (shifted letters are not global). They are skipped while the view is
  *    `capturing` (a text field has focus).
  * 3. Every other key goes to the active view's `keys`, and only there. A view acts through
- *    the state it returns; views have no other key hook.
+ *    the state it returns; for what the shell owns (the scope, config, the settings
+ *    screen), that state carries a command (`withCommand`). Views have no other key hook.
  */
 export interface View<VM, S> {
   readonly id: ViewId;
@@ -47,7 +86,8 @@ export interface View<VM, S> {
   readonly initial: S;
   /**
    * The view's answer to a key the shell passed on (see the key contract above): its new
-   * state, or undefined if it isn't its key.
+   * state, which may carry a command for the shell (`withCommand`), or undefined if it
+   * isn't its key.
    */
   keys(key: string, state: S, vm: VM | undefined): S | undefined;
   /** True while a text field of the view has the keys: the shell's own keys pause. */

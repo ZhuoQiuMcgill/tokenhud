@@ -5,6 +5,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ccUsageDir, configPath, ensureConfig } from "../config.ts";
+import { limitsPath } from "../limits/cache.ts";
 import { lockPath, WriterLock } from "../lock.ts";
 import { mcpDir } from "../mcp/heartbeat.ts";
 import { configDir, pricingOverridesPath, storePath } from "../paths.ts";
@@ -59,6 +60,8 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
       storePath: paths.store,
       overridesPath: paths.overrides,
       mcpDir: paths.mcp,
+      limitsPath: limitsPath(env, home),
+      cachePath: paths.cache,
       mode: lock === null ? "reader" : "owner",
       settings: vmSettingsOf(config, null),
       scopeLabel: config.account_scope === "all" ? null : config.account_scope,

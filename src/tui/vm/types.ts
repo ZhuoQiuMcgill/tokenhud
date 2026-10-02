@@ -5,6 +5,8 @@ import type { Config, Window } from "../../config.ts";
 import type { McpActivity } from "../../mcp/heartbeat.ts";
 import type { PriceStatus } from "../../query/types.ts";
 import type { Provider, RootSource } from "../../sources/roots.ts";
+import type { AccountRow, AccountsVM } from "./accounts.ts";
+import type { ModelRow, ModelsVM } from "./models.ts";
 
 export type ViewId = "overview" | "history" | "models" | "accounts";
 export const VIEW_IDS: readonly ViewId[] = ["overview", "history", "models", "accounts"];
@@ -26,6 +28,8 @@ export interface AccountInfo {
   readonly id: number;
   readonly label: string;
   readonly provider: string;
+  /** The root identity, `sha256(resolved root path)[:32]`. */
+  readonly identity: string;
   readonly historyOnly: boolean;
 }
 
@@ -128,48 +132,7 @@ export interface HistoryVM {
   readonly average: { readonly cost: number; readonly tokens: number };
 }
 
-export interface ModelRow extends Priced {
-  readonly model: string;
-  readonly tier: "standard" | "fast";
-  readonly input: number;
-  readonly output: number;
-  readonly cache: number;
-  readonly share: number;
-  readonly status: PriceStatus;
-  /** USD per 1M tokens now; null when the model has no price at this tier. */
-  readonly rates: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead: number;
-  } | null;
-}
-
-export interface ModelsVM {
-  readonly window: Window;
-  readonly rows: readonly ModelRow[];
-  readonly total: Priced & {
-    readonly input: number;
-    readonly output: number;
-    readonly cache: number;
-  };
-  readonly pricedShare: number;
-}
-
-export interface AccountRow extends AccountInfo, Priced {
-  readonly firstSeen: number | null;
-  readonly lastSeen: number | null;
-  readonly records: number;
-  readonly share: number;
-  /** Daily cost over the last 30 days, oldest first. */
-  readonly spark: readonly number[];
-}
-
-export interface AccountsVM {
-  readonly rows: readonly AccountRow[];
-  /** When it was computed (epoch ms) and in which zone: dates show a year unless it's this one. */
-  readonly asOf: number;
-  readonly tz: string;
-}
+export type { AccountRow, AccountsVM, ModelRow, ModelsVM };
 
 export interface ViewModels {
   overview?: OverviewVM;
@@ -222,6 +185,10 @@ export interface VmStart {
   readonly storePath: string;
   readonly overridesPath: string;
   readonly mcpDir: string;
+  /** limits.json; absent, the Accounts view shows no limits. */
+  readonly limitsPath?: string;
+  /** cache.db, for Codex rate-limit snapshots. */
+  readonly cachePath?: string;
   readonly mode: IngestMode;
   readonly settings: VmSettings;
   /** The scope as saved in config (a label), resolved once the accounts are known. */

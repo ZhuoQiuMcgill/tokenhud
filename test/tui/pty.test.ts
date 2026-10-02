@@ -31,7 +31,7 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       for (const [key, marker] of [
         ["2", "This month"],
         ["3", "MODELS ·"],
-        ["4", "ACCOUNTS ·"],
+        ["4", " ACCOUNTS"],
         ["1", " LIMITS"],
       ] as const) {
         run.send(key);
