@@ -25,7 +25,10 @@ function paceText(c: LimitCard, showCost: boolean): string {
   return v > 0 ? `$${v.toFixed(2)}/h` : "$0/h";
 }
 
-/** Every number of the cards: meters, countdowns, the pace, the verdict's time or share, the age. */
+/**
+ * Every number of the cards: meters, countdowns, the pace, the verdict's time or share (a
+ * weekly window's part of a day, an idle card's full window), the age.
+ */
 function cardNumbers(vm: OverviewVM, showCost: boolean, resets: boolean): string[] {
   const out: string[] = [];
   for (const c of vm.cards ?? []) {
@@ -41,9 +44,12 @@ function cardNumbers(vm: OverviewVM, showCost: boolean, resets: boolean): string
       }
     }
     const v = c.verdict;
-    if (v.kind === "hits") out.push(when(v.at, vm.asOf));
+    // A weekly window's time is a part of a day (T18): `~Sun evening`, whole.
+    if (v.kind === "hits") out.push(v.rough ?? when(v.at, vm.asOf));
     if (v.kind === "full") out.push(when(v.until, vm.asOf));
     if (v.kind === "week") out.push(`~${pct(v.utilization)}`);
+    if (v.kind === "idle" && v.high !== null)
+      out.push(`${v.high.window} ${pct(v.high.utilization)}`);
   }
   for (const call of vm.agents?.calls ?? []) {
     out.push(vm.asOf - call.at < 60_000 ? "<1m" : countdown(vm.asOf - call.at));

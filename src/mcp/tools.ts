@@ -102,9 +102,9 @@ export interface AccountEntry {
   is_current: boolean;
 }
 
-/** `projected_exhaustion_at` must always be labelled an estimate (T8). */
+/** `projected_exhaustion_at` must always be labelled an estimate (T8), a weekly one coarse (T18). */
 export const PROJECTION_NOTE =
-  "projected_exhaustion_at is an estimate from this machine's recent spend pace";
+  "projected_exhaustion_at is an estimate from this machine's spend pace: the last 30 minutes' (pace_basis 30m) or, for a weekly window, its average since the window began (window_avg); a weekly window's instant is coarse, good to about a part of a day";
 
 type StoreAccounts = Map<string, { id: number; lastSeen: number | null }>;
 

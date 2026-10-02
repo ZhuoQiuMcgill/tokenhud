@@ -1,4 +1,10 @@
-import { MIN_WINDOW_SPEND_USD } from "../limits/derive.ts";
+import {
+  isWeekly,
+  MIN_WINDOW_SPEND_USD,
+  type PaceBasis,
+  type Projection,
+  roughly,
+} from "../limits/derive.ts";
 import type { AccountLimits, LimitWindow } from "../limits/index.ts";
 import type { Zone } from "../query/tz.ts";
 import type { DetectedVia, Resolved } from "./accounts.ts";
@@ -18,15 +24,25 @@ export const DEFAULT_MIN_HEADROOM = 0.1;
 /** Limits older than this are called out in a verdict's reason. */
 const STALE_NOTE_S = 10 * 60;
 
-export interface WindowView {
+/** A window's pace and projection, as `limits` and `should_wait` report them. */
+export interface PaceView {
+  /** The pace the window projects from, USD per hour. */
+  pace_cost_per_h: number | null;
+  /** "30m": the last 30 minutes; "window_avg": a weekly window's average since it began. */
+  pace_basis: PaceBasis | null;
+  /**
+   * An estimate at that pace: an instant, "safe" (not before the reset), or null. A weekly
+   * window's instant is coarse, good to about a part of a day.
+   */
+  projected_exhaustion_at: string | "safe" | null;
+}
+
+export interface WindowView extends PaceView {
   kind: string;
   label: string;
   /** 0..1 (a provider may report more than 1). */
   utilization: number;
   resets_at: string;
-  pace_cost_per_h: number | null;
-  /** An estimate at the current pace: an instant, "safe" (not before the reset), or null. */
-  projected_exhaustion_at: string | "safe" | null;
   stale_s: number;
 }
 
@@ -50,6 +66,15 @@ export interface LimitsView {
 
 const round = (x: number, digits: number) => Math.round(x * 10 ** digits) / 10 ** digits;
 
+function paceView(w: LimitWindow, zone: Zone): PaceView {
+  const p: Projection = w.projected_exhaustion_at;
+  return {
+    pace_cost_per_h: w.pace_cost_per_h === null ? null : round(w.pace_cost_per_h, 2),
+    pace_basis: w.pace_basis,
+    projected_exhaustion_at: typeof p === "number" ? zone.iso(p) : p,
+  };
+}
+
 export function limitsView(resolved: Resolved, limits: AccountLimits, zone: Zone): LimitsView {
   return {
     account: {
@@ -68,11 +93,7 @@ export function limitsView(resolved: Resolved, limits: AccountLimits, zone: Zone
       label: w.label,
       utilization: round(w.utilization, 4),
       resets_at: zone.iso(w.resets_at),
-      pace_cost_per_h: w.pace_cost_per_h === null ? null : round(w.pace_cost_per_h, 2),
-      projected_exhaustion_at:
-        typeof w.projected_exhaustion_at === "number"
-          ? zone.iso(w.projected_exhaustion_at)
-          : w.projected_exhaustion_at,
+      ...paceView(w, zone),
       stale_s: w.stale_s,
     })),
     as_of: limits.as_of === null ? null : zone.iso(limits.as_of),
@@ -121,6 +142,16 @@ export function clock(t: number, now: number, zone: Zone): string {
     timeZone: "UTC",
   });
   return `${month} ${Number(iso.slice(8, 10))} ${time}`;
+}
+
+/**
+ * When a window is projected to run out: `at 15:08`, or for a weekly window, whose
+ * projection is good to about a part of a day, `~tonight` or `~Sun evening` (T18).
+ */
+function projected(w: LimitWindow, at: number, now: number, zone: Zone): string {
+  if (!isWeekly(w.window_s === null ? null : w.window_s * 1000))
+    return `at ${clock(at, now, zone)}`;
+  return roughly(at, now, (t) => zone.offset(t));
 }
 
 function resets(w: LimitWindow, now: number, zone: Zone): string {
@@ -213,7 +244,8 @@ export interface ShouldWaitArgs {
   model?: string | undefined;
 }
 
-export interface ShouldWaitResult {
+/** The verdict; with a `window`, that window's pace and projection too (`PaceView`). */
+export interface ShouldWaitResult extends Partial<PaceView> {
   wait: boolean;
   reason: string;
   window?: string;
@@ -295,7 +327,7 @@ export function evaluate(
     if (typeof p === "number" && p < w.resets_at && p < now + PROJECTION_HORIZON_MS) {
       hits.push({
         window: w,
-        why: `${w.label} is at ${percent(w.utilization)} and is projected (an estimate) to run out at ${clock(p, now, zone)}`,
+        why: `${w.label} is at ${percent(w.utilization)} and is projected (an estimate) to run out ${projected(w, p, now, zone)}`,
       });
       continue;
     }
@@ -341,6 +373,7 @@ export function evaluate(
         window: w.label,
         utilization: round(w.utilization, 4),
         resets_at: zone.iso(w.resets_at),
+        ...paceView(w, zone),
         wait_s: Math.max(0, Math.ceil((w.resets_at - now) / 1000)) + RESET_MARGIN_S,
       },
       window: w,
@@ -370,6 +403,7 @@ export function evaluate(
       window: top.label,
       utilization: round(top.utilization, 4),
       resets_at: zone.iso(top.resets_at),
+      ...paceView(top, zone),
       wait_s: 0,
     },
     window: top,

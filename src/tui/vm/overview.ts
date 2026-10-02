@@ -3,11 +3,18 @@
 // 5 h / 24 h / 7 d, the day's top models and the week's limit events. Computed in the
 // view-model Worker (and by `--once`), never on the UI thread.
 
-import { projectAtReset, type SpendSource, spendFromQueries } from "../../limits/derive.ts";
+import {
+  isWeekly,
+  projectAtReset,
+  roughly,
+  type SpendSource,
+  spendFromQueries,
+} from "../../limits/derive.ts";
 import { dedupeEvents } from "../../limits/events.ts";
 import type { AccountLimits, LimitWindow } from "../../limits/index.ts";
 import { windowScope } from "../../mcp/decide.ts";
 import type { Range } from "../../query/types.ts";
+import type { Zone } from "../../query/tz.ts";
 import { modelName } from "../format.ts";
 import {
   ALL_TIME,
@@ -53,8 +60,8 @@ const TOP_MODELS = 5;
 const EVENT_SPAN = 7 * DAY;
 /**
  * A weekly window projected to end at or above this share, without reaching 100 %, is
- * called out as "week ends ~N%" rather than "safe until reset". It is the threshold of
- * T8's `passed_80` event.
+ * called out as "week ends ~N%" rather than "safe until reset", and an idle card names a
+ * window this full. It is the threshold of T8's `passed_80` event.
  */
 export const WEEK_WARNING = 0.8;
 
@@ -79,52 +86,87 @@ function series(ctx: ComputeContext, window: ActivityWindow): ActivitySeries {
 
 /**
  * What the pace means for the account-wide windows (`Verdict`), in this order: a window at
- * 100 % now; the earliest projected to reach it; no spend at all; a weekly window projected
- * to end at `WEEK_WARNING` or more; every projection lasting to its reset; else too little
- * data to say. All but the first are T8's estimates.
+ * 100 % now; the earliest projected to reach it; a weekly window projected to end at
+ * `WEEK_WARNING` or more; no spend in the last 30 minutes (naming the fullest window when
+ * one is at `WEEK_WARNING` or more, so a nearly full week never reads as fine); every
+ * projection lasting to its reset; else too little data to say. All but the first are
+ * T8's estimates, each window's at its own pace (T18): with a weekly window's average
+ * pace, a quiet half hour no longer hides where the week is heading, so its projections
+ * come before `idle`. Also the window the verdict is about, whose pace the card shows.
  */
 function verdict(
   windows: readonly LimitWindow[],
   limits: AccountLimits,
   accts: readonly number[],
-  pace: number,
-  spend: SpendSource,
+  spent: (from: number, to: number) => number,
   now: number,
-): Verdict {
+  zone: Zone,
+): { verdict: Verdict; window: LimitWindow | null } {
   const full = windows.filter((w) => w.utilization >= 1 && w.resets_at > now);
   // Work resumes only once every full window has reset.
-  if (full.length > 0) return { kind: "full", until: Math.max(...full.map((w) => w.resets_at)) };
-  const hits = windows
-    .map((w) => w.projected_exhaustion_at)
-    .filter((p): p is number => typeof p === "number");
-  if (hits.length > 0) return { kind: "hits", at: Math.min(...hits) };
-  if (!(pace > 0)) return { kind: "idle" };
+  if (full.length > 0) {
+    const until = Math.max(...full.map((w) => w.resets_at));
+    return { verdict: { kind: "full", until }, window: null };
+  }
+  let first: { at: number; window: LimitWindow } | null = null;
+  for (const w of windows) {
+    const at = w.projected_exhaustion_at;
+    if (typeof at === "number" && (first === null || at < first.at)) first = { at, window: w };
+  }
+  if (first !== null) {
+    const { at, window } = first;
+    const rough = isWeekly(window.window_s === null ? null : window.window_s * 1000)
+      ? roughly(at, now, (t) => zone.offset(t))
+      : null;
+    return { verdict: { kind: "hits", at, rough }, window };
+  }
   const week = windows.find((w) => w.window_s === WEEK_S);
-  if (week !== undefined && accts.length > 0 && limits.as_of !== null) {
+  if (week?.pace_cost_per_h != null && accts.length > 0 && limits.as_of !== null) {
     const end = projectAtReset({
       utilization: week.utilization,
       capturedAt: limits.as_of,
       resetsAt: week.resets_at,
       windowMs: WEEK_S * 1000,
-      costPerHour: pace,
+      costPerHour: week.pace_cost_per_h,
       now,
-      spent: (from, to) => spend.cost(accts, from, to),
+      spent,
     });
-    if (end !== null && end >= WEEK_WARNING) return { kind: "week", utilization: end };
+    if (end !== null && end >= WEEK_WARNING) {
+      return { verdict: { kind: "week", utilization: end }, window: week };
+    }
   }
-  if (windows.some((w) => w.projected_exhaustion_at === "safe")) return { kind: "safe" };
-  return { kind: "unknown" };
+  if (!((limits.pace?.cost_per_h ?? 0) > 0)) {
+    let high: LimitWindow | null = null;
+    for (const w of windows) {
+      const shown = w.window_s === FIVE_HOURS_S || w.window_s === WEEK_S;
+      if (!shown || w.resets_at <= now || w.utilization < WEEK_WARNING) continue;
+      if (high === null || w.utilization > high.utilization) high = w;
+    }
+    const named =
+      high === null
+        ? null
+        : {
+            window: high.window_s === WEEK_S ? ("week" as const) : ("5h" as const),
+            utilization: high.utilization,
+          };
+    return { verdict: { kind: "idle", high: named }, window: null };
+  }
+  if (windows.some((w) => w.projected_exhaustion_at === "safe")) {
+    return { verdict: { kind: "safe" }, window: null };
+  }
+  return { verdict: { kind: "unknown" }, window: null };
 }
 
 /**
  * A card for an account: a root's, or one for every root on a subscription account they
  * share (`limits.group`), titled with their labels joined by " + ".
  */
-function card(
+export function limitCard(
   limits: AccountLimits,
   byIdentity: ReadonlyMap<string, AccountInfo>,
   spend: SpendSource,
   now: number,
+  zone: Zone,
 ): LimitCard {
   // Account-wide windows only: a model's own weekly limit binds that model alone (T9).
   const windows = limits.account.signed_in
@@ -134,10 +176,21 @@ function card(
     const w = windows.find((x) => x.window_s === seconds);
     return w === undefined ? null : { utilization: w.utilization, resetsAt: w.resets_at };
   };
-  const pace = { cost: limits.pace?.cost_per_h ?? 0, tokens: limits.pace?.tokens_per_h ?? 0 };
   const members = limits.group?.members ?? [{ id: limits.account.id, label: limits.account.label }];
   const stored = members.map((m) => byIdentity.get(m.id));
   const accts = stored.flatMap((a) => (a === undefined ? [] : [a.id]));
+  const spent = (from: number, to: number) => spend.cost(accts, from, to);
+  const judged = verdict(windows, limits, accts, spent, now, zone);
+  // The pace the verdict comes from: its window's, else the last 30 minutes.
+  const w = judged.window;
+  const pace =
+    w?.pace_basis != null
+      ? { cost: w.pace_cost_per_h ?? 0, tokens: w.pace_tokens_per_h ?? 0, basis: w.pace_basis }
+      : {
+          cost: limits.pace?.cost_per_h ?? 0,
+          tokens: limits.pace?.tokens_per_h ?? 0,
+          basis: "30m" as const,
+        };
   return {
     account: accts[0] ?? null,
     // The labels every other view shows (a configured one, else the store's).
@@ -147,7 +200,7 @@ function card(
     fiveHour: meter(FIVE_HOURS_S),
     week: meter(WEEK_S),
     pace,
-    verdict: verdict(windows, limits, accts, pace.cost, spend, now),
+    verdict: judged.verdict,
     capturedAt: limits.as_of,
   };
 }
@@ -217,7 +270,7 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
         }
       }
     }
-    cards = shown.map((l) => card(l, byIdentity, source, ctx.now));
+    cards = shown.map((l) => limitCard(l, byIdentity, source, ctx.now, ctx.zone));
   }
   // The store's limit events, read as History reads them (T12's), newest first; one per
   // window instance for roots on one account, labelled as their card is.

@@ -125,7 +125,9 @@ describe("limits", () => {
     expect(isError).toBe(false);
     // Pace: $5 in the last 30 min = $10/h. 5-HOUR opened at 10:38Z; $16 spent before the
     // capture, so 0.95 / 16 per dollar; the last 5 % lasts 0.05 / (0.059375 * 10) h =
-    // 303.158 s. WEEKLY: 0.4 / 16 per dollar, 0.6 / 0.25 = 2.4 h, so 17:24Z.
+    // 303.158 s. WEEKLY (T18) projects from its average since it opened on Sep 27 at
+    // 15:00Z: $16 over 96 h, $0.17/h. 0.4 / 16 per dollar: 0.6 / (0.025 / 6) = 144 h, after
+    // the Oct 4 reset, so safe.
     expect(value).toEqual({
       account: {
         label: "personal",
@@ -143,6 +145,7 @@ describe("limits", () => {
           utilization: 0.95,
           resets_at: "2026-10-01T15:38:00.000Z",
           pace_cost_per_h: 10,
+          pace_basis: "30m",
           projected_exhaustion_at: "2026-10-01T15:05:03.158Z",
           stale_s: 30,
         },
@@ -151,14 +154,15 @@ describe("limits", () => {
           label: "WEEKLY",
           utilization: 0.4,
           resets_at: "2026-10-04T15:00:00.000Z",
-          pace_cost_per_h: 10,
-          projected_exhaustion_at: "2026-10-01T17:24:00.000Z",
+          pace_cost_per_h: 0.17,
+          pace_basis: "window_avg",
+          projected_exhaustion_at: "safe",
           stale_s: 30,
         },
       ],
       as_of: "2026-10-01T14:59:30.000Z",
       error: null,
-      note: "projected_exhaustion_at is an estimate from this machine's recent spend pace",
+      note: "projected_exhaustion_at is an estimate from this machine's spend pace: the last 30 minutes' (pace_basis 30m) or, for a weekly window, its average since the window began (window_avg); a weekly window's instant is coarse, good to about a part of a day",
       warnings: [],
     });
     expect(f.refreshed).toEqual([[f.personal.identity, 60]]);
@@ -210,6 +214,9 @@ describe("should_wait", () => {
       window: "5-HOUR",
       utilization: 0.95,
       resets_at: "2026-10-01T15:38:00.000Z",
+      pace_cost_per_h: 10,
+      pace_basis: "30m",
+      projected_exhaustion_at: "2026-10-01T15:05:03.158Z",
       wait_s: 38 * 60 + 30,
     });
     expect(f.refreshed).toEqual([[f.personal.identity, 60]]);

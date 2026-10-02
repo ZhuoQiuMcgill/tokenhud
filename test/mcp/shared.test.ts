@@ -101,7 +101,8 @@ describe("limits and should_wait for a session in either root", () => {
       // Pace: $5.00 (personal) + $2.50 (work) in the last 30 min = $15/h.
       // 5-HOUR from 10:38Z: $11 + $5 + $2.50 = $18.50 before the capture at 95 %, so
       // 0.95 / 18.5 per dollar; the last 5 % lasts 0.05 * 18.5 / (0.95 * 15) h = 233.684 s.
-      // WEEKLY: 0.4 / 18.5 per dollar; 0.6 * 18.5 / (0.4 * 15) = 1.85 h after 15:00Z.
+      // WEEKLY (T18): both roots' average since Sep 27 15:00Z, $18.50 over 96 h = $0.19/h;
+      // 0.4 / 18.5 per dollar, so 0.6 * 96 / 0.4 = 144 h, after the Oct 4 reset: safe.
       expect(value.windows).toEqual([
         {
           kind: "session",
@@ -109,6 +110,7 @@ describe("limits and should_wait for a session in either root", () => {
           utilization: 0.95,
           resets_at: "2026-10-01T15:38:00.000Z",
           pace_cost_per_h: 15,
+          pace_basis: "30m",
           projected_exhaustion_at: "2026-10-01T15:03:53.684Z",
           stale_s: 30,
         },
@@ -117,8 +119,9 @@ describe("limits and should_wait for a session in either root", () => {
           label: "WEEKLY",
           utilization: 0.4,
           resets_at: "2026-10-04T15:00:00.000Z",
-          pace_cost_per_h: 15,
-          projected_exhaustion_at: "2026-10-01T16:51:00.000Z",
+          pace_cost_per_h: 0.19,
+          pace_basis: "window_avg",
+          projected_exhaustion_at: "safe",
           stale_s: 30,
         },
       ]);

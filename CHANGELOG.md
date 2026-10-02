@@ -98,6 +98,19 @@ release candidate 0.1.0-rc.1 has all of it.
   as Models does; the Overview's agents card names each session's project (the name of
   its directory, never the path) where it said "claude session".
 
+### Fixed since 0.1.0-rc.1
+
+- **Weekly projections no longer carry a 30-minute burst over the whole week.** A weekly
+  window is projected at its average pace since it began, idle time and nights included
+  (after its first 6 hours; until then, the last 30 minutes'); the 5-hour window keeps the
+  30-minute pace. Two agents working at once for half an hour no longer say a weekly limit
+  runs out tonight. A weekly window's time shows as a part of a day, never to the minute
+  (`100% ~Sun evening`, `~tomorrow morning`), and each card's pace says which it is:
+  `pace $X/h (30m)` or `avg $X/h this week`. MCP's `limits` and `should_wait` report
+  `pace_basis` (`30m` or `window_avg`) with each window's pace and projection.
+- **An idle card with a nearly full window says so**: `idle · week 83%`, in red, instead of
+  a plain `idle` that read as fine.
+
 ### For contributors
 
 - Tests can never start the real `claude` or `codex`: a test guard puts stubs first on
