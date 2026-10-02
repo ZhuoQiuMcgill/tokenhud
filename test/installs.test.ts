@@ -203,17 +203,19 @@ describe("which copy to keep, and how to remove the others", () => {
     const a = copy("/a", "binary", "0.1.0-rc.1");
     const b = copy("/b", "bun", "0.1.0");
     const c = copy("/c", "npm", "0.1.0");
-    expect(copyToKeep([a, b, c])).toBe(b);
-    expect(copyToKeep([a, c])).toBe(c);
-    expect(copyToKeep([copy("/x", "binary", "0.2.0"), b])?.path).toBe("/x");
-    expect(copyToKeep([copy("/x", "binary", null), copy("/y", "npm", null)])?.path).toBe("/y");
-    expect(copyToKeep([copy("/x", "binary", null), copy("/y", "binary", "0.0.1")])?.path).toBe(
+    expect(copyToKeep([a, b, c], "linux")).toBe(b);
+    expect(copyToKeep([a, c], "linux")).toBe(c);
+    expect(copyToKeep([copy("/x", "binary", "0.2.0"), b], "linux")?.path).toBe("/x");
+    expect(copyToKeep([copy("/x", "binary", null), copy("/y", "npm", null)], "linux")?.path).toBe(
       "/y",
     );
-    expect(copyToKeep([copy("/x", "binary", "1.0.0"), copy("/y", "binary", "1.0.0")])?.path).toBe(
-      "/x",
-    );
-    expect(copyToKeep([])).toBeUndefined();
+    expect(
+      copyToKeep([copy("/x", "binary", null), copy("/y", "binary", "0.0.1")], "linux")?.path,
+    ).toBe("/y");
+    expect(
+      copyToKeep([copy("/x", "binary", "1.0.0"), copy("/y", "binary", "1.0.0")], "linux")?.path,
+    ).toBe("/x");
+    expect(copyToKeep([], "linux")).toBeUndefined();
     // On Windows bun can't run tokenhud's command: its copy only when there is no other.
     expect(copyToKeep([b, copy("/old", "binary", "0.0.1")], "win32")?.path).toBe("/old");
     expect(copyToKeep([b], "win32")).toBe(b);
