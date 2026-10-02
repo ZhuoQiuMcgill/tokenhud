@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "tokenhud": {
+      "command": "tokenhud",
+      "args": ["mcp"]
+    }
+  }
+}

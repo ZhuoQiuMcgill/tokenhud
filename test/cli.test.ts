@@ -21,7 +21,12 @@ const ARCHITECTURE_COMMANDS = [
   "tokenhud doctor",
   "tokenhud update",
 ];
-const AVAILABLE = new Set(["tokenhud json <query>", "tokenhud import-cc-usage", "tokenhud doctor"]);
+const AVAILABLE = new Set([
+  "tokenhud json <query>",
+  "tokenhud mcp",
+  "tokenhud import-cc-usage",
+  "tokenhud doctor",
+]);
 
 describe("--version", () => {
   test("prints the package version and exits 0", () => {
@@ -69,10 +74,10 @@ describe("--help", () => {
   });
 
   test("wins after a command that is not available yet", () => {
-    expect(run("mcp", "--help")).toEqual(help);
+    expect(run("update", "--help")).toEqual(help);
   });
 
-  test.each(["json", "import-cc-usage", "doctor"])(
+  test.each(["json", "mcp", "import-cc-usage", "doctor"])(
     "'%s --help' is that command's own help",
     (cmd) => {
       const own = run(cmd, "--help");
@@ -88,7 +93,6 @@ describe("commands that are not available yet", () => {
   test.each([
     [[], "tokenhud"],
     [["--once"], "--once"],
-    [["mcp"], "mcp"],
     [["update"], "update"],
   ])("%j exits 2 naming '%s'", (args, name) => {
     expect(run(...args)).toEqual({
@@ -103,7 +107,7 @@ describe("usage errors", () => {
   test.each([
     [["--bogus"], "unknown option '--bogus'"],
     [["-x"], "unknown option '-x'"],
-    [["mcp", "--bogus"], "unknown option '--bogus'"],
+    [["update", "--bogus"], "unknown option '--bogus'"],
     [["--bogus", "doctor"], "unknown option '--bogus'"],
     [["--bogus", "--help"], "unknown option '--bogus'"],
     [["frobnicate"], "unknown command 'frobnicate'"],

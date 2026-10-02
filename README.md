@@ -8,13 +8,70 @@ their own limits and wait for a reset instead of failing mid-task.
 > successor to [cc-usage](https://github.com/ZhuoQiuMcgill/cc-usage), which is now frozen.
 > When tokenhud ships, it will import cc-usage's usage history.
 
+## Use with Claude Code
+
+tokenhud's MCP server lets a Claude Code agent check the limits of the account it runs
+on, decide whether to pause, and wait for a reset. That matters most for sessions that
+can't resume on their own: `claude -p`, background tasks and teammates. Interactive
+Claude Code resumes by itself after a reset, so there an agent should tell you instead of
+waiting.
+
+### Install
+
+Install tokenhud first, so `tokenhud` is on the PATH Claude Code starts with: the plugin
+and the MCP server both run `tokenhud mcp`. Otherwise `/mcp` in Claude Code shows the
+server as failed.
+
+Plugins and user-scope MCP servers belong to one Claude config dir, so install once per
+account: once for `~/.claude`, and once more for each `CLAUDE_CONFIG_DIR` you use.
+`tokenhud doctor` shows which accounts have it, and whether `tokenhud` is on the PATH.
+
+**The plugin** adds the MCP server and a skill that tells agents when to use it:
+
+```sh
+claude plugin marketplace add ZhuoQiuMcgill/tokenhud
+claude plugin install tokenhud@tokenhud
+
+# another account
+CLAUDE_CONFIG_DIR=~/.claude-work claude plugin marketplace add ZhuoQiuMcgill/tokenhud
+CLAUDE_CONFIG_DIR=~/.claude-work claude plugin install tokenhud@tokenhud
+```
+
+**The MCP server on its own:**
+
+```sh
+claude mcp add -s user tokenhud -- tokenhud mcp
+CLAUDE_CONFIG_DIR=~/.claude-work claude mcp add -s user tokenhud -- tokenhud mcp
+```
+
+**Native Windows:** an npm install puts a `tokenhud.cmd` shim on the PATH, which Claude
+Code can't start directly. Register the server through `cmd` instead of installing the
+plugin: `claude mcp add -s user tokenhud -- cmd /c tokenhud mcp`. The standalone
+`tokenhud.exe` (installed with `install.ps1`) works directly, plugin included.
+
+### Tools
+
+| Tool | What it does |
+|---|---|
+| `limits` | The account's limit windows (5-hour, weekly, per model): utilization from 0 to 1, reset time, spend pace, and when the window would run out at that pace (an estimate). Fetches fresh limits when the cached ones are over 60 s old. |
+| `should_wait` | `wait: true` when a window is at 90 % or more (`min_headroom`, default 0.1), when `estimated_cost` (USD) would take it there, or when it is projected to run out within 10 minutes, before its reset. The 5-hour and weekly windows always count; a per-model window (such as a model's weekly limit) counts only when `model` names that model, and is otherwise just mentioned. Returns a short reason and `wait_s`: until the reset, plus 30 s. |
+| `wait_for_reset` | Waits until the window `should_wait` binds on (for the same `model`) resets, or its utilization drops under `until_utilization_below`, for at most `max_wait_s` (5 hours or less). Sends progress every 30 s, re-checks the limits every 5 minutes, and stops at once when the call is cancelled. |
+| `usage` | Tokens and API-equivalent cost for a period, optionally by model, account, day, week or month (at most 500 groups per call), as `tokenhud json usage` prints them ([schema](docs-public/JSON.md)), plus `stale_s`, the age of the store's data. |
+| `accounts` | The accounts on this machine, from cached data only: whether their limits can be read here (`signed_in`, null until first checked), their last usage, and which one this session runs on. |
+
+Every tool answers for the account the session runs on: `CLAUDE_CONFIG_DIR`, else
+`~/.claude`, confirmed by finding the session's transcript. `limits` reports how it was
+found (`detected_via`). Pass `account` (a label from `accounts`) for another account, or
+`provider: "codex"` for Codex. An account that isn't signed in on this machine reports
+`signed_in: false`, and `should_wait` doesn't make agents wait on it.
+
 ## Development
 
 Prerequisite: [Bun](https://bun.com) 1.4.2 or later. CI pins 1.4.2; Bun 1.3.12 and 1.4.0
 produced macOS binaries with broken signatures.
 
 ```sh
-bun install      # dev tooling only; tokenhud has no runtime dependencies yet
+bun install      # the MCP SDK (the one runtime dependency) and dev tooling
 bun run check    # typecheck (tsc), lint and format check (Biome), tests (bun test)
 bun run build    # standalone binary for this machine at dist/tokenhud
 ```
@@ -30,12 +87,14 @@ Repository layout:
 ```
 src/cli.ts         entry point: parses arguments and dispatches commands
 src/version.ts     the version, taken from package.json at build time
-src/commands/      one module per subcommand: json, doctor, import-cc-usage
+src/commands/      one module per subcommand: json, mcp, doctor, import-cc-usage
+src/mcp/           the MCP server: account detection, the tools, waiting for a reset
 src/query/         the query layer: periods, totals and groupings, priced to the cent
 src/store/         the SQLite usage store and its hourly rollup
 src/pricing/       the dated price table and the cost engine
 test/              bun test suites; they run the CLI in a subprocess
 scripts/build.ts   wrapper around bun build --compile
+plugin/            the Claude Code plugin (listed by .claude-plugin/marketplace.json)
 ```
 
 ## License

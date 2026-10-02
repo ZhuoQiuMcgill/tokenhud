@@ -16,11 +16,13 @@ const PLANNED: ReadonlyArray<readonly [usage: string, summary: string]> = [
   ["tokenhud update", "self-update (npm or binary)"],
 ];
 
-type Command = (args: readonly string[]) => number;
+type Command = (args: readonly string[]) => number | Promise<number>;
 
 /** The implemented commands. Each parses its own arguments, its --help included. */
-const COMMANDS: ReadonlyMap<string, Command> = new Map([
+const COMMANDS: ReadonlyMap<string, Command> = new Map<string, Command>([
   ["json", runJson],
+  // Loaded on use: the MCP SDK is the largest module tree, and only this command needs it.
+  ["mcp", async (args) => (await import("./commands/mcp.ts")).runMcp(args)],
   ["import-cc-usage", runImportCcUsage],
   ["doctor", runDoctor],
 ]);
@@ -70,8 +72,8 @@ function usageError(message: string): number {
 // Arguments are read left to right and the first decisive one wins: `--help` and
 // `--version` answer at once, and an unknown option or command fails at once. An
 // implemented command takes every argument after its name, so `tokenhud doctor --help`
-// is the doctor's help, while `tokenhud mcp --help` is still the general one.
-function main(args: readonly string[]): number {
+// is the doctor's help, while `tokenhud update --help` is still the general one.
+function main(args: readonly string[]): number | Promise<number> {
   let subcommand: string | undefined;
   let once = false;
   for (const [i, arg] of args.entries()) {
@@ -108,5 +110,5 @@ if (argv[0] === "ingest") {
   const { runIngest } = await import("./commands/ingest.ts");
   process.exitCode = await runIngest(argv.slice(1));
 } else {
-  process.exitCode = main(argv);
+  process.exitCode = await main(argv);
 }

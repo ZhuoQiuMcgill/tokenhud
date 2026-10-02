@@ -52,7 +52,7 @@ Options:
 Prints one JSON document (schema ${JSON_SCHEMA}) from the store as it is; nothing is ingested.
 Exit codes: 0 ok, 1 store error, 2 bad arguments (errors are JSON on stderr).`;
 
-class BadArgument extends Error {}
+export class BadArgument extends Error {}
 
 function fail(code: JsonErrorCode, message: string): number {
   const error: JsonError = { schema: JSON_SCHEMA, error: { code, message } };
@@ -69,7 +69,7 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-
  * offset: a bare local time would be ambiguous across DST. Nothing before 1970: the store
  * holds no usage then, and a range from year 1 would print tens of thousands of groups.
  */
-function parseBound(option: string, text: string, zone: Zone, until: boolean): number {
+export function parseBound(option: string, text: string, zone: Zone, until: boolean): number {
   let at: number | undefined;
   const date = DATE.exec(text);
   if (date !== null) {
