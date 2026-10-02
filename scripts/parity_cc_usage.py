@@ -13,13 +13,24 @@ Writes JSON:
 - `cells`: per (local day, account identity, normalised model), the ledger's token sums,
   cost by cc-usage's `compute_cost`, and row count;
 - `codex`: every record cc-usage's own parser emits from those rollouts today, with its
-  key (as a string), timestamp (ms), model and counts, and the speed tier its rollout sets.
+  key (as a string), timestamp (ms), model and counts, the speed tier its rollout sets, and
+  whether it belongs to a child rollout's replay of its parent.
 
-The tier is derived here, apart from both apps: cc-usage ignores tiers, and the gate must
-not take tokenhud's word for them. A rollout starts standard; each
-`thread_settings_applied` event with a `service_tier` sets it ("priority" and "fast" are
-fast, anything else standard), and one without the key keeps it. A record takes the tier
-in effect when the parser emits it.
+Tier and replay are derived here, from the rollouts' structure, apart from both apps:
+cc-usage knows neither, and the gate must not take tokenhud's word for them.
+
+- **Tier.** A rollout starts standard; each `thread_settings_applied` event with a
+  `service_tier` sets it ("priority" and "fast" are fast, anything else standard), and one
+  without the key keeps it. A record takes the tier in effect when the parser emits it.
+- **Replay.** Only a child rollout replays: its first line is a `session_meta` naming a
+  parent (`forked_from_id`, or `source.subagent.thread_spawn.parent_thread_id`). Its own
+  usage starts at the child-turn boundary, the first `inter_agent_communication` (or
+  `..._metadata`) event with `trigger_turn` true, or rather the `task_started` just before
+  it when there is one: the replayed head holds the parent's own `task_started` lines, so
+  only the one that opens the child's first turn counts. A record before that boundary is
+  replay. A child without such a marker (a fork, or a subagent that never got one) replays
+  exactly the events whose cumulative `total_token_usage` also occurs in its parent's
+  rollout: those totals are the parent's history, not the child's own.
 
 Content-free: dates, account identities (hashes), keys, model ids and numbers.
 """
@@ -35,7 +46,7 @@ from zoneinfo import ZoneInfo
 
 import cc_usage
 from cc_usage.cost import compute_cost, get_rates, normalize_model
-from cc_usage.parser import Parser
+from cc_usage.parser import Parser, codex_session_id
 from cc_usage.pricing import load_pricing
 
 FAST = {"priority", "fast"}
@@ -90,31 +101,126 @@ def settings_tier(line: bytes, tier: int) -> int:
     return 1 if settings["service_tier"] in FAST else 0
 
 
-def codex_records(rollouts: str, pricing: dict) -> list:
-    parser = Parser(pricing, roots=[])
-    tiers: dict[int, int] = {}
-    paths = sorted(Path(p) for p in Path(rollouts).read_text("utf-8").splitlines() if p)
+def event(line: bytes) -> dict | None:
+    try:
+        obj = json.loads(line)
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def payload_of(obj: dict) -> dict:
+    payload = obj.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def parent_of(first: dict | None) -> str | None:
+    """The parent session a rollout's first line names, if it is a child."""
+    if first is None or first.get("type") != "session_meta":
+        return None
+    meta = payload_of(first)
+    if isinstance(meta.get("forked_from_id"), str):
+        return meta["forked_from_id"].lower()
+    source = meta.get("source") if isinstance(meta.get("source"), dict) else {}
+    subagent = source.get("subagent") if isinstance(source.get("subagent"), dict) else {}
+    spawn = subagent.get("thread_spawn") if isinstance(subagent.get("thread_spawn"), dict) else {}
+    parent = spawn.get("parent_thread_id")
+    return parent.lower() if isinstance(parent, str) else None
+
+
+def total_of(obj: dict) -> tuple | None:
+    info = payload_of(obj).get("info")
+    total = info.get("total_token_usage") if isinstance(info, dict) else None
+    if not isinstance(total, dict):
+        return None
+    return (total.get("input_tokens"), total.get("cached_input_tokens"), total.get("output_tokens"))
+
+
+def totals_of(paths: list[Path]) -> set:
+    """Every cumulative total a session's rollouts report."""
+    out: set = set()
     for path in paths:
-        source = str(path)
-        tier = 0
         try:
             fh = open(path, "rb")
         except OSError:
             continue
         with fh:
             for line in fh:
+                if b"token_count" not in line:
+                    continue
+                obj = event(line)
+                if obj is not None and payload_of(obj).get("type") == "token_count":
+                    total = total_of(obj)
+                    if total is not None:
+                        out.add(total)
+    return out
+
+
+def codex_records(rollouts: str, pricing: dict) -> list:
+    parser = Parser(pricing, roots=[])
+    tiers: dict[int, int] = {}
+    replays: dict[int, bool] = {}
+    paths = sorted(Path(p) for p in Path(rollouts).read_text("utf-8").splitlines() if p)
+    sessions: dict[str, list[Path]] = {}
+    for path in paths:
+        sessions.setdefault(codex_session_id(str(path)).lower(), []).append(path)
+    parent_totals: dict[str, set] = {}
+    for path in paths:
+        source = str(path)
+        tier = 0
+        parent: str | None = None
+        first = True
+        task_started: int | None = None  # the latest task_started line, until the boundary
+        boundary: int | None = None
+        emitted: list[tuple[int, int, tuple | None]] = []  # (line, key, total)
+        try:
+            fh = open(path, "rb")
+        except OSError:
+            continue
+        with fh:
+            for index, line in enumerate(fh):
                 if not line.strip():
                     continue
+                if first:
+                    first = False
+                    parent = parent_of(event(line))
                 if b"thread_settings_applied" in line:
                     tier = settings_tier(line, tier)
+                if parent is not None and boundary is None and (
+                    b"task_started" in line or b"trigger_turn" in line
+                ):
+                    obj = event(line) or {}
+                    kind = obj.get("type")
+                    if kind == "event_msg" and payload_of(obj).get("type") == "task_started":
+                        task_started = index
+                    elif (
+                        kind in ("inter_agent_communication_metadata", "inter_agent_communication")
+                        and payload_of(obj).get("trigger_turn") is True
+                    ):
+                        boundary = index if task_started is None else task_started
+                total = None
+                if parent is not None and b"token_count" in line:
+                    obj = event(line)
+                    total = total_of(obj) if obj is not None else None
                 before = len(parser.records)
                 parser._ingest_line(line, source)
                 for rec in parser.records[before:]:
                     if rec.lkey is not None:
                         tiers.setdefault(rec.lkey, tier)
+                        emitted.append((index, rec.lkey, total))
+        for index, key, total in emitted:
+            if parent is None:
+                replay = False
+            elif boundary is not None:
+                replay = index < boundary
+            else:
+                if parent not in parent_totals:
+                    parent_totals[parent] = totals_of(sessions.get(parent, []))
+                replay = total is not None and total in parent_totals[parent]
+            replays.setdefault(key, replay)
     return [
         [str(r.lkey), round(r.ts * 1000), r.model_raw, r.input_tokens, r.output_tokens,
-         r.cache_read, tiers.get(r.lkey, 0)]
+         r.cache_read, tiers.get(r.lkey, 0), 1 if replays.get(r.lkey) else 0]
         for r in parser.records
         if r.lkey is not None
     ]

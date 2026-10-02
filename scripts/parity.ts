@@ -11,8 +11,8 @@
 //    pass over every real root, Claude and Codex.
 // 3. cc-usage's side (scripts/parity_cc_usage.py, under cc-usage's interpreter): the ledger
 //    copy priced with cc-usage's own compute_cost and pricing, and cc-usage's own parser
-//    run over the Codex rollouts, with each record's tier read from its rollout's settings
-//    events by the script's own code.
+//    run over the Codex rollouts, with each record's tier and replay status read from its
+//    rollout's structure by the script's own code.
 // 4. tokenhud's numbers: T6's queries over the temp store.
 //
 // "Now" is pinned to the ledger copy's newest row: tokenhud rows after it are counted, not
@@ -147,7 +147,7 @@ interface PythonSide {
   version: string;
   pricing: Record<string, Card>;
   cells: [string, string, string, number, number, number, number, number, number][];
-  codex: [string, number, string, number, number, number, number][];
+  codex: [string, number, string, number, number, number, number, number][];
 }
 
 interface Report extends Verdict {
@@ -273,9 +273,9 @@ async function run(options: {
       py.pricing,
     );
     const codex = new Map<bigint, CodexRecord>(
-      py.codex.map(([key, ts, model, inp, outp, cr, tier]) => [
+      py.codex.map(([key, ts, model, inp, outp, cr, tier, replay]) => [
         BigInt(key),
-        { ts, model, inp, outp, cr, tier },
+        { ts, model, inp, outp, cr, tier, replay: replay === 1 },
       ]),
     );
     const theirs: Cells = new Map(

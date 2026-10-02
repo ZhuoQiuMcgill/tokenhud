@@ -4,9 +4,10 @@
 // Row by row, cc-usage's row is walked to tokenhud's through the known fixes (ARCHITECTURE
 // §6.4), in order, and each fix's effect is accepted only when an independent derivation
 // gives exactly the same:
-// - replay: the row is gone from tokenhud, its key is tombstoned as a Codex replay, and
+// - replay: the row is gone from tokenhud, its key is tombstoned as a Codex replay,
 //   cc-usage's own parser, run on the rollouts today, still emits exactly that row (same
-//   key, timestamp, model and counts);
+//   key, timestamp, model and counts), and the rollout's structure, read by the harness's
+//   own code, puts it in a child rollout's replay of its parent (see parity_cc_usage.py);
 // - dated-price: the change equals the row's tokens at the dated card in effect then minus
 //   cc-usage's flat card, priced by independent code (independent.ts);
 // - tier / unpriced-tier: tokenhud prices the row fast exactly when its rollout's own
@@ -98,7 +99,10 @@ export interface Row {
   tier: number;
 }
 
-/** A Codex record as cc-usage's parser emits it today, with the tier its rollout sets. */
+/**
+ * A Codex record as cc-usage's parser emits it today, with the tier its rollout sets and
+ * whether it lies in a child rollout's replay of its parent.
+ */
 export interface CodexRecord {
   ts: number;
   model: string;
@@ -106,6 +110,7 @@ export interface CodexRecord {
   outp: number;
   cr: number;
   tier: number;
+  replay: boolean;
 }
 
 export interface Cell {
@@ -317,11 +322,16 @@ export function judge(input: Inputs): Verdict {
     // replay: gone from tokenhud, tombstoned, and still emitted as stored by cc-usage's parser.
     let s: Row | null = c;
     if (c !== null && t === null) {
-      if (tombstoneIsReplay(input, c) && sameRecord(c, input.codex.get(key))) {
+      const parsed = input.codex.get(key);
+      if (!tombstoneIsReplay(input, c) && input.tombstones.has(key)) {
+        why.push("a row removed for a reason other than a Codex replay");
+      } else if (tombstoneIsReplay(input, c) && !sameRecord(c, parsed)) {
+        why.push("a tombstoned row cc-usage's parser does not emit as stored");
+      } else if (tombstoneIsReplay(input, c) && parsed?.replay !== true) {
+        why.push("a removed row that is not in a child rollout's replay of its parent");
+      } else if (tombstoneIsReplay(input, c)) {
         count("replay", c, 0, -tokensOf(c), -costOf(c, tables.flat, 0));
         s = null;
-      } else if (input.tombstones.has(key)) {
-        why.push("a tombstoned row cc-usage's parser does not emit as stored");
       } else {
         why.push("a cc-usage row tokenhud does not have");
       }

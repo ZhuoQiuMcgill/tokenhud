@@ -1,7 +1,8 @@
 // The parity gate's judgement (scripts/parity/classify.ts) on a small synthetic machine:
 // clean, it passes with each fix in its category; with any of the T7 critique's injected
-// regressions (a Codex double count, raised rows, rows wrongly marked fast), or a replay
-// row cc-usage's parser does not confirm, or a pricing bug, it fails.
+// regressions (a Codex double count, raised rows, rows wrongly marked fast, legitimate rows
+// dropped as replay), or a replay row cc-usage's parser does not confirm, or a pricing
+// bug, it fails.
 import { describe, expect, test } from "bun:test";
 import {
   type CodexRecord,
@@ -60,7 +61,10 @@ const ours = (): Row[] => [
   row(8n, { ts: now - 60_000 }),
 ];
 
-/** cc-usage's parser over today's rollouts, with the tier each rollout sets. */
+/**
+ * cc-usage's parser over today's rollouts, with the tier each rollout sets and the replay
+ * status its structure gives: only key 6 lies in a child rollout's replayed head.
+ */
 function codex(rows: Row[]): Map<bigint, CodexRecord> {
   const fast = new Set([3n, 5n]);
   return new Map(
@@ -75,6 +79,7 @@ function codex(rows: Row[]): Map<bigint, CodexRecord> {
           outp: r.outp,
           cr: r.cr,
           tier: fast.has(r.key) ? 1 : 0,
+          replay: r.key === 6n,
         },
       ]),
   );
@@ -194,6 +199,24 @@ describe("the parity gate", () => {
     expect(judge(inputs({ ours: missed })).unexplained.rows).toEqual({
       "a row its rollout sets fast that tokenhud prices standard": 1,
     });
+  });
+
+  // The T7 re-review's regression: an over-reaching replay skip drops real usage.
+  test("fails legitimate rows dropped as replay: a child's own turn, or a main session's", () => {
+    const dropped = ours().filter((r) => r.key !== 3n && r.key !== 7n); // fast and standard
+    const given = inputs({ ours: dropped });
+    const tombstones = new Map([
+      [6n, "codex-replay"],
+      [3n, "codex-replay"],
+      [7n, "codex-replay"],
+    ]);
+    const v = judge({ ...given, tombstones });
+    expect(v.passed).toBe(false);
+    expect(v.unexplained.rows).toEqual({
+      "a removed row that is not in a child rollout's replay of its parent": 2,
+    });
+    expect(v.categories.replay.rows).toBe(1); // only the real one
+    expect(v.categories.unexplained.tokens).toBe(-2 * 61_000);
   });
 
   test("fails a removed row cc-usage's parser does not emit as stored", () => {
