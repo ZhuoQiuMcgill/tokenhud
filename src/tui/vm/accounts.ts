@@ -104,6 +104,11 @@ export interface AccountRow extends AccountInfo, Priced {
   readonly sharedWith: readonly string[];
   /** The same 30 days of every root on that account together; null when it shares none. */
   readonly accountLast30: Priced | null;
+  /**
+   * The roots on that account showed different limits at their last comparison (a manual
+   * link is kept regardless: the view says so).
+   */
+  readonly sharedDiffers: boolean;
   /** The weekly window's last weeks, oldest first; null without a weekly window. */
   readonly weekly: readonly WeekSlot[] | null;
   /** Its newest MCP tool call in the last 10 minutes. */
@@ -280,6 +285,7 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
       sharedWith: others.map((o) => o.stored?.label ?? o.label),
       accountLast30:
         others.length === 0 ? null : amount(q.totals({ range: last30, accounts: shared }).usage),
+      sharedDiffers: l?.group?.differs ?? false,
       weekly,
       agent: call === undefined ? null : { at: call.at, tool: call.tool, calls: calls.length },
     };

@@ -164,7 +164,11 @@ export async function runApp(boot: Boot): Promise<number> {
         importLedger: paths.ccUsageLedger,
         // T8's schedule: a fetch after the first scan, then every 5 minutes per account,
         // with its back-off, history-only accounts left alone and the cross-process lease.
-        limits: { limitsPath: paths.limits, ccUsageLimits: paths.ccUsageLimits },
+        limits: {
+          limitsPath: paths.limits,
+          ccUsageLimits: paths.ccUsageLimits,
+          configPath: paths.config,
+        },
       },
       (message) => onIngest(own, message),
       (code) => {

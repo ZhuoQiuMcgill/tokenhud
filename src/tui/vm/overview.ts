@@ -4,6 +4,7 @@
 // view-model Worker (and by `--once`), never on the UI thread.
 
 import { projectAtReset, type SpendSource, spendFromQueries } from "../../limits/derive.ts";
+import { dedupeEvents } from "../../limits/events.ts";
 import type { AccountLimits, LimitWindow } from "../../limits/index.ts";
 import { windowScope } from "../../mcp/decide.ts";
 import type { Range } from "../../query/types.ts";
@@ -14,6 +15,7 @@ import {
   type Computed,
   ROLLING_REFRESH_MS,
   scoped,
+  sharedGroups,
 } from "./compute.ts";
 import { modelName } from "./models.ts";
 import type {
@@ -217,15 +219,24 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
     }
     cards = shown.map((l) => card(l, byIdentity, source, ctx.now));
   }
-  // The store's limit events, read as History reads them (T12's), newest first.
-  const events: OverviewEvent[] = (
-    ctx.limitEvents?.({ from: ctx.now - EVENT_SPAN, to: ctx.now + 1 }) ?? []
+  // The store's limit events, read as History reads them (T12's), newest first; one per
+  // window instance for roots on one account, labelled as their card is.
+  const shared = sharedGroups(ctx);
+  const inScope = new Set(
+    scope === null ? [] : (shared.get(scope.identity)?.identities ?? [scope.identity]),
+  );
+  const events: OverviewEvent[] = dedupeEvents(
+    ctx.limitEvents?.({ from: ctx.now - EVENT_SPAN, to: ctx.now + 1 }) ?? [],
+    (identity) => shared.get(identity)?.id ?? null,
   )
-    .filter((e) => scope === null || e.acct === scope.id)
+    .filter((e) => scope === null || inScope.has(e.account.id))
     .reverse()
     .map((e) => ({
       at: e.at,
-      account: (e.acct === null ? undefined : byId.get(e.acct)?.label) ?? e.account.label,
+      account:
+        shared.get(e.account.id)?.label ??
+        (e.acct === null ? undefined : byId.get(e.acct)?.label) ??
+        e.account.label,
       kind: e.kind,
       window: e.label,
       resetsAt: e.resets_at,

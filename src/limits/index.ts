@@ -84,6 +84,11 @@ export interface SharedAccount {
   source: GroupSource;
   /** Every root on the account, this one included, in discovery order. */
   members: { id: string; label: string }[];
+  /**
+   * Two of the roots showed different limits at their last comparison: for a manual link,
+   * which is kept, a sign it may be wrong (an auto link is suspended then instead).
+   */
+  differs: boolean;
 }
 
 export interface AccountLimits {
@@ -241,6 +246,7 @@ export class Limits {
               id: group.id,
               source: group.source,
               members: group.members.map((m) => ({ id: m.identity, label: m.label })),
+              differs: group.differs,
             },
       windows,
       as_of: capture === null ? null : Math.round(capturedAt),

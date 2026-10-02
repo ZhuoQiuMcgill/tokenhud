@@ -153,15 +153,20 @@ export interface DoctorReport {
   };
   /**
    * Enabled roots on one subscription account (T16), by label: one limits account each,
-   * linked in config (`manual`, `same_account`) or found by auto-detection (`auto`:
-   * identical limits on two consecutive fetches), and when that was first recorded.
+   * linked in config (`manual`, `same_account`) or found by auto-detection (`auto`: their
+   * limits reset together and moved together), when that was first recorded, and whether
+   * two of them showed different limits at their last comparison (a manual link is kept
+   * regardless).
    */
   shared_accounts: Array<{
     provider: string;
     roots: string[];
     source: GroupSource;
     since: string | null;
+    differs: boolean;
   }>;
+  /** `separate_accounts` pairs, by label: never one account, whatever auto-detection finds. */
+  kept_apart: Array<{ roots: [string, string] }>;
   claude_code: {
     /** `tokenhud` resolves on PATH: the plugin and `claude mcp add` start it from there. */
     tokenhud_on_path: boolean;
@@ -319,13 +324,16 @@ function sourcesSection(
   };
 }
 
-/** The groups of roots on one account, from config and limits.json (read-only). */
+/**
+ * The groups of roots on one account, from config and limits.json (read-only), and the
+ * pairs config keeps apart. Roots go by label; one not found here is "not found here".
+ */
 function sharedSection(
   env: Env,
   home: string,
   config: Config,
   zone: Zone,
-): DoctorReport["shared_accounts"] {
+): Pick<DoctorReport, "shared_accounts" | "kept_apart"> {
   const discover = { home, env };
   const claude = discoverClaudeRoots(config, discover);
   const roots = [...claude, ...discoverCodexRoots(config, discover, claude)];
@@ -336,12 +344,19 @@ function sharedSection(
     spend: null,
     links: () => manualLinks(config),
   }).groups();
-  return [...new Map([...groups.values()].map((g) => [g.id, g])).values()].map((g) => ({
-    provider: g.provider,
-    roots: g.members.map((m) => m.label),
-    source: g.source,
-    since: g.detected_at === null ? null : zone.iso(g.detected_at),
-  }));
+  const labelOf = (id: string) => roots.find((r) => r.identity === id)?.label ?? "not found here";
+  return {
+    shared_accounts: [...new Map([...groups.values()].map((g) => [g.id, g])).values()].map((g) => ({
+      provider: g.provider,
+      roots: g.members.map((m) => m.label),
+      source: g.source,
+      since: g.detected_at === null ? null : zone.iso(g.detected_at),
+      differs: g.differs,
+    })),
+    kept_apart: config.separate_accounts.map((p) => ({
+      roots: [labelOf(p[0] as string), labelOf(p[1] as string)],
+    })),
+  };
 }
 
 function fileSize(path: string): number {
@@ -549,7 +564,7 @@ export function doctorReport(
       },
       cc_usage: ccUsageSection(env, db, imports),
       sources: sourcesSection(env, home, config, zone),
-      shared_accounts: sharedSection(env, home, config, zone),
+      ...sharedSection(env, home, config, zone),
       claude_code: claudeCodeSection(env, home, config),
     };
   } finally {
@@ -730,9 +745,13 @@ export function renderDoctor(r: DoctorReport): string {
     const how =
       g.source === "manual"
         ? "linked in config (same_account)"
-        : "found automatically: identical limits on two fetches in a row";
+        : "found automatically: their limits reset and moved together";
     line(g.provider, `${g.roots.join(" + ")} · ${how}`);
     if (g.since !== null) more(`since ${when(g.since)}`);
+    if (g.differs) more("their limits differed at the last check: are they one account?");
+  }
+  for (const p of r.kept_apart) {
+    line("kept apart", `${p.roots.join(" | ")} (separate_accounts: never linked)`);
   }
 
   out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");

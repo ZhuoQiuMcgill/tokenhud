@@ -50,9 +50,10 @@ release candidate 0.1.0-rc.1 has all of it.
 - **Roots on one subscription account**: config dirs signed in to the same Claude (or
   ChatGPT) account, such as `~/.claude` and its Windows-side twin under WSL, share one
   limits card, one fetch, and a pace summed over all of them; history stays per root.
-  tokenhud finds them from identical limits on two fetches in a row, and settings link or
-  unlink them by hand (`same_account`, `separate_accounts` in `config.json`). MCP answers
-  for the shared account from either root, and `tokenhud doctor` lists the groups.
+  tokenhud finds them when their limits reset together and their use moves together, and
+  re-checks every 30 minutes that they still do; settings link or unlink them by hand
+  (`same_account`, `separate_accounts` in `config.json`). MCP answers for the shared
+  account from either root, and `tokenhud doctor` lists the groups.
 - **Pricing**: a bundled price table with effective dates, fast and priority tiers, long
   context, and estimated prices for `codex-auto-review`; your own overrides in
   `pricing.overrides.json`, which never hide later corrections to the bundled prices.

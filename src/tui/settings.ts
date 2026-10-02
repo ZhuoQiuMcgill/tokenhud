@@ -278,13 +278,17 @@ export function labelProblem(
 // ── shared accounts (T16) ────────────────────────────────────────────────────────
 
 /**
- * The roots `root` can be marked as sharing a subscription account with: the other roots of
- * its provider not already on its account.
+ * The roots `root` can be marked as sharing a subscription account with: the other enabled
+ * roots of its provider not already on its account (a disabled root is in no group).
  */
 export function linkCandidates(root: RootInfo, roots: readonly RootInfo[]): RootInfo[] {
   const linked = new Set(root.group?.others ?? []);
   return roots.filter(
-    (r) => r.provider === root.provider && r.identity !== root.identity && !linked.has(r.identity),
+    (r) =>
+      r.enabled &&
+      r.provider === root.provider &&
+      r.identity !== root.identity &&
+      !linked.has(r.identity),
   );
 }
 
@@ -292,17 +296,21 @@ const pairOf = (entry: readonly string[], a: string, b: string) =>
   entry.includes(a) && entry.includes(b);
 
 /**
- * `a` and `b` on one subscription account: a `same_account` link (joining the entries that
- * already hold either), and no `separate_accounts` pair between them any more.
+ * `a` on the same subscription account as `b`: a `same_account` link (joining the entries
+ * that already hold either), and no `separate_accounts` pair left between `a` and `b` or
+ * any root already on `b`'s account, which would keep `a` out of it.
  */
 export function linkRoots(config: Config, a: RootInfo, b: RootInfo): Config {
   const ids = [a.identity, b.identity];
   const holding = config.same_account.filter((e) => ids.some((id) => e.includes(id)));
   const merged = [...new Set([...holding.flat(), ...ids])];
+  const target = [b.identity, ...(b.group?.others ?? [])];
   return {
     ...config,
     same_account: [...config.same_account.filter((e) => !holding.includes(e)), merged],
-    separate_accounts: config.separate_accounts.filter((p) => !pairOf(p, a.identity, b.identity)),
+    separate_accounts: config.separate_accounts.filter(
+      (p) => !target.some((id) => pairOf(p, a.identity, id)),
+    ),
   };
 }
 

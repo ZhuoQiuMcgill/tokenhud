@@ -94,6 +94,52 @@ describe("limits.json", () => {
   });
 });
 
+describe("limits.json: shared accounts (T16)", () => {
+  const pair = (over: Record<string, unknown>) => ({
+    agree: 2,
+    disagree: 0,
+    linked: true,
+    detected_at: 5,
+    last: [1, 2],
+    ...over,
+  });
+
+  test("pairs and groups round-trip; malformed entries are dropped", () => {
+    const path = join(tempDir(), "limits.json");
+    const windows = { session: { u: 26, r: 1_790_000_000_337 } };
+    writeFileSync(
+      path,
+      JSON.stringify({
+        providers: {},
+        status: {},
+        pairs: { "a|b": pair({ windows }), "c|d": pair({ last: [1] }), "e|f": "no" },
+        groups: {
+          [ID_A]: { id: "1".repeat(32), detected_at: 7, source: "auto" },
+          [ID_B]: { id: "1".repeat(32), detected_at: 7, source: "elsewhere" },
+        },
+      }),
+    );
+    const file = loadLimitsCache(path);
+    expect(file.pairs).toEqual({
+      "a|b": { agree: 2, disagree: 0, linked: true, detected_at: 5, last: [1, 2], windows },
+    });
+    expect(file.groups).toEqual({ [ID_A]: { id: "1".repeat(32), detected_at: 7, source: "auto" } });
+  });
+
+  test("a pair from before co-movement (no windows) starts over, unconfirmed", () => {
+    const path = join(tempDir(), "limits.json");
+    writeFileSync(path, JSON.stringify({ providers: {}, status: {}, pairs: { "a|b": pair({}) } }));
+    expect(loadLimitsCache(path).pairs?.["a|b"]).toEqual({
+      agree: 0,
+      disagree: 0,
+      linked: false,
+      detected_at: null,
+      last: [1, 2],
+      windows: null,
+    });
+  });
+});
+
 describe("importing cc-usage's provider-limits.json", () => {
   function ccUsageFile(providers: Record<string, unknown>): string {
     const path = join(tempDir(), "provider-limits.json");

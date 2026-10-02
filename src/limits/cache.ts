@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { ccUsageDir } from "../config.ts";
 import { configDir } from "../paths.ts";
 import { type Capture, freshest, parseCapture } from "./capture.ts";
-import type { GroupRecord, PairState } from "./groups.ts";
+import type { GroupRecord, PairState, PairWindow } from "./groups.ts";
 import { withLock } from "./lease.ts";
 
 /**
@@ -105,6 +105,10 @@ function parseStatus(value: unknown): AccountStatus | null {
   return status;
 }
 
+/**
+ * A pair's auto-detection state. One from before the co-movement rule (no `windows`) starts
+ * over, unconfirmed: the rule it was decided by could link two idle accounts.
+ */
 function parsePair(value: unknown): PairState | null {
   if (!isRecord(value) || typeof value.linked !== "boolean") return null;
   const last = Array.isArray(value.last) ? value.last.map(numberOrNull) : [];
@@ -114,12 +118,25 @@ function parsePair(value: unknown): PairState | null {
     const n = numberOrNull(x);
     return n !== null && n >= 0 ? Math.trunc(n) : 0;
   };
+  if (value.windows === undefined) {
+    return { agree: 0, disagree: 0, linked: false, detected_at: null, last: [a, b], windows: null };
+  }
+  let windows: Record<string, PairWindow> | null = null;
+  if (isRecord(value.windows)) {
+    windows = {};
+    for (const [kind, raw] of Object.entries(value.windows)) {
+      const u = isRecord(raw) ? numberOrNull(raw.u) : null;
+      const r = isRecord(raw) ? numberOrNull(raw.r) : null;
+      if (u !== null && r !== null) windows[kind] = { u, r };
+    }
+  }
   return {
     agree: count(value.agree),
     disagree: count(value.disagree),
     linked: value.linked,
     detected_at: value.linked ? numberOrNull(value.detected_at) : null,
     last: [a, b],
+    windows,
   };
 }
 

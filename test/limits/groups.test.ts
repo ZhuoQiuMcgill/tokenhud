@@ -4,19 +4,20 @@ import { describe, expect, test } from "bun:test";
 import { validateConfig } from "../../src/config.ts";
 import type { Capture } from "../../src/limits/capture.ts";
 import {
-  CONFIRM_PAIRS,
+  CLOSE_S,
+  compareCaptures,
   decidePair,
   detectPairs,
   groupId,
+  linkedNow,
   type ManualLinks,
   manualLinks,
+  mergeGroups,
   NO_LINKS,
   PAIR_WINDOW_S,
   type PairState,
   pairKey,
-  recordGroups,
   resolveGroups,
-  sameAccount,
 } from "../../src/limits/groups.ts";
 import type { Root } from "../../src/sources/roots.ts";
 import { guard } from "../guard.ts";
@@ -28,12 +29,23 @@ guard();
 const T = Date.parse("2026-10-01T12:00:00Z") / 1000;
 const NOW_MS = T * 1000;
 const MIN = 60;
+/** Whole-minute and whole-hour resets: what the provider's jitter is added to. */
+const FIVE_HOUR = T + 3 * 3600;
+const WEEK = T + 4 * 86_400;
 
-/** A Claude capture at `at` (epoch s): 5-hour and weekly windows, resets in epoch s. */
-function claude(at: number, session = 26, weekly = 69, sessionReset = T + 3600.25): Capture {
+/**
+ * A Claude capture at `at` (epoch s): 5-hour and weekly windows used at `session` and
+ * `weekly` %, their resets off the whole minute and hour by `jitter` seconds.
+ */
+function claude(
+  at: number,
+  session: number,
+  weekly: number,
+  jitter: { five: number; week: number } = { five: 0, week: 0 },
+): Capture {
   return capture("claude", at, {
-    session: { pct: session, resets: sessionReset, label: "5-HOUR" },
-    weekly_all: { pct: weekly, resets: T + 4 * 86_400.5, label: "WEEKLY" },
+    session: { pct: session, resets: FIVE_HOUR + jitter.five, label: "5-HOUR" },
+    weekly_all: { pct: weekly, resets: WEEK + jitter.week, label: "WEEKLY" },
   });
 }
 
@@ -44,104 +56,161 @@ function run(pairs: [Capture, Capture][], start?: PairState): PairState | undefi
   return state;
 }
 
-describe("sameAccount", () => {
-  test("every window both have: the same reset to the millisecond and the same %", () => {
-    expect(sameAccount(claude(T), claude(T + 20))).toBe(true);
-  });
+/** Jitter in seconds, within the ±0.7 s seen live, crossing whole seconds both ways. */
+const JITTER = [0.337, -0.153, 0.847, -0.5, 0.12, -0.69, 0.5, 0.01, -0.35, 0.66, -0.06, 0.41];
+const jitter = (i: number) => JITTER[i % JITTER.length] as number;
 
-  test("a reset 1 ms apart is another account", () => {
-    expect(sameAccount(claude(T), claude(T, 26, 69, T + 3600.251))).toBe(false);
+/**
+ * One account seen from two roots over `n` rounds 5 minutes apart: each round's two
+ * captures are 3 s apart, each with its own jitter, and the 5-hour use grows 2 % a round.
+ */
+function oneAccount(n: number, start = 0): [Capture, Capture][] {
+  return Array.from({ length: n }, (_, i) => {
+    const k = start + i;
+    const at = T + k * 5 * MIN;
+    const use = 20 + 2 * k;
+    return [
+      claude(at, use, 40, { five: jitter(2 * k), week: jitter(2 * k + 1) }),
+      claude(at + 3, use, 40, { five: jitter(2 * k + 1), week: jitter(2 * k + 3) }),
+    ];
   });
+}
 
-  test("another % is another account (or the same one, moved: not the same pair)", () => {
-    expect(sameAccount(claude(T), claude(T, 27))).toBe(false);
-  });
+/** `c` with its 5-hour window resetting at `resets` (epoch s). */
+function withFiveHour(c: Capture, resets: number): Capture {
+  const session = c.rate_limits.session as Capture["rate_limits"][string];
+  return { ...c, rate_limits: { ...c.rate_limits, session: { ...session, resets_at: resets } } };
+}
 
-  test("a window only one capture has is ignored; no shared window can't tell", () => {
-    const extra = claude(T);
-    extra.rate_limits.weekly_scoped = { label: "FABLE WEEKLY", used_percentage: 99, resets_at: T };
-    expect(sameAccount(claude(T), extra)).toBe(true);
-    const old = capture("claude", T, { five_hour: { pct: 26, resets: T + 3600.25 } });
-    expect(sameAccount(claude(T), old)).toBeNull();
-  });
-});
-
-describe("decidePair: two consecutive pairs link, two unlink", () => {
-  test("identical captures on two pairs: linked, dated when confirmed", () => {
-    const state = run([
-      [claude(T), claude(T + 5)],
-      [claude(T + 5 * MIN), claude(T + 5 * MIN + 5)],
-    ]);
-    expect(CONFIRM_PAIRS).toBe(2);
-    expect(state).toEqual({
-      agree: 2,
-      disagree: 0,
-      linked: true,
-      detected_at: NOW_MS,
-      last: [T + 5 * MIN, T + 5 * MIN + 5],
+describe("compareCaptures", () => {
+  test("resets agree within 2 s, across a whole second (the live data)", () => {
+    // 5-HOUR …600.337 vs …599.847, WEEKLY …600.337 vs …600.847.
+    const a = claude(T, 19, 51, { five: 0.337, week: 0.337 });
+    const b = claude(T + 37, 19, 51, { five: -0.153, week: 0.847 });
+    expect(compareCaptures(a, b)).toMatchObject({
+      shared: 2,
+      resetsAgree: true,
+      close: true,
+      sameUse: true,
     });
   });
 
-  test("one pair only: not yet", () => {
-    expect(run([[claude(T), claude(T + 5)]])).toMatchObject({ agree: 1, linked: false });
+  test("3 s apart is another account; another % on close captures too", () => {
+    const a = claude(T, 19, 51);
+    expect(compareCaptures(a, claude(T + 5, 19, 51, { five: 3, week: 0 })).resetsAgree).toBe(false);
+    expect(compareCaptures(a, claude(T + 5, 20, 51)).sameUse).toBe(false);
   });
 
-  test("a reset 1 ms apart: never linked, however many pairs", () => {
-    const pairs: [Capture, Capture][] = [0, 1, 2, 3, 4].map((k) => [
-      claude(T + k * 5 * MIN),
-      claude(T + k * 5 * MIN + 5, 26, 69, T + 3600.251),
+  test("utilisation is only judged on captures at most 60 s apart", () => {
+    const a = claude(T, 19, 51);
+    expect(compareCaptures(a, claude(T + CLOSE_S, 19, 51)).close).toBe(true);
+    expect(compareCaptures(a, claude(T + CLOSE_S + 1, 19, 51)).close).toBe(false);
+  });
+
+  test("a window whose instance ended between the captures is left out", () => {
+    // The 5-hour window reset at T + 60 s: the later capture sees the next instance.
+    const before = capture("claude", T, {
+      session: { pct: 90, resets: T + 60 },
+      weekly_all: { pct: 40, resets: WEEK },
+    });
+    const after = capture("claude", T + 120, {
+      session: { pct: 1, resets: T + 120 + 5 * 3600 },
+      weekly_all: { pct: 40, resets: WEEK },
+    });
+    expect(compareCaptures(before, after)).toMatchObject({ shared: 1, resetsAgree: true });
+  });
+});
+
+describe("decidePair: resets within 2 s, moving together, twice in a row", () => {
+  test("a jittered pair crossing a second boundary links, once the account moved", () => {
+    // The critic's case: 12 pairs, jitter up to ±0.85 s. The exact rule disagreed 12 times.
+    expect(run(oneAccount(12))).toMatchObject({ agree: 12, disagree: 0, linked: true });
+    // Linked on the second pair: the 5-hour use moved from 20 % to 22 % on both.
+    expect(run(oneAccount(2))).toMatchObject({ agree: 2, linked: true, detected_at: NOW_MS });
+  });
+
+  test("one pair only: not yet", () => {
+    expect(run(oneAccount(1))).toMatchObject({ agree: 1, linked: false });
+  });
+
+  test("resets 3 s apart never link, however the use moves", () => {
+    const pairs = oneAccount(8).map(([a, b]): [Capture, Capture] => [
+      a,
+      withFiveHour(b, FIVE_HOUR + 3),
     ]);
-    expect(run(pairs)).toMatchObject({ agree: 0, disagree: 5, linked: false });
+    expect(run(pairs)).toMatchObject({ agree: 0, disagree: 8, linked: false });
+  });
+
+  test("two different idle accounts with the same reset hour never link", () => {
+    // The critic's case: each has WEEKLY and a model's weekly at 0 %, resetting on the same
+    // whole hour, and no 5-hour window. They agree on every pair, but nothing moves.
+    const idle = (at: number) =>
+      capture("claude", at, {
+        weekly_all: { pct: 0, resets: WEEK },
+        weekly_scoped: { pct: 0, resets: WEEK, label: "FABLE WEEKLY" },
+      });
+    const pairs: [Capture, Capture][] = Array.from({ length: 12 }, (_, k) => [
+      idle(T + k * 5 * MIN),
+      idle(T + k * 5 * MIN + 2),
+    ]);
+    expect(run(pairs)).toMatchObject({ agree: 12, linked: false });
+  });
+
+  test("two accounts at the same steady use never link either: no move, no link", () => {
+    const pairs: [Capture, Capture][] = Array.from({ length: 6 }, (_, k) => [
+      claude(T + k * 5 * MIN, 7, 12),
+      claude(T + k * 5 * MIN + 2, 7, 12),
+    ]);
+    expect(run(pairs)).toMatchObject({ agree: 6, linked: false });
+  });
+
+  test("captures over 60 s apart don't compare use; resets can still veto", () => {
+    const pending = run(oneAccount(1));
+    // Same resets, 2 minutes apart, different use: no decision either way.
+    const apart: [Capture, Capture] = [claude(T + 10 * MIN, 30, 40), claude(T + 12 * MIN, 31, 40)];
+    expect(run([apart], pending)).toBe(pending);
+    // A 5-hour reset an hour off: another account, even 2 minutes apart.
+    const veto = run(
+      [
+        [
+          claude(T + 10 * MIN, 30, 40),
+          withFiveHour(claude(T + 12 * MIN, 30, 40), FIVE_HOUR + 3600),
+        ],
+      ],
+      pending,
+    );
+    expect(veto).toMatchObject({ agree: 0, disagree: 1, linked: false });
   });
 
   test("captures over 10 minutes apart decide nothing", () => {
-    expect(run([[claude(T), claude(T + PAIR_WINDOW_S + 1)]])).toBeUndefined();
-    const pending = run([[claude(T), claude(T + 5)]]);
-    expect(run([[claude(T + 20 * MIN), claude(T + 40 * MIN)]], pending)).toBe(pending);
-    // Exactly 10 minutes apart still counts.
-    expect(run([[claude(T), claude(T + PAIR_WINDOW_S)]])).toMatchObject({ agree: 1 });
+    expect(run([[claude(T, 20, 40), claude(T + PAIR_WINDOW_S + 1, 20, 40)]])).toBeUndefined();
   });
 
   test("a capture already compared is not a new pair", () => {
-    const once = run([[claude(T), claude(T + 5)]]);
-    // Only one side is new: the same fetch of the other side can't count twice.
-    expect(run([[claude(T + 5 * MIN), claude(T + 5)]], once)).toBe(once);
-    expect(run([[claude(T), claude(T + 5 * MIN)]], once)).toBe(once);
+    const [first] = oneAccount(1) as [[Capture, Capture]];
+    const once = run([first]);
+    expect(run([[claude(T + 5 * MIN, 22, 40), first[1]]], once)).toBe(once);
   });
 
   test("a pair with no window in common decides nothing", () => {
-    const old = capture("claude", T + 5, { five_hour: { pct: 26, resets: T + 3600.25 } });
-    expect(run([[claude(T), old]])).toBeUndefined();
+    const old = capture("claude", T + 5, { five_hour: { pct: 26, resets: FIVE_HOUR } });
+    expect(run([[claude(T, 26, 40), old]])).toBeUndefined();
   });
 
-  test("a disagreeing pair resets the count: agreement must be consecutive", () => {
-    expect(
-      run([
-        [claude(T), claude(T + 5)],
-        [claude(T + 5 * MIN), claude(T + 5 * MIN + 5, 30)],
-        [claude(T + 10 * MIN), claude(T + 10 * MIN + 5)],
-      ]),
-    ).toMatchObject({ agree: 1, disagree: 0, linked: false });
-  });
-
-  test("unlinked after two mismatching pairs; one mismatch keeps the link", () => {
-    const linked = run([
-      [claude(T), claude(T + 5)],
-      [claude(T + 5 * MIN), claude(T + 5 * MIN + 5)],
-    ]);
-    const once = run([[claude(T + 10 * MIN, 40), claude(T + 10 * MIN + 5, 41)]], linked);
+  test("one mismatch suspends a link, a match restores it, two in a row unlink", () => {
+    const linked = run(oneAccount(2)) as PairState;
+    expect(linkedNow(linked)).toBe(true);
+    // The second root now shows another account: other use, other resets.
+    const switched = (k: number): [Capture, Capture] => [
+      claude(T + k * 5 * MIN, 30, 40),
+      withFiveHour(claude(T + k * 5 * MIN + 2, 3, 11), FIVE_HOUR + 7200),
+    ];
+    const once = run([switched(2)], linked) as PairState;
     expect(once).toMatchObject({ disagree: 1, linked: true, detected_at: NOW_MS });
-    const twice = run([[claude(T + 15 * MIN, 40), claude(T + 15 * MIN + 5, 52)]], once);
+    expect(linkedNow(once)).toBe(false);
+    expect(linkedNow(run(oneAccount(1, 3), once))).toBe(true);
+    const twice = run([switched(3)], once);
     expect(twice).toMatchObject({ agree: 0, disagree: 2, linked: false, detected_at: null });
-    // An agreeing pair in between would have kept it linked.
-    const kept = run(
-      [
-        [claude(T + 15 * MIN), claude(T + 15 * MIN + 5)],
-        [claude(T + 20 * MIN, 40), claude(T + 20 * MIN + 5, 52)],
-      ],
-      once,
-    );
-    expect(kept).toMatchObject({ disagree: 1, linked: true });
   });
 });
 
@@ -151,18 +220,18 @@ describe("detectPairs", () => {
     const b = fakeRoot("claude", "win-like", "/mnt/c/Users/x/.claude", { source: "wsl" });
     const c = fakeRoot("codex", "codex-like", "/home/x/.codex");
     const d = fakeRoot("codex", "codex-win-like", "/mnt/c/Users/x/.codex", { source: "wsl" });
-    const codexAt = (at: number) =>
+    const codexAt = (at: number, use: number) =>
       capture("codex", at, {
-        codex_primary: { pct: 12, resets: T + 7200.5, minutes: 300 },
+        codex_primary: { pct: use, resets: T + 7200.5, minutes: 300 },
         codex_secondary: { pct: 40, resets: T + 5 * 86_400, minutes: 10_080 },
       });
     let pairs: Record<string, PairState> = {};
-    for (const at of [T, T + 5 * MIN]) {
+    for (const [k, [x, y]] of oneAccount(2).entries()) {
       const captures = new Map<string, Capture | null>([
-        [a.identity, claude(at)],
-        [b.identity, claude(at + 3)],
-        [c.identity, codexAt(at + 1)],
-        [d.identity, codexAt(at + 2)],
+        [a.identity, x],
+        [b.identity, y],
+        [c.identity, codexAt(x.captured_at + 1, 12 + k)],
+        [d.identity, codexAt(x.captured_at + 2, 12 + k)],
       ]);
       pairs = detectPairs([a, b, c, d], captures, pairs, NOW_MS);
     }
@@ -177,7 +246,14 @@ describe("detectPairs", () => {
   test("a root not listed keeps its pairs as they were", () => {
     const a = fakeRoot("claude", "a", "/a");
     const b = fakeRoot("claude", "b", "/b");
-    const kept: PairState = { agree: 2, disagree: 0, linked: true, detected_at: 1, last: [1, 2] };
+    const kept: PairState = {
+      agree: 2,
+      disagree: 0,
+      linked: true,
+      detected_at: 1,
+      last: [1, 2],
+      windows: {},
+    };
     const before = { [pairKey(a.identity, "f".repeat(32))]: kept };
     expect(detectPairs([a, b], new Map(), before, NOW_MS)).toEqual(before);
   });
@@ -190,13 +266,15 @@ describe("resolveGroups: manual links win over auto-detection", () => {
     fakeRoot("claude", "work-like", "/home/x/.claude-work", { source: "home" }),
     fakeRoot("codex", "codex-like", "/home/x/.codex"),
   ];
-  const linked = (a: Root, b: Root, at = 5): Record<string, PairState> => ({
+  const linked = (a: Root, b: Root, over: Partial<PairState> = {}) => ({
     [pairKey(a.identity, b.identity)]: {
       agree: 2,
       disagree: 0,
       linked: true,
-      detected_at: at,
-      last: [1, 2],
+      detected_at: 5,
+      last: [1, 2] as [number, number],
+      windows: {},
+      ...over,
     },
   });
   const labels = (groups: ReturnType<typeof resolveGroups>, root: Root) =>
@@ -214,9 +292,22 @@ describe("resolveGroups: manual links win over auto-detection", () => {
       // Not recorded in limits.json yet.
       detected_at: null,
       provider: "claude",
+      differs: false,
     });
     expect(groupId([p.identity, w.identity])).toBe(groupId([w.identity, p.identity]));
     expect(groupId([p.identity, w.identity])).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  test("an auto link suspended by a mismatch is no group: its roots show apart", () => {
+    const [p, w] = roots() as [Root, Root];
+    expect(resolveGroups([p, w], NO_LINKS, linked(p, w, { disagree: 1 })).size).toBe(0);
+  });
+
+  test("a manual link is kept when its roots disagree, and says so", () => {
+    const [p, w] = roots() as [Root, Root];
+    const manual: ManualLinks = { same: [[p.identity, w.identity]], separate: [] };
+    const groups = resolveGroups([p, w], manual, linked(p, w, { linked: false, disagree: 2 }));
+    expect(groups.get(w.identity)).toMatchObject({ source: "manual", differs: true });
   });
 
   test("same_account links roots auto-detection never saw; across providers it does not", () => {
@@ -258,7 +349,7 @@ describe("resolveGroups: manual links win over auto-detection", () => {
   test("a manual and an auto link make one manual group", () => {
     const [p, w, k] = roots() as [Root, Root, Root];
     const manual: ManualLinks = { same: [[p.identity, w.identity]], separate: [] };
-    const groups = resolveGroups([p, w, k], manual, linked(w, k, 9));
+    const groups = resolveGroups([p, w, k], manual, linked(w, k));
     expect(labels(groups, k)).toEqual(["personal-like", "win-like", "work-like"]);
     expect(groups.get(k.identity)?.source).toBe("manual");
   });
@@ -267,37 +358,57 @@ describe("resolveGroups: manual links win over auto-detection", () => {
     const [p, w] = roots() as [Root, Root];
     expect(resolveGroups([p], NO_LINKS, linked(p, w)).size).toBe(0);
   });
+});
 
-  test("recordGroups keeps when a group was first recorded while its members stay", () => {
-    const [p, w, k] = roots() as [Root, Root, Root];
-    const first = recordGroups(resolveGroups([p, w, k], NO_LINKS, linked(p, w, 5)), {}, 100);
-    expect(first[p.identity]).toEqual({
-      id: groupId([p.identity, w.identity]),
-      detected_at: 100,
-      source: "auto",
+describe("mergeGroups: limits.json's record, merged per root", () => {
+  const [p, w, k] = [
+    fakeRoot("claude", "personal-like", "/home/x/.claude"),
+    fakeRoot("claude", "win-like", "/mnt/c/Users/x/.claude", { source: "wsl" }),
+    fakeRoot("claude", "work-like", "/home/x/.claude-work", { source: "home" }),
+  ] as [Root, Root, Root];
+  const pw: ManualLinks = { same: [[p.identity, w.identity]], separate: [] };
+  const id = groupId([p.identity, w.identity]);
+
+  test("keeps when a group was first recorded while its members stay", () => {
+    const first = mergeGroups([p, w, k], resolveGroups([p, w, k], pw), {}, 100);
+    expect(first).toEqual({
+      [p.identity]: { id, detected_at: 100, source: "manual" },
+      [w.identity]: { id, detected_at: 100, source: "manual" },
     });
-    const manual = { same: [[p.identity, k.identity]], separate: [] };
-    const later = recordGroups(
-      resolveGroups([p, w, k], manual, linked(p, w, 5), first),
+    expect(mergeGroups([p, w, k], resolveGroups([p, w, k], pw, {}, first), first, 200)).toEqual(
       first,
-      200,
     );
-    // personal and win were joined by work: a new group, recorded now.
-    expect(later[w.identity]).toEqual({
+    // A group read back takes its first-recorded time.
+    expect(resolveGroups([p, w, k], pw, {}, first).get(w.identity)?.detected_at).toBe(100);
+    // Joined by work-like: a new group, recorded now.
+    const pwk: ManualLinks = { same: [[p.identity, w.identity, k.identity]], separate: [] };
+    const later = mergeGroups([p, w, k], resolveGroups([p, w, k], pwk, {}, first), first, 300);
+    expect(later[k.identity]).toEqual({
       id: groupId([p.identity, w.identity, k.identity]),
-      detected_at: 200,
+      detected_at: 300,
       source: "manual",
     });
-    const again = recordGroups(
-      resolveGroups([p, w, k], manual, linked(p, w, 5), later),
-      later,
-      300,
+  });
+
+  test("a root this process found on its own loses its entry; others' entries stay", () => {
+    const first = mergeGroups([p, w], resolveGroups([p, w], pw), {}, 100);
+    const elsewhere = {
+      [k.identity]: { id: "f".repeat(32), detected_at: 1, source: "auto" as const },
+    };
+    const merged = mergeGroups(
+      [p, w],
+      resolveGroups([p, w], NO_LINKS),
+      { ...first, ...elsewhere },
+      200,
     );
-    expect(again).toEqual(later);
-    // A group read back takes its first-recorded time.
-    expect(
-      resolveGroups([p, w, k], manual, linked(p, w, 5), later).get(k.identity)?.detected_at,
-    ).toBe(200);
+    expect(merged).toEqual(elsewhere);
+  });
+
+  test("a process that can't see every member of a recorded group leaves it alone", () => {
+    // A process that doesn't know win-like (disabled or not found in its view) must neither
+    // record personal-like on its own nor re-date the group.
+    const first = mergeGroups([p, w], resolveGroups([p, w], pw), {}, 100);
+    expect(mergeGroups([p], resolveGroups([p], pw), first, 200)).toEqual(first);
   });
 });
 

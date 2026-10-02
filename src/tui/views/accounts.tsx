@@ -416,6 +416,14 @@ function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
           ),
         ];
   const head = shared ? [sharedLine(a.sharedWith, width)] : [];
+  if (a.sharedDiffers) {
+    const why = [
+      " their limits differed at the last check: one account?",
+      " limits differed at the last check",
+      " limits differ",
+    ];
+    head.push({ left: [seg(firstFit(why, width - 1), "mid")] });
+  }
   // Short of rows, the meters after the 5-hour and weekly ones go first.
   return {
     id: "limits",
@@ -514,37 +522,47 @@ function totalText(p: Priced, ctx: ViewContext): { text: string; role: Role } {
 function spendPart(a: AccountRow, ctx: ViewContext, width: number): Part {
   const values = ctx.showCost ? a.spark : a.sparkTokens;
   const total = totalText(a.last30, ctx);
-  const room = Math.max(0, Math.min(SPARK_DAYS, width - FIELD - 2 - textWidth(total.text) - 1));
-  const shown = values.slice(-room);
-  const hi = Math.max(0, ...shown);
-  const spark = shown.map((v) => sparkChar(v, hi > 0 ? hi : 1)).join("");
-  const line: Line = {
-    left: [
-      label(ctx.showCost ? "spend 30d" : "tokens 30d"),
-      seg(spark, ctx.showCost ? "cost" : "tokens"),
-      seg(`  ${total.text}`, total.role, total.role === "cost"),
-    ],
+  /** The spend line, the sparkline as long as `after` leaves room for. */
+  const spendLine = (after: readonly Seg[]): Line => {
+    const fixed = FIELD + 2 + textWidth(total.text) + 1 + segsWidth(after);
+    const shown = values.slice(-Math.max(0, Math.min(SPARK_DAYS, width - fixed)));
+    const hi = Math.max(0, ...shown);
+    return {
+      left: [
+        label(ctx.showCost ? "spend 30d" : "tokens 30d"),
+        seg(
+          shown.map((v) => sparkChar(v, hi > 0 ? hi : 1)).join(""),
+          ctx.showCost ? "cost" : "tokens",
+        ),
+        seg(`  ${total.text}`, total.role, total.role === "cost"),
+        ...after,
+      ],
+    };
   };
+  const line = spendLine([]);
   if (a.accountLast30 === null) return { id: "spend", priority: 4, height: 1, lines: () => [line] };
   const sum = totalText(a.accountLast30, ctx);
+  const sumSeg = seg(sum.text, sum.role, sum.role === "cost");
   const account: Line = {
     left: [
       label(""),
       ...fitSegs(
         ["account total (all linked roots): ", "account total: ", "total: "].map((lead) => [
           seg(lead, "dim"),
-          seg(sum.text, sum.role, sum.role === "cost"),
+          sumSeg,
         ]),
         width - FIELD,
       ),
     ],
   };
+  // Short of rows, the account's total follows the root's on the one line.
+  const one = spendLine([seg("  total ", "dim"), sumSeg]);
   return {
     id: "spend",
     priority: 4,
     height: 2,
     minHeight: 1,
-    lines: (h) => [line, account].slice(0, h),
+    lines: (h) => (h >= 2 ? [line, account] : [one]),
   };
 }
 

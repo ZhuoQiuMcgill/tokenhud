@@ -8,16 +8,18 @@ import { join } from "node:path";
 import { type Config, loadConfig, saveConfig } from "../../src/config.ts";
 import { saveLimitsCache } from "../../src/limits/cache.ts";
 import type { Capture } from "../../src/limits/capture.ts";
+import { recordCaptureEvents } from "../../src/limits/events.ts";
 import { pairKey } from "../../src/limits/groups.ts";
 import { Limits, manualLinks, spendFromQueries } from "../../src/limits/index.ts";
 import { Zone } from "../../src/query/tz.ts";
 import type { Root } from "../../src/sources/roots.ts";
-import { openStoreReader, type UsageRow } from "../../src/store/store.ts";
+import { openStore, openStoreReader, type UsageRow } from "../../src/store/store.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import type { AccountRow, AccountsVM } from "../../src/tui/vm/accounts.ts";
 import { COMPUTE, type ComputeContext } from "../../src/tui/vm/compute.ts";
+import { readAccountEvents } from "../../src/tui/vm/history.ts";
 import {
   createQueries,
   displayAccounts,
@@ -118,6 +120,24 @@ interface SharedFixture extends Fixture {
 
 function makeFixture(): SharedFixture {
   const fixture = makeFixtureStore(rows());
+  // Before the link, each root recorded the same 5-hour window reaching 100 % this morning,
+  // and only win-like saw it usable again.
+  const store = openStore(fixture.storePath);
+  try {
+    const full = Date.parse("2026-09-29T12:10:00Z");
+    const hit = (r: Root, at: number, u: number, resets: number) =>
+      recordCaptureEvents(store, r, {
+        captured_at: S(at),
+        source: "claude",
+        via: "api",
+        rate_limits: { session: { label: "5-HOUR", used_percentage: u, resets_at: S(resets) } },
+      });
+    hit(PERSONAL, full, 100, full + 50 * MIN);
+    hit(WIN, full + 2 * MIN, 100, full + 50 * MIN + 400);
+    hit(WIN, full + 55 * MIN, 3, full + 55 * MIN + 5 * HOUR);
+  } finally {
+    store.close();
+  }
   const limitsPath = join(fixture.dir, "limits.json");
   const reset = NOW + 95 * MIN;
   saveLimitsCache(
@@ -129,7 +149,7 @@ function makeFixture(): SharedFixture {
         [WORK.identity]: claude(NOW - 3 * MIN, 12, 40, NOW + 4 * HOUR),
       },
       status: {},
-      // What auto-detection recorded: two agreeing pairs.
+      // What auto-detection recorded: two agreeing pairs, moving together.
       pairs: {
         [pairKey(PERSONAL.identity, WIN.identity)]: {
           agree: 2,
@@ -137,6 +157,16 @@ function makeFixture(): SharedFixture {
           linked: true,
           detected_at: NOW - 3 * HOUR,
           last: [S(NOW - 3 * HOUR), S(NOW - 3 * HOUR + 2000)],
+          windows: { session: { u: 61, r: reset } },
+        },
+        // work-like and personal-like differed at their last comparison (one account each).
+        [pairKey(PERSONAL.identity, WORK.identity)]: {
+          agree: 0,
+          disagree: 1,
+          linked: false,
+          detected_at: null,
+          last: [S(NOW - 2 * MIN), S(NOW - 3 * MIN)],
+          windows: null,
         },
       },
     },
@@ -161,6 +191,7 @@ function makeFixture(): SharedFixture {
           scope: null,
           window: config.default_window,
           prices,
+          limitEvents: (range) => readAccountEvents(db, stored, range),
           sources: {
             roots: ROOTS,
             limits: new Limits({
@@ -282,6 +313,57 @@ describe("the view models", () => {
     const total = row("win-like").accountLast30?.cost ?? 0;
     expect(total).toBeCloseTo(row("win-like").last30.cost + row("personal-like").last30.cost, 9);
     expect(row("personal-like").accountLast30?.cost).toBe(total);
+  });
+});
+
+describe("events and checks of a shared account", () => {
+  test("a window instance both roots recorded is listed once, under the account's label", () => {
+    const events = overviewVm().events.filter((e) => e.kind === "reached");
+    expect(events).toEqual([
+      {
+        at: Date.parse("2026-09-29T12:10:00Z"),
+        account: "personal-like + win-like",
+        kind: "reached",
+        window: "5-HOUR",
+        resetsAt: Date.parse("2026-09-29T13:00:00Z"),
+        // win-like saw it usable again: the one entry says so.
+        resumedAt: Date.parse("2026-09-29T13:05:00Z"),
+      },
+    ]);
+  });
+
+  test("a manual link whose roots differed at the last check says so in Accounts", async () => {
+    const linked = fixtureConfig({
+      history_only_roots: [],
+      same_account: [[PERSONAL.identity, WORK.identity]],
+    });
+    const { views: v, accounts: a } = fx.views(linked);
+    const work = (v.accounts as AccountsVM).rows.find((r) => r.label === "work-like") as AccountRow;
+    expect(work.sharedWith).toEqual(["personal-like", "win-like"]);
+    expect(work.sharedDiffers).toBe(true);
+    const c = controller([], linked);
+    c.vmMessage({ type: "views", views: v, accounts: a, scope: null, ms: 1 });
+    const { setup, text } = await frame(105, 50, c);
+    const order = (v.accounts as AccountsVM).rows.map((r) => r.label);
+    await settle(setup, () => {
+      c.key(key("4"));
+      for (let i = 0; i < order.indexOf("work-like"); i++) c.key(key("down"));
+    });
+    expect(text()).toContain("their limits differed at the last check: one account?");
+  });
+
+  test("at 80×24 the account's total moves onto the spend line", async () => {
+    const c = controller();
+    const { setup, text } = await frame(80, 24, c);
+    const order = accountsVm().rows.map((r) => r.label);
+    await settle(setup, () => {
+      c.key(key("4"));
+      for (let i = 0; i < order.indexOf("win-like"); i++) c.key(key("down"));
+    });
+    const screen = text();
+    const sum = costText(row("win-like").accountLast30 as AccountRow["last30"]).text;
+    expect(screen).toMatch(new RegExp(`spend 30d .*  total ${sum.replace("$", "\\$")}`));
+    expect(screen).not.toContain("account total");
   });
 });
 

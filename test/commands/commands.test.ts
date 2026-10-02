@@ -720,17 +720,23 @@ describe("doctor: backups, recovery and sources", () => {
     onlyConfigPaths(env, out);
   });
 
-  test("lists the roots that share one subscription account, and how each group formed", () => {
+  test("lists the roots that share one subscription account, how each formed, and pairs kept apart", () => {
     const env = home();
     for (const dir of [".claude", ".claude-a", ".claude-b", ".claude-work"]) {
       mkdirSync(join(env.home, dir, "projects"), { recursive: true });
     }
     const id = (dir: string) => rootIdentity(join(env.home, dir), env.home);
-    const [a, b] = [id(".claude-a"), id(".claude-b")];
+    const [a, b, personal, work] = [".claude-a", ".claude-b", ".claude", ".claude-work"].map(
+      id,
+    ) as [string, string, string, string];
     mkdirSync(join(env.xdg, "tokenhud"));
     writeFileSync(
       env.config,
-      JSON.stringify({ same_account: [[id(".claude"), id(".claude-work")]], time_zone: "UTC" }),
+      JSON.stringify({
+        same_account: [[personal, work]],
+        separate_accounts: [[work, b]],
+        time_zone: "UTC",
+      }),
     );
     // What auto-detection recorded for a and b.
     const detected = Date.parse("2026-10-01T12:00:00Z");
@@ -746,6 +752,16 @@ describe("doctor: backups, recovery and sources", () => {
             linked: true,
             detected_at: detected,
             last: [1, 2],
+            windows: {},
+          },
+          // The manual link's roots disagreed at their last comparison.
+          [pairKey(personal, work)]: {
+            agree: 0,
+            disagree: 1,
+            linked: false,
+            detected_at: null,
+            last: [3, 4],
+            windows: null,
           },
         },
         groups: {
@@ -756,20 +772,30 @@ describe("doctor: backups, recovery and sources", () => {
     );
     const report = JSON.parse(run(env, "doctor", "--json").stdout);
     expect(report.shared_accounts).toEqual([
-      { provider: "claude", roots: ["personal", "work"], source: "manual", since: null },
+      {
+        provider: "claude",
+        roots: ["personal", "work"],
+        source: "manual",
+        since: null,
+        differs: true,
+      },
       {
         provider: "claude",
         roots: ["a", "b"],
         source: "auto",
         since: "2026-10-01T12:00:00.000Z",
+        differs: false,
       },
     ]);
+    expect(report.kept_apart).toEqual([{ roots: ["work", "b"] }]);
     const out = run(env, "doctor").stdout;
     for (const text of [
       "Shared accounts (roots on one subscription account: one limits card each)",
       "claude        personal + work · linked in config (same_account)",
-      "claude        a + b · found automatically: identical limits on two fetches in a row",
+      "              their limits differed at the last check: are they one account?",
+      "claude        a + b · found automatically: their limits reset and moved together",
       "              since 2026-10-01 12:00",
+      "kept apart    work | b (separate_accounts: never linked)",
     ]) {
       expect(out).toContain(text);
     }

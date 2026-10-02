@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Config } from "../config.ts";
 import type { Provider, Root } from "../sources/roots.ts";
 import { type Capture, orderedBuckets } from "./capture.ts";
+import { SAME_INSTANCE_MS } from "./events.ts";
 
 /**
  * Roots on one subscription account (T16). Two config dirs signed in to the same Claude
@@ -9,18 +10,33 @@ import { type Capture, orderedBuckets } from "./capture.ts";
  * account*: one card, one fetch, and a pace summed over all of them. Usage history stays
  * per root.
  *
- * - **Auto-detection** reads nothing new: only the limit captures tokenhud already keeps.
- *   Two roots of one provider whose captures were taken within 10 minutes of each other
- *   agree when every window kind both have resets at the same millisecond with the same
- *   utilisation, and they share at least one window. Two consecutive agreeing pairs link
- *   them; two consecutive disagreeing pairs unlink them. A pair is two captures both newer
- *   than the last pair compared, so a capture never counts twice.
- * - **Manual links** come from config: `same_account` links roots, `separate_accounts`
- *   keeps two roots apart. Manual entries win over auto-detection, and a separate pair wins
- *   over a link.
- * - **Groups** are the connected roots: manual links first, then auto ones, each skipped
- *   when it would put a separate pair in one group. A group's id hashes its members'
- *   identities.
+ * **Auto-detection** reads nothing new: only the limit captures tokenhud already keeps.
+ * - **A pair** is the current capture of each of two roots of one provider, taken at most
+ *   10 minutes apart, both newer than the two compared last (no capture counts twice).
+ *   Windows they both have are compared; one whose instance ended between the two
+ *   captures is left out.
+ * - **Resets** agree within 2 s: Claude reports a window's reset with up to ~0.7 s of
+ *   jitter per request, while a new instance of a window is hours away.
+ * - **Utilisation** is compared only on captures at most 60 s apart: an account in use
+ *   moves in between. Further apart, the resets can only veto.
+ * - **Agree:** the resets agree and, close enough to judge, the utilisations are equal.
+ *   **Disagree:** a reset differs, or close captures differ in utilisation.
+ * - **Link:** two agreeing pairs in a row, with a shared window's utilisation changed
+ *   between them (equally on both, since both agree) and one window above 0 %. Idle
+ *   accounts prove nothing: two different idle accounts can report the same whole-hour
+ *   resets at 0 %.
+ * - **Unlink:** a disagreeing pair suspends a link (the roots show apart at once); a second
+ *   one in a row unlinks, an agreeing one restores it. The limits service keeps pairs
+ *   fresh: it fetches a candidate partner back to back, and re-checks every other member
+ *   of a group every 30 minutes (src/limits/service.ts).
+ *
+ * **Manual links** come from config: `same_account` links roots, `separate_accounts` keeps
+ * two roots apart. Manual entries win over auto-detection, and a separate pair wins over a
+ * link. A manual link whose roots disagree is kept, and reported.
+ *
+ * **Groups** are the connected roots: manual links first, then auto ones, each skipped
+ * when it would put a separate pair in one group. A group's id hashes its members'
+ * identities.
  *
  * Detection state (`pairs`) and its result (`groups`, per root identity) live in
  * limits.json beside the captures, so every process that reads or fetches limits agrees.
@@ -28,6 +44,10 @@ import { type Capture, orderedBuckets } from "./capture.ts";
 
 /** Captures further apart than this (seconds) decide nothing about two roots. */
 export const PAIR_WINDOW_S = 10 * 60;
+/** Captures at most this far apart (seconds) are close enough to compare utilisation. */
+export const CLOSE_S = 60;
+/** Two roots' reset times of one window agree within this (ms): Claude's jitter is < 1 s. */
+export const RESET_TOLERANCE_MS = 2000;
 /** Consecutive pairs that agree (or disagree) before two roots are linked (or unlinked). */
 export const CONFIRM_PAIRS = 2;
 
@@ -49,17 +69,33 @@ export function manualLinks(
   return { same: config.same_account, separate: config.separate_accounts };
 }
 
+/**
+ * A window of an agreeing pair: its utilisation (%) and reset (epoch ms), as the first
+ * root saw it.
+ */
+export interface PairWindow {
+  u: number;
+  r: number;
+}
+
 /** Auto-detection's state for two roots of one provider (limits.json `pairs`). */
 export interface PairState {
   /** Consecutive pairs of captures that agreed; 0 after one that disagreed. */
   agree: number;
   /** Consecutive pairs that disagreed; 0 after one that agreed. */
   disagree: number;
+  /** Linked; suspended while `disagree` is 1. */
   linked: boolean;
   /** When the link was confirmed (epoch ms); null while not linked. */
   detected_at: number | null;
   /** `captured_at` (epoch s) of the two captures compared last, in key order. */
   last: [number, number];
+  /**
+   * The windows of the last agreeing pair, by kind, to see whether the next one moved;
+   * null after a disagreeing pair (and in a file from before co-movement, which therefore
+   * starts unconfirmed).
+   */
+  windows: Record<string, PairWindow> | null;
 }
 
 /** A root's group as limits.json records it (`groups`, by root identity). */
@@ -81,6 +117,11 @@ export interface AccountGroup {
   readonly source: GroupSource;
   /** When it was first recorded in limits.json (`GroupRecord`); null until it is. */
   readonly detected_at: number | null;
+  /**
+   * The last pair compared between two of its members disagreed: kept apart for an auto
+   * link (which is then not a group), reported for a manual one.
+   */
+  readonly differs: boolean;
 }
 
 /** The `pairs` key of two roots: their identities in code point order. */
@@ -96,28 +137,62 @@ export function groupId(identities: readonly string[]): string {
 
 const ms = (seconds: number) => Math.round(seconds * 1000);
 
+/** What two captures say about being one account. */
+export interface Comparison {
+  /** Windows both have whose instance both captures saw; 0: they can't be compared. */
+  shared: number;
+  /** Every shared window resets within 2 s on both. */
+  resetsAgree: boolean;
+  /** Taken at most 60 s apart: utilisation can be compared. */
+  close: boolean;
+  /** Every shared window has the same utilisation on both. */
+  sameUse: boolean;
+  /** The shared windows as `a` saw them. */
+  windows: Record<string, PairWindow>;
+}
+
 /**
- * Whether two captures show one account: true when every window kind both have resets at
- * the same millisecond with the same utilisation; false when one differs; null (can't
- * tell) when they share no window.
+ * Compares the windows two captures both have. A window whose instance had ended by the
+ * later capture (its reset in the earlier one is not after the later one) is left out: the
+ * later capture saw the next instance.
  */
-export function sameAccount(a: Capture, b: Capture): boolean | null {
+export function compareCaptures(a: Capture, b: Capture): Comparison {
+  const later = Math.max(a.captured_at, b.captured_at);
   const left = new Map(orderedBuckets(a));
+  const windows: Record<string, PairWindow> = {};
   let shared = 0;
+  let resetsAgree = true;
+  let sameUse = true;
   for (const [kind, bucket] of orderedBuckets(b)) {
     const other = left.get(kind);
     if (other === undefined) continue;
+    if (Math.min(other.resets_at, bucket.resets_at) <= later) continue;
     shared++;
-    if (ms(other.resets_at) !== ms(bucket.resets_at)) return false;
-    if (other.used_percentage !== bucket.used_percentage) return false;
+    if (Math.abs(ms(other.resets_at) - ms(bucket.resets_at)) > RESET_TOLERANCE_MS) {
+      resetsAgree = false;
+    }
+    if (other.used_percentage !== bucket.used_percentage) sameUse = false;
+    windows[kind] = { u: other.used_percentage, r: ms(other.resets_at) };
   }
-  return shared > 0 ? true : null;
+  const close = Math.abs(a.captured_at - b.captured_at) <= CLOSE_S;
+  return { shared, resetsAgree, close, sameUse, windows };
+}
+
+/**
+ * Whether the account moved between two agreeing pairs: a window of the same instance
+ * (resets under 15 minutes apart) changed utilisation.
+ */
+function moved(before: Readonly<Record<string, PairWindow>>, now: Record<string, PairWindow>) {
+  return Object.entries(now).some(([kind, w]) => {
+    const was = before[kind];
+    return was !== undefined && Math.abs(was.r - w.r) < SAME_INSTANCE_MS && was.u !== w.u;
+  });
 }
 
 /**
  * Two roots' state after comparing their captures `a` and `b` (in key order). Unchanged
- * when either is missing, they are over 10 minutes apart, either was compared before, or
- * they share no window.
+ * when either is missing, they are over 10 minutes apart, either was compared before, they
+ * share no window, or their resets agree but they are too far apart to judge utilisation.
  */
 export function decidePair(
   prior: PairState | undefined,
@@ -130,24 +205,46 @@ export function decidePair(
   if (prior !== undefined && (a.captured_at <= prior.last[0] || b.captured_at <= prior.last[1])) {
     return prior;
   }
-  const same = sameAccount(a, b);
-  if (same === null) return prior;
+  const c = compareCaptures(a, b);
+  if (c.shared === 0 || (c.resetsAgree && !c.close)) return prior;
   const last: [number, number] = [a.captured_at, b.captured_at];
-  const was = prior ?? { agree: 0, disagree: 0, linked: false, detected_at: null, last };
-  if (same) {
-    const agree = was.agree + 1;
-    const linked = was.linked || agree >= CONFIRM_PAIRS;
+  const was = prior ?? {
+    agree: 0,
+    disagree: 0,
+    linked: false,
+    detected_at: null,
+    last,
+    windows: null,
+  };
+  if (c.resetsAgree && c.sameUse) {
+    const used = Object.values(c.windows).some((w) => w.u > 0);
+    const confirmed =
+      was.agree >= CONFIRM_PAIRS - 1 && was.windows !== null && moved(was.windows, c.windows);
+    const linked = was.linked || (confirmed && used);
     return {
-      agree,
+      agree: was.agree + 1,
       disagree: 0,
       linked,
       detected_at: linked ? (was.detected_at ?? now) : null,
       last,
+      windows: c.windows,
     };
   }
   const disagree = was.disagree + 1;
   const linked = was.linked && disagree < CONFIRM_PAIRS;
-  return { agree: 0, disagree, linked, detected_at: linked ? was.detected_at : null, last };
+  return {
+    agree: 0,
+    disagree,
+    linked,
+    detected_at: linked ? was.detected_at : null,
+    last,
+    windows: null,
+  };
+}
+
+/** Whether a pair's state links its roots now: linked, and not suspended by a mismatch. */
+export function linkedNow(state: PairState | undefined): boolean {
+  return state?.linked === true && state.disagree === 0;
 }
 
 /**
@@ -228,7 +325,7 @@ export function resolveGroups(
     }
   }
   for (const key of Object.keys(pairs).sort()) {
-    if (!pairs[key]?.linked) continue;
+    if (!linkedNow(pairs[key])) continue;
     const [a, b] = key.split("|") as [string, string];
     link(a, b, false);
   }
@@ -239,12 +336,16 @@ export function resolveGroups(
     const list = [...(members[i] as number[])].sort((x, y) => x - y).map((k) => roots[k] as Root);
     const id = groupId(list.map((r) => r.identity));
     const previous = recorded[(list[0] as Root).identity];
+    const differs = list.some((x, k) =>
+      list.slice(k + 1).some((y) => (pairs[pairKey(x.identity, y.identity)]?.disagree ?? 0) > 0),
+    );
     const group: AccountGroup = {
       id,
       provider: root.provider,
       members: list,
       source: manualRoot.has(i) ? "manual" : "auto",
       detected_at: previous?.id === id ? previous.detected_at : null,
+      differs,
     };
     for (const member of list) out.set(member.identity, group);
   }
@@ -252,19 +353,34 @@ export function resolveGroups(
 }
 
 /**
- * What limits.json records of `groups` (from `resolveGroups`): each member's group id, how
- * it was formed, and when this exact group was first recorded: kept from `previous`, else
- * `now`.
+ * limits.json's `groups` after this process evaluated `roots`: each of them in a group gets
+ * its group's id, how it formed, and when this exact group was first recorded (kept from
+ * `previous`, else `now`); each of them on its own loses its entry. Entries of roots this
+ * process didn't evaluate (disabled here, or not found by it) are kept as they are, and so
+ * is a recorded group with such a member: this process can't see all of it.
  */
-export function recordGroups(
+export function mergeGroups(
+  roots: readonly Root[],
   groups: ReadonlyMap<string, AccountGroup>,
   previous: Readonly<Record<string, GroupRecord>>,
   now: number,
 ): Record<string, GroupRecord> {
-  const out: Record<string, GroupRecord> = {};
-  for (const [identity, group] of groups) {
-    const before = previous[identity];
-    out[identity] = {
+  const known = new Set(roots.map((root) => root.identity));
+  const unseen = new Set(
+    Object.entries(previous)
+      .filter(([identity]) => !known.has(identity))
+      .map(([, record]) => record.id),
+  );
+  const out: Record<string, GroupRecord> = { ...previous };
+  for (const root of roots) {
+    const group = groups.get(root.identity);
+    const before = previous[root.identity];
+    if (before !== undefined && unseen.has(before.id)) continue;
+    if (group === undefined) {
+      delete out[root.identity];
+      continue;
+    }
+    out[root.identity] = {
       id: group.id,
       detected_at: before?.id === group.id ? before.detected_at : now,
       source: group.source,

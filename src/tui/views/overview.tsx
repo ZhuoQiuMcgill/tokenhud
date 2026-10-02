@@ -868,7 +868,9 @@ function eventsSection(vm: OverviewVM, ctx: ViewContext): Section {
       (e): Line => ({
         left: [
           seg(`  ${fit(dayClock(e.at, ctx.tz), 11)}`, "dim"),
-          ...(account ? [seg(fit(e.account, accountWidth + 2), "fg")] : []),
+          // Cut to the column, then two cells apart: a long label (a shared account's) never
+          // runs into the event.
+          ...(account ? [seg(fit(truncate(e.account, accountWidth), accountWidth + 2), "fg")] : []),
           { ...eventText(e, short), text: fit(eventText(e, short).text, what + 2) },
           ...(note ? [seg(eventNote(e, vm.asOf, ctx.tz), "mute")] : []),
         ],

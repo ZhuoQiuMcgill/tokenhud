@@ -340,6 +340,32 @@ describe("shared accounts (T16): same account as…, unlink", () => {
     expect(after.separate_accounts).toEqual([["id-env", "z"]]);
   });
 
+  test("disabled roots are not offered: a link to one would do nothing", () => {
+    const roots = ROOTS.map((r) => (r.identity === "id-work" ? { ...r, enabled: false } : r));
+    expect(linkCandidates(roots[0] as RootInfo, roots).map((r) => r.label)).toEqual(["company"]);
+  });
+
+  test("linking drops the separate pairs between the root and every root on the target's account", () => {
+    // The critic's case: work unlinked from {personal, work, company} (kept apart from both),
+    // then linked back to personal, whose account company is still on.
+    const config: Config = {
+      ...defaultConfig(),
+      same_account: [["id-personal", "id-env"]],
+      separate_accounts: [
+        ["id-work", "id-personal"],
+        ["id-work", "id-env"],
+        ["id-env", "z"],
+      ],
+    };
+    const personal = {
+      ...(ROOTS[0] as RootInfo),
+      group: { others: ["id-env"], source: "manual" as const },
+    };
+    const after = linkRoots(config, ROOTS[1] as RootInfo, personal);
+    expect(after.same_account).toEqual([["id-personal", "id-env", "id-work"]]);
+    expect(after.separate_accounts).toEqual([["id-env", "z"]]);
+  });
+
   test("u unlinks: out of same_account, and kept apart from every root it shared with", () => {
     const config: Config = {
       ...defaultConfig(),

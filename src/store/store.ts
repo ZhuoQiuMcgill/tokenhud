@@ -803,16 +803,30 @@ export class Store {
    * events plus every event whose window resets at or after `since` (epoch ms), and applies
    * the changes it returns. The rules live in the limits module; this only stores them.
    * Returns how many events were inserted or resumed.
+   *
+   * `shared`: the other accounts on the same subscription account (T16). Their events are
+   * the same account's, so `decide` sees them too, and may resume theirs; new events go
+   * under `account` only.
    */
   recordLimitEvents(
     account: AccountRef,
     since: number,
     decide: (existing: LimitEventRow[]) => LimitEventChanges,
+    shared: readonly { provider: string; identity: string }[] = [],
   ): number {
     const db = this.#db;
     return writeTransaction(db, () => {
       const acct = internAccounts(db, [account]).get(accountKey(account));
       if (acct === undefined) throw new Error("internal: the account was not interned");
+      const lookup = db.query<{ id: bigint | number }, [string, string]>(
+        "SELECT id FROM accounts WHERE provider = ?1 AND identity = ?2",
+      );
+      const accts = [acct];
+      for (const ref of shared) {
+        const row = lookup.get(storedText(ref.provider), storedText(ref.identity));
+        if (row !== null) accts.push(Number(row.id));
+      }
+      const inAccts = accts.join(", ");
       const existing = db
         .query<
           {
@@ -824,13 +838,15 @@ export class Store {
             at: bigint;
             resumed_at: bigint | null;
           },
-          [number, number]
+          [number]
         >(
+          // The ids are the store's own integers.
           `SELECT id, kind, window, label, resets_at, at, resumed_at FROM limit_events
-           WHERE acct = ?1 AND ((kind = 'reached' AND resumed_at IS NULL) OR resets_at >= ?2)
+           WHERE acct IN (${inAccts})
+             AND ((kind = 'reached' AND resumed_at IS NULL) OR resets_at >= ?1)
            ORDER BY id`,
         )
-        .all(acct, since)
+        .all(since)
         .map(
           (e): LimitEventRow => ({
             id: Number(e.id),
@@ -851,9 +867,10 @@ export class Store {
         insert.run(acct, e.kind, storedText(e.window), storedText(e.label), e.resetsAt, e.at);
       }
       const resume = db.query(
-        "UPDATE limit_events SET resumed_at = ?2 WHERE id = ?1 AND acct = ?3 AND resumed_at IS NULL",
+        `UPDATE limit_events SET resumed_at = ?2
+         WHERE id = ?1 AND acct IN (${inAccts}) AND resumed_at IS NULL`,
       );
-      for (const r of changes.resume) resume.run(r.id, r.at, acct);
+      for (const r of changes.resume) resume.run(r.id, r.at);
       return changes.insert.length + changes.resume.length;
     });
   }

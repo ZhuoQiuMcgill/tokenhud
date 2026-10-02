@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { configDir } from "./paths.ts";
@@ -188,6 +196,30 @@ export function loadConfig(path: string = configPath()): Config {
   } catch {
     return defaultConfig();
   }
+}
+
+/**
+ * The config at `path`, read again whenever the file changes (one stat per call): for a
+ * long-running process that must see edits made elsewhere, such as account links saved by
+ * the TUI's settings.
+ */
+export function liveConfig(path: string = configPath()): () => Config {
+  let stamp: string | null = null;
+  let config = defaultConfig();
+  return () => {
+    let now = "";
+    try {
+      const st = statSync(path);
+      now = `${st.ino}:${st.mtimeMs}:${st.size}`;
+    } catch {
+      // missing: the defaults
+    }
+    if (now !== stamp) {
+      stamp = now;
+      config = loadConfig(path);
+    }
+    return config;
+  };
 }
 
 /**

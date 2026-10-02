@@ -64,6 +64,7 @@ function engineOptions(values: {
     options.limits = {
       limitsPath: values.limits,
       ccUsageLimits: values["no-import"] ? null : ccUsageLimitsPath(env, home),
+      configPath: values.config ?? configPath(env, home),
     };
   }
   return options;

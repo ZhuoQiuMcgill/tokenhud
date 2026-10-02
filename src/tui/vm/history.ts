@@ -7,10 +7,10 @@
 // rolling 7 or 30 days), so "this week" and "this month" are the last week and month here.
 
 import type { Database } from "bun:sqlite";
-import { type LimitEvent, readLimitEvents } from "../../limits/events.ts";
+import { dedupeEvents, type LimitEvent, readLimitEvents } from "../../limits/events.ts";
 import type { Range, Usage } from "../../query/types.ts";
 import { addDays, firstOfMonth, formatDate, mondayOf } from "../../query/tz.ts";
-import type { ComputeContext, Computed } from "./compute.ts";
+import { type ComputeContext, type Computed, sharedGroups } from "./compute.ts";
 import type { StoreAccount } from "./session.ts";
 import type {
   HistoryDay,
@@ -104,12 +104,25 @@ function merged(lists: Iterable<readonly HistoryShare[]>): HistoryShare[] {
 function eventsByDay(ctx: ComputeContext, range: Range): Map<string, HistoryEvent[]> {
   const out = new Map<string, HistoryEvent[]>();
   const labels = new Map(ctx.accounts.map((a) => [a.id, a.label]));
-  for (const e of ctx.limitEvents?.(range) ?? []) {
-    if (e.kind === "resumed" || (ctx.scope !== null && e.acct !== ctx.scope)) continue;
+  // Roots on one subscription account (T16): their events once, under the account's label.
+  const shared = sharedGroups(ctx);
+  const scope = ctx.accounts.find((a) => a.id === ctx.scope);
+  const inScope = new Set(
+    scope === undefined ? [] : (shared.get(scope.identity)?.identities ?? [scope.identity]),
+  );
+  const events = dedupeEvents(
+    ctx.limitEvents?.(range) ?? [],
+    (identity) => shared.get(identity)?.id ?? null,
+  );
+  for (const e of events) {
+    if (e.kind === "resumed" || (ctx.scope !== null && !inScope.has(e.account.id))) continue;
     const key = formatDate(ctx.zone.dateAt(e.at));
     const list = out.get(key) ?? [];
     list.push({
-      account: (e.acct === null ? undefined : labels.get(e.acct)) ?? e.account.label,
+      account:
+        shared.get(e.account.id)?.label ??
+        (e.acct === null ? undefined : labels.get(e.acct)) ??
+        e.account.label,
       kind: e.kind,
       window: e.label,
       at: e.at,
