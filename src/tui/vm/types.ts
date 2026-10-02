@@ -60,17 +60,20 @@ export interface OverviewVM {
   readonly pricedShare: number;
 }
 
-/** A model's or an account's part of a period: what History's shares and filter use. */
-export interface HistoryShare extends Priced {
-  /** A model id, or an account's display label. */
-  readonly name: string;
-}
-
 /** Tokens split as History's table shows them, with their cost. */
 export interface HistoryTotal extends Priced {
   readonly input: number;
   readonly output: number;
   readonly cache: number;
+}
+
+/**
+ * A model's or an account's part of a period, split like the period itself, so the `/`
+ * filter can show one model's numbers alone.
+ */
+export interface HistoryShare extends HistoryTotal {
+  /** A model id, or an account's display label. */
+  readonly name: string;
 }
 
 /** A local day, Monday-start week or calendar month of usage, as History lists it. */
@@ -115,7 +118,13 @@ export interface HistoryVM {
   /** The 26 weeks together, and all the months together: the tables' totals rows. */
   readonly weeksTotal: HistoryTotal;
   readonly monthsTotal: HistoryTotal;
-  /** Daily cost and tokens averaged over the 30 days before today: the ratios' baseline. */
+  /**
+   * How many days before today the "vs average" baseline covers: 30, or fewer when the
+   * usage started more recently (0 with none before today). The baseline is the average
+   * of those days, the last ones in `days` before today.
+   */
+  readonly averageDays: number;
+  /** Daily cost and tokens averaged over those days: the ratios' baseline. */
   readonly average: { readonly cost: number; readonly tokens: number };
 }
 

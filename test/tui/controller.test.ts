@@ -129,6 +129,17 @@ describe("global keys", () => {
     expect(s().viewState.history).toMatchObject({ group: "week", open: null });
   });
 
+  test("shifted letters are not global keys: S, A and Q reach the view", () => {
+    const { c, s, calls } = setup();
+    c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
+    c.key(key("2"));
+    for (const k of ["S", "A", "Q"]) c.key({ name: k.toLowerCase(), sequence: k, ctrl: false });
+    expect(s()).toMatchObject({ view: "history", overlay: "none", scope: null });
+    expect(calls).toEqual([]);
+    c.key(key("s"));
+    expect(s().overlay).toBe("settings");
+  });
+
   test("while a view types into a field, the shell's keys go to it; Ctrl-C still quits", () => {
     const { c, s, calls } = setup();
     c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
@@ -174,6 +185,7 @@ function historyVM(): HistoryVM {
     months: [],
     weeksTotal: zero,
     monthsTotal: zero,
+    averageDays: 0,
     average: { cost: 0, tokens: 0 },
   };
 }

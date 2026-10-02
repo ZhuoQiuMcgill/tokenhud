@@ -70,6 +70,15 @@ export interface Ports {
   quit(): void;
 }
 
+/**
+ * A key as views and the global keys see it: a printable one as typed ("W", "/"), so a
+ * shifted letter is its own key; any other by name ("return", "up", "space").
+ */
+export function typedName(key: Key): string {
+  const printable = key.sequence.length === 1 && key.sequence > " " && key.sequence !== "\u007f";
+  return printable ? key.sequence : key.name;
+}
+
 export function initialState(config: Config, mode: IngestMode): UiState {
   return {
     view: "overview",
@@ -177,41 +186,40 @@ export class Controller {
 
   key(key: Key): void {
     const s = this.#state;
+    const name = typedName(key);
     if (key.ctrl && key.name === "c") {
       this.#ports.quit();
     } else if (s.overlay === "settings") {
       this.#settingsKey(key);
     } else if (s.overlay === "help") {
-      if (key.name === "escape" || key.name === "?" || key.name === "q" || key.name === "return") {
+      if (name === "escape" || name === "?" || name === "q" || name === "return") {
         this.#set({ overlay: "none" });
       }
     } else if (VIEWS[s.view].capturing?.(s.viewState[s.view]) === true) {
-      this.#viewKey(key);
-    } else if (VIEW_KEYS[key.name] !== undefined) {
-      const view = VIEW_KEYS[key.name] as ViewId;
+      this.#viewKey(name);
+    } else if (VIEW_KEYS[name] !== undefined) {
+      const view = VIEW_KEYS[name] as ViewId;
       if (view !== s.view) {
         this.switchStartedAt = performance.now();
         this.#set({ view });
       }
-    } else if (key.name === "q") {
+    } else if (name === "q") {
       this.#ports.quit();
-    } else if (key.name === "a") {
+    } else if (name === "a") {
       this.#cycleScope();
-    } else if (key.name === "s") {
+    } else if (name === "s") {
       this.#ports.vmRoots();
       this.#set({ overlay: "settings", settings: initialSettings() });
-    } else if (key.name === "?") {
+    } else if (name === "?") {
       this.#set({ overlay: "help" });
     } else {
-      this.#viewKey(key);
+      this.#viewKey(name);
     }
   }
 
-  /** Hands a key to the active view: a printable one as typed ("W"), any other by name. */
-  #viewKey(key: Key): void {
+  /** Hands a key to the active view (the key contract is described on `View`). */
+  #viewKey(name: string): void {
     const s = this.#state;
-    const printable = key.sequence.length === 1 && key.sequence > " " && key.sequence !== "\u007f";
-    const name = printable ? key.sequence : key.name;
     const next = VIEWS[s.view].keys(name, s.viewState[s.view], s.views[s.view]);
     if (next !== undefined) this.#set({ viewState: { ...s.viewState, [s.view]: next } });
   }

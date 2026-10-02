@@ -4,11 +4,12 @@
 //
 // One selection drives both halves: the selected day. The heat map's cursor is that day,
 // and the table's selected row is the row holding it, so moving either moves the other.
+// `/` filters by model: every number on screen is then that model's (rows without it go).
 // Everything here picks from the view model; nothing queries (ARCHITECTURE §9).
 import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column, MonthLabel } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
-import { clock, countdown, dayLabel, monthName, textWidth, tokens } from "../format.ts";
+import { clock, countdown, dayLabel, monthName, textWidth, tokens, truncate } from "../format.ts";
 import { HEAT_ROLES, type Role } from "../theme.ts";
 import type {
   HistoryDay,
@@ -30,16 +31,16 @@ export interface HistoryState {
   readonly open: "week" | "month" | null;
   /** The selected day, YYYY-MM-DD; null follows today. */
   readonly day: string | null;
-  /** Rows whose models or accounts match this, ignoring case; "" for all. */
+  /** Only the models whose id contains this, ignoring case; "" for all. */
   readonly filter: string;
   /** The filter is being typed: every key goes to it. */
   readonly typing: boolean;
 }
 
 const GUTTER = 5;
-/** The heat map (title, months, 7 days) and the day card are each this tall. */
+/** The heat map (title, months, 7 days) and the day card are each this tall, at least. */
 const HEAT_HEIGHT = 9;
-const CARD_MAX = 64;
+const CARD_MAX = 80;
 /** The "vs average" bar is full at this ratio, so 1× is 8 of its 18 cells (gen.py). */
 const BAR_FULL = 2.25;
 const BAR_WIDTH = 18;
@@ -106,12 +107,68 @@ function holding(kind: Group, day: string): string {
   return day;
 }
 
+// ── the model filter ─────────────────────────────────────────────────────────────
+
+/** The sum of `parts`, with the share of priced tokens weighted by tokens. */
+function sum(parts: readonly HistoryTotal[]): HistoryTotal {
+  let cost = 0;
+  let count = 0;
+  let priced = 0;
+  let estimatedCost = 0;
+  let input = 0;
+  let output = 0;
+  let cache = 0;
+  for (const p of parts) {
+    cost += p.cost;
+    count += p.tokens;
+    priced += p.pricedShare * p.tokens;
+    estimatedCost += p.estimatedCost;
+    input += p.input;
+    output += p.output;
+    cache += p.cache;
+  }
+  const pricedShare = count > 0 ? priced / count : 1;
+  return { cost, tokens: count, pricedShare, estimatedCost, input, output, cache };
+}
+
+const slices = new WeakMap<HistoryPeriod, { filter: string; slice: HistoryPeriod }>();
+
+/**
+ * The period counting only the models whose id contains `filter`: their cost and tokens,
+ * no accounts (the view model has no account split per model). The whole period when
+ * there is no filter.
+ */
+function slice<P extends HistoryPeriod>(p: P, filter: string): P {
+  if (filter === "") return p;
+  const cached = slices.get(p);
+  if (cached?.filter === filter) return cached.slice as P;
+  const f = filter.toLowerCase();
+  const models = p.models.filter((m) => m.name.toLowerCase().includes(f));
+  const out = { ...p, ...sum(models), models, accounts: [] };
+  slices.set(p, { filter, slice: out });
+  return out;
+}
+
+const averages = new WeakMap<HistoryVM, { filter: string; average: HistoryVM["average"] }>();
+
+/** The ratios' baseline: the view model's, or the filtered models' over the same days. */
+function baseline(vm: HistoryVM, filter: string): HistoryVM["average"] {
+  if (filter === "" || vm.averageDays === 0) return vm.average;
+  const cached = averages.get(vm);
+  if (cached?.filter === filter) return cached.average;
+  const last = vm.days.length - 1;
+  const total = sum(vm.days.slice(last - vm.averageDays, last).map((d) => slice(d, filter)));
+  const average = { cost: total.cost / vm.averageDays, tokens: total.tokens / vm.averageDays };
+  averages.set(vm, { filter, average });
+  return average;
+}
+
 // ── what the table lists ─────────────────────────────────────────────────────────
 
 export interface Listing {
   /** What each row is: days when one week or month is open. */
   readonly kind: Group;
-  /** Newest first, filtered. */
+  /** Newest first; with a filter, the filtered models' part of the periods using them. */
   readonly rows: readonly HistoryPeriod[];
   /** The open week or month (null when none is, or it is older than the heat map). */
   readonly parent: HistoryPeriod | null;
@@ -119,15 +176,8 @@ export interface Listing {
   readonly parentKey: string | null;
 }
 
-function matches(p: HistoryPeriod, filter: string): boolean {
-  if (filter === "") return true;
-  const f = filter.toLowerCase();
-  const has = (s: HistoryShare) => s.name.toLowerCase().includes(f);
-  return p.models.some(has) || p.accounts.some(has);
-}
-
 export function listing(vm: HistoryVM, state: HistoryState): Listing {
-  const { open } = state;
+  const { open, filter } = state;
   let rows: readonly HistoryPeriod[];
   let parent: HistoryPeriod | null = null;
   let parentKey: string | null = null;
@@ -141,15 +191,19 @@ export function listing(vm: HistoryVM, state: HistoryState): Listing {
   } else {
     rows = state.group === "week" ? vm.weeks : vm.months;
   }
+  const shown =
+    filter === ""
+      ? [...rows]
+      : rows.map((p) => slice(p, filter)).filter((p) => p.models.length > 0);
   return {
     kind: open === null ? state.group : "day",
-    rows: rows.filter((p) => matches(p, state.filter)).reverse(),
-    parent,
+    rows: shown.reverse(),
+    parent: parent === null ? null : slice(parent, filter),
     parentKey,
   };
 }
 
-/** The listed row holding the selected day, or -1 (filtered out). */
+/** The listed row holding the selected day, or -1 (filtered out, or before the heat map). */
 export function selectedRow(vm: HistoryVM, state: HistoryState, list: Listing): number {
   const key = holding(list.kind, selectedKey(vm, state));
   return list.rows.findIndex((p) => p.key === key);
@@ -181,6 +235,16 @@ function selectRow(vm: HistoryVM, state: HistoryState, to: number): HistoryState
 /** Once a filter is applied, a selection it hides moves to the first row shown. */
 function snap(vm: HistoryVM, state: HistoryState): HistoryState {
   return selectedRow(vm, state, listing(vm, state)) >= 0 ? state : selectRow(vm, state, 0);
+}
+
+/**
+ * Keeps one side highlighted (critique m4): a day older than the heat map that no listed
+ * row holds (left after closing the oldest month) moves to the heat map's first day.
+ */
+function settle(vm: HistoryVM, state: HistoryState): HistoryState {
+  if (selectedIndex(vm, state) >= vm.gridStart) return state;
+  if (selectedRow(vm, state, listing(vm, state)) >= 0) return state;
+  return { ...state, day: (vm.days[vm.gridStart] as HistoryDay).key };
 }
 
 // ── keys ─────────────────────────────────────────────────────────────────────────
@@ -218,34 +282,42 @@ function move(key: string, state: HistoryState, vm: HistoryVM): HistoryState | u
   }
   const list = listing(vm, state);
   const at = selectedRow(vm, state, list);
-  // With the selected day filtered out, any move starts at the first row.
+  // With no row holding the selected day (it's filtered out), moves start from where it
+  // would be: ↓ goes to the next older row, ↑ to the next newer one.
+  const key0 = holding(list.kind, selectedKey(vm, state));
+  const older = list.rows.findIndex((p) => p.key < key0);
+  const from = at >= 0 ? at : older < 0 ? list.rows.length : older;
   const to = {
-    up: at - 1,
-    down: at + 1,
-    pageup: at - PAGE,
-    pagedown: at + PAGE,
+    up: from - 1,
+    down: at >= 0 ? from + 1 : from,
+    pageup: from - PAGE,
+    pagedown: at >= 0 ? from + PAGE : from + PAGE - 1,
     home: 0,
     end: list.rows.length - 1,
   }[key];
-  if (to === undefined) return undefined;
-  return selectRow(vm, state, at < 0 ? 0 : to);
+  return to === undefined ? undefined : selectRow(vm, state, to);
 }
 
 // ── the heat map and the day card ────────────────────────────────────────────────
 
-/** Month names over the week columns where a month starts (T10's placement). */
+/**
+ * Month names over the week columns holding a month's 1st (Dec over the week of Tue Dec 1),
+ * and over the first column for its month when the next name leaves room.
+ */
 function monthLabels(mondays: readonly string[]): MonthLabel[] {
   const out: MonthLabel[] = [];
-  let last = "";
-  mondays.forEach((key, w) => {
-    const month = key.slice(5, 7);
-    if (month === last) return;
-    // The first column gets its month only if the month starts in it.
-    if (last !== "" || Number(key.slice(8)) <= 7) {
-      out.push({ week: w, text: monthName(Number(month)) });
+  mondays.forEach((monday, w) => {
+    const sunday = keyOf(dayNumber(monday) + 6);
+    if (monday.slice(8) === "01")
+      out.push({ week: w, text: monthName(Number(monday.slice(5, 7))) });
+    else if (sunday.slice(5, 7) !== monday.slice(5, 7)) {
+      out.push({ week: w, text: monthName(Number(sunday.slice(5, 7))) });
     }
-    last = month;
   });
+  const first = mondays[0];
+  if (first !== undefined && (out[0]?.week ?? mondays.length) >= 2) {
+    out.unshift({ week: 0, text: monthName(Number(first.slice(5, 7))) });
+  }
   return out;
 }
 
@@ -256,21 +328,42 @@ function windowName(label: string): string {
     .replace(/(\d+)-(min|hour|day|week)\b/, (_, n: string, unit: string) => `${n}${unit[0]}`);
 }
 
+/** `text` cut to `width` with `…`, never leaving a space before the `…`. */
+function cut(text: string, width: number): string {
+  return truncate(text, width).replace(/\s+…$/, "…");
+}
+
+/** `account window` in `room` cells: the account is cut first, then the window, with `…`. */
+function eventLabel(account: string, window: string, room: number): string {
+  const whole = `${account} ${window}`;
+  if (textWidth(whole) <= room) return whole;
+  const keep = room - textWidth(window) - 1;
+  if (keep >= 4) return `${cut(account, keep)} ${window}`;
+  const short = cut(account, Math.min(textWidth(account), 4));
+  return `${short} ${cut(window, room - textWidth(short) - 1)}`;
+}
+
 /**
- * gen.py: `personal 5h hit 100% at 15:42 (waited 1h18m)`; the wait goes on a second line
- * when the whole doesn't fit `width`.
+ * gen.py: `personal 5h hit 100% at 15:42 (waited 1h18m)`. Its time is never cut
+ * (critique M2): the account and window give way first, and the wait goes on a second
+ * line when the whole doesn't fit `width`.
  */
 function eventLines(e: HistoryEvent, tz: string, width: number): Seg[][] {
-  const what = `${e.account} ${windowName(e.window)}`;
-  const at = clock(e.at, tz);
-  if (e.kind === "passed_80") return [[seg(`${what} passed 80% at ${at}`, "mid")]];
-  const hit = `${what} hit 100% at ${at}`;
-  if (e.resumedAt === null) return [[seg(hit, "high")]];
-  const waited = `waited ${countdown(e.resumedAt - e.at)}`;
-  const whole = `${hit} (${waited})`;
-  return textWidth(whole) <= width
-    ? [[seg(whole, "high")]]
-    : [[seg(hit, "high")], [seg(waited, "high")]];
+  const reached = e.kind === "reached";
+  const what = `${reached ? "hit 100%" : "passed 80%"} at ${clock(e.at, tz)}`;
+  const role: Role = reached ? "high" : "mid";
+  const waited = reached && e.resumedAt !== null ? `waited ${countdown(e.resumedAt - e.at)}` : null;
+  const name = windowName(e.window);
+  const whole = `${e.account} ${name} ${what}${waited === null ? "" : ` (${waited})`}`;
+  if (textWidth(whole) <= width) return [[seg(whole, role)]];
+  const head = `${eventLabel(e.account, name, width - textWidth(what) - 1)} ${what}`;
+  return waited === null ? [[seg(head, role)]] : [[seg(head, role)], [seg(waited, role)]];
+}
+
+/** Hits first (critique m1), then 80 % marks, each oldest first. */
+function byImportance(events: readonly HistoryEvent[]): HistoryEvent[] {
+  const rank = (e: HistoryEvent) => (e.kind === "reached" ? 0 : 1);
+  return [...events].sort((a, b) => rank(a) - rank(b) || a.at - b.at);
 }
 
 /** The first of `shapes` that fits `width` cells, else the last. */
@@ -296,9 +389,13 @@ function ranked(shares: readonly HistoryShare[], showCost: boolean): readonly Hi
   return showCost ? shares : [...shares].sort((a, b) => b.tokens - a.tokens);
 }
 
-/** A period's cost (tokens with costs hidden) over the daily average times its days. */
-function ratioOf(p: HistoryPeriod, vm: HistoryVM, showCost: boolean): number | null {
-  const base = (showCost ? vm.average.cost : vm.average.tokens) * p.days;
+/** A period's cost (tokens with costs hidden) over the daily baseline times its days. */
+function ratioOf(
+  p: HistoryPeriod,
+  average: HistoryVM["average"],
+  showCost: boolean,
+): number | null {
+  const base = (showCost ? average.cost : average.tokens) * p.days;
   return base > 0 ? (showCost ? p.cost : p.tokens) / base : null;
 }
 
@@ -306,16 +403,16 @@ function ratioText(r: number): string {
   return r < 9.95 ? `${r.toFixed(1)}×` : `${Math.round(r)}×`;
 }
 
-function cardLines(
+/** The card's lines before the limit events: 4, or 3 with a filter (no account split). */
+function cardHead(
   vm: HistoryVM,
   day: HistoryDay,
   state: HistoryState,
   ctx: ViewContext,
   width: number,
-  rows: number,
 ): Line[] {
   const label = (text: string) => seg(text.padEnd(LABEL), "mute");
-  const ratio = ratioOf(day, vm, ctx.showCost);
+  const ratio = ratioOf(day, baseline(vm, state.filter), ctx.showCost);
   const vs = (words: string): Seg[] =>
     ratio === null ? [] : [seg(`   ${ratioText(ratio)} ${words}`, "dim")];
   const split = `in ${tokens(day.input)} · out ${tokens(day.output)} · cache ${tokens(day.cache)}`;
@@ -345,13 +442,46 @@ function cardLines(
     .slice(0, 3)
     .map((m) => `${m.name} ${percent(m)}`);
   lines.push({ left: [label("models"), seg(entries(models, width - LABEL), "fg")] });
-  const accounts = ranked(day.accounts, ctx.showCost).map(
-    (a) => `${a.name} ${ctx.showCost ? costText(a).text : tokens(a.tokens)}`,
-  );
-  lines.push({ left: [label("accounts"), seg(entries(accounts, width - LABEL), "fg")] });
-  // Limit events take the rows left (a "+N more" line if not all fit), then the key hint.
+  if (state.filter === "") {
+    const accounts = ranked(day.accounts, ctx.showCost).map(
+      (a) => `${a.name} ${ctx.showCost ? costText(a).text : tokens(a.tokens)}`,
+    );
+    lines.push({ left: [label("accounts"), seg(entries(accounts, width - LABEL), "fg")] });
+  }
+  return lines;
+}
+
+/** The selected day as the card shows it: with a filter, the filtered models' part. */
+function selectedDay(vm: HistoryVM, state: HistoryState): HistoryDay {
+  return slice(vm.days[selectedIndex(vm, state)] as HistoryDay, state.filter);
+}
+
+/** Rows the card needs to show every hit of the day (critique m1), at least the heat map's. */
+function cardHeight(vm: HistoryVM, state: HistoryState, ctx: ViewContext, width: number): number {
+  const day = selectedDay(vm, state);
+  const inner = width - 4;
+  const head = cardHead(vm, day, state, ctx, inner).length;
+  const events = byImportance(day.events);
+  const hits = events.filter((e) => e.kind === "reached");
+  const lines = hits.reduce((n, e) => n + eventLines(e, ctx.tz, inner - LABEL).length, 0);
+  const marks = events.length > hits.length ? 1 : 0;
+  return Math.max(HEAT_HEIGHT, 2 + head + Math.max(1, lines + marks));
+}
+
+function cardLines(
+  vm: HistoryVM,
+  day: HistoryDay,
+  state: HistoryState,
+  ctx: ViewContext,
+  width: number,
+  rows: number,
+): Line[] {
+  const label = (text: string) => seg(text.padEnd(LABEL), "mute");
+  const lines = cardHead(vm, day, state, ctx, width);
+  // Limit events take the rows left, hits first; those that don't fit become "+N more",
+  // 80 % marks before any hit. The key hint goes last if a row is free.
   const room = rows - lines.length;
-  const events = day.events.map((e) => eventLines(e, ctx.tz, width - LABEL));
+  const events = byImportance(day.events).map((e) => eventLines(e, ctx.tz, width - LABEL));
   let shown = events.length;
   const height = (n: number) =>
     events.slice(0, n).reduce((h, e) => h + e.length, 0) + (n < events.length ? 1 : 0);
@@ -370,6 +500,11 @@ function cardLines(
   return lines.slice(0, rows);
 }
 
+function cardTitle(vm: HistoryVM, day: HistoryDay, state: HistoryState): string {
+  const when = `${dayLabel(day.key)}${day.key === today(vm) ? " · today" : ""}`;
+  return state.filter === "" ? when : `${when} · filter: ${state.filter}`;
+}
+
 function dayCard(
   vm: HistoryVM,
   state: HistoryState,
@@ -377,11 +512,10 @@ function dayCard(
   width: number,
   height: number,
 ) {
-  const day = vm.days[selectedIndex(vm, state)] as HistoryDay;
-  const title = `${dayLabel(day.key)}${day.key === today(vm) ? " · today" : ""}`;
+  const day = selectedDay(vm, state);
   return (
     <th-card
-      title={title}
+      title={cardTitle(vm, day, state)}
       theme={ctx.theme}
       width={width}
       height={height}
@@ -391,6 +525,39 @@ function dayCard(
       <Lines theme={ctx.theme} lines={cardLines(vm, day, state, ctx, width - 4, height - 2)} />
     </th-card>
   );
+}
+
+/**
+ * The day card in one line, for screens too short for the card (critique m3): date,
+ * cost, ratio, tokens, top model and limit events, dropping from the end to fit.
+ */
+function summaryLine(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Line {
+  const day = selectedDay(vm, state);
+  const ratio = ratioOf(day, baseline(vm, state.filter), ctx.showCost);
+  const c = costText(day);
+  const hits = day.events.filter((e) => e.kind === "reached").length;
+  const marks = day.events.length - hits;
+  const limits = [
+    ...(hits > 0 ? [`${hits} limit hit${hits === 1 ? "" : "s"}`] : []),
+    ...(marks > 0 ? [`${marks} at 80%`] : []),
+  ].join(" · ");
+  const parts: Seg[][] = [
+    [seg(` ${cardTitle(vm, day, state)}`, "head", true)],
+    ctx.showCost ? [seg(`  ${c.text}`, c.role, c.role === "cost")] : [],
+    ratio === null ? [] : [seg(`  ${ratioText(ratio)} avg`, "dim")],
+    [seg(`  ${tokens(day.tokens)} tokens`, "tokens")],
+    limits === "" ? [] : [seg(`  ${limits}`, "high")],
+    [seg(`  ${ranked(day.models, ctx.showCost)[0]?.name ?? "—"}`, "fg")],
+  ];
+  // Least important last: the top model goes first, then tokens, then the ratio.
+  const drop = [5, 3, 2];
+  const shapes: Seg[][] = [parts.flat()];
+  const kept = [...parts];
+  for (const i of drop) {
+    kept[i] = [];
+    shapes.push(kept.flat());
+  }
+  return { left: firstFit(shapes, ctx.width - 1) };
 }
 
 /** The 26 weeks, or the most recent that fit, moved back as far as the selection is. */
@@ -404,12 +571,14 @@ function heatWindow(vm: HistoryVM, selected: number, width: number) {
 
 function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
   const selected = selectedIndex(vm, state);
-  const gridWidth = Math.min(GUTTER + vm.weeks.length * 2, ctx.width);
+  // One cell past the last week, so a month name can start over it.
+  const gridWidth = Math.min(GUTTER + vm.weeks.length * 2 + 1, ctx.width);
   const { first, end, shown } = heatWindow(vm, selected, gridWidth);
   const values: (number | null)[] = [];
   for (let i = vm.gridStart + first * 7; i < vm.gridStart + end * 7; i++) {
     const d = vm.days[i];
-    values.push(d === undefined ? null : ctx.showCost ? d.cost : d.tokens);
+    const p = d === undefined ? null : slice(d, state.filter);
+    values.push(p === null ? null : ctx.showCost ? p.cost : p.tokens);
   }
   const at = selected - vm.gridStart - first * 7;
   const mondays = vm.weeks.slice(first, end).map((w) => w.key);
@@ -418,20 +587,28 @@ function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
       ? `LAST ${shown} WEEKS`
       : `${shown} WEEKS TO ${shortDate(keyOf(dayNumber(mondays[mondays.length - 1] as string) + 6)).toUpperCase()}`;
   const focused = state.focus === "heat";
+  const what = `daily ${ctx.showCost ? "cost" : "tokens"}`;
   const left = [
-    seg(` ${span} · daily ${ctx.showCost ? "cost" : "tokens"}`, focused ? "head" : "mute", focused),
+    seg(
+      ` ${span} · ${what}${state.filter === "" ? "" : ` · filter: ${state.filter}`}`,
+      focused ? "head" : "mute",
+      focused,
+    ),
   ];
   const legend = [seg("less ", "dim"), ...HEAT_ROLES.map((r) => seg("■ ", r)), seg("more ", "dim")];
   const title: Line =
     segsWidth(left) + 1 + segsWidth(legend) <= gridWidth ? { left, right: legend } : { left };
   const beside = ctx.bp !== "narrow";
+  // The grid ends in a blank cell, so one more makes the usual two-cell gap.
+  const cardWidth = Math.min(CARD_MAX, ctx.width - gridWidth - 1);
+  const height = beside ? cardHeight(vm, state, ctx, cardWidth) : HEAT_HEIGHT;
   return {
     id: "heat",
     priority: 2,
-    height: HEAT_HEIGHT,
-    render: (height) => (
-      <box flexDirection="row" height={height} flexShrink={0} columnGap={2}>
-        <box flexDirection="column" width={gridWidth} height={height} flexShrink={0}>
+    height,
+    render: (h) => (
+      <box flexDirection="row" height={h} flexShrink={0} columnGap={1}>
+        <box flexDirection="column" width={gridWidth} height={h} flexShrink={0}>
           <Lines theme={ctx.theme} lines={[title]} width={gridWidth} />
           <th-heat
             values={values}
@@ -440,27 +617,32 @@ function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
             months={monthLabels(mondays)}
             theme={ctx.theme}
             width={gridWidth}
-            height={height - 1}
+            height={HEAT_HEIGHT - 1}
             flexShrink={0}
           />
         </box>
-        {beside && dayCard(vm, state, ctx, Math.min(CARD_MAX, ctx.width - gridWidth - 2), height)}
+        {beside && dayCard(vm, state, ctx, cardWidth, h)}
       </box>
     ),
   };
 }
 
-/** Narrow screens: the day card under the heat map. */
+/** Narrow screens: the day card under the heat map, or its one-line summary when short. */
 function cardSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
+  const width = Math.min(CARD_MAX, ctx.width - 2);
   return {
     id: "card",
     priority: 3,
-    height: HEAT_HEIGHT,
-    render: (height) => (
-      <box flexDirection="row" height={height} flexShrink={0} paddingLeft={1}>
-        {dayCard(vm, state, ctx, Math.min(CARD_MAX, ctx.width - 2), height)}
-      </box>
-    ),
+    height: cardHeight(vm, state, ctx, width),
+    minHeight: 1,
+    render: (height) =>
+      height < HEAT_HEIGHT ? (
+        <Lines theme={ctx.theme} lines={[summaryLine(vm, state, ctx)]} />
+      ) : (
+        <box flexDirection="row" height={height} flexShrink={0} paddingLeft={1}>
+          {dayCard(vm, state, ctx, width, height)}
+        </box>
+      ),
   };
 }
 
@@ -475,48 +657,29 @@ function periodLabel(kind: Group, key: string): string {
   return dayLabel(key);
 }
 
-/** The sum of `rows`: the totals row of a filtered table. */
-function sum(rows: readonly HistoryTotal[]): HistoryTotal {
-  let cost = 0;
-  let count = 0;
-  let priced = 0;
-  let estimatedCost = 0;
-  let input = 0;
-  let output = 0;
-  let cache = 0;
-  for (const r of rows) {
-    cost += r.cost;
-    count += r.tokens;
-    priced += r.pricedShare * r.tokens;
-    estimatedCost += r.estimatedCost;
-    input += r.input;
-    output += r.output;
-    cache += r.cache;
-  }
-  const pricedShare = count > 0 ? priced / count : 1;
-  return { cost, tokens: count, pricedShare, estimatedCost, input, output, cache };
-}
-
 /**
  * The table's columns. Cells are worked out only for the rows on screen (the table asks
- * for them), so a 182-day table costs no more to draw than the rows it shows.
+ * for them), so a 182-day table costs no more to draw than the rows it shows. With a
+ * filter there's no accounts column: the view model has no account split per model.
  */
 function columns(
   vm: HistoryVM,
+  state: HistoryState,
   list: Listing,
   ctx: ViewContext,
   selected: Row | undefined,
   totals: { readonly row: Row; readonly label: string },
 ): Column<Row>[] {
+  const average = baseline(vm, state.filter);
   const period = (r: Row) => (r === totals.row ? null : (r as HistoryPeriod));
   const ratio = (r: Row) => {
     const p = period(r);
-    return p === null ? null : ratioOf(p, vm, ctx.showCost);
+    return p === null ? null : ratioOf(p, average, ctx.showCost);
   };
   const amount = (r: Row) =>
     ctx.showCost ? costText(r) : { text: tokens(r.tokens), role: "tokens" as Role };
   const right = { align: "right" as const, role: "tokens" as Role };
-  return [
+  const out: Column<Row>[] = [
     {
       title: list.kind === "day" ? "date" : list.kind,
       width: 10,
@@ -561,7 +724,9 @@ function columns(
       text: (r) => ranked(period(r)?.models ?? [], ctx.showCost)[0]?.name ?? "",
       drop: 7,
     },
-    {
+  ];
+  if (state.filter === "") {
+    out.push({
       title: "accounts",
       width: "fill",
       role: "mute",
@@ -570,8 +735,9 @@ function columns(
           .map((a) => a.name)
           .join(", "),
       drop: 8,
-    },
-  ];
+    });
+  }
+  return out;
 }
 
 function tabsLine(
@@ -583,8 +749,8 @@ function tabsLine(
 ): Line {
   if (state.typing) {
     return {
-      left: [seg(" filter ", "dim"), seg(`${state.filter}▏`, "head", true)],
-      right: [seg("model or account · enter apply · esc clear ", "dim")],
+      left: [seg(" filter: ", "dim"), seg(`${state.filter}▏`, "head", true)],
+      right: [seg("a model's id · enter apply · esc clear ", "dim")],
     };
   }
   const current = state.open !== null && list.parentKey === holding(state.open, today(vm));
@@ -607,7 +773,7 @@ function tabsLine(
   const filter =
     state.filter === ""
       ? [seg("/ ", "head", true), seg("filter ", "dim")]
-      : [seg("filter ", "dim"), seg(state.filter, "head", true), seg(" · esc clear ", "dim")];
+      : [seg("filter: ", "dim"), seg(state.filter, "head", true), seg(" · esc clear ", "dim")];
   const note = ctx.showCost ? costNote(rows) : null;
   const room = ctx.width - segsWidth(tabs) - 1;
   const right =
@@ -616,7 +782,8 @@ function tabsLine(
       : segsWidth(filter) <= room
         ? filter
         : [];
-  return { left: tabs, right };
+  // A filter on screen is never dropped: the tabs give way to it.
+  return right.length === 0 && state.filter !== "" ? { left: filter } : { left: tabs, right };
 }
 
 function tableSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
@@ -647,7 +814,7 @@ function tableSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sec
       <box flexDirection="column" height={height} flexShrink={0}>
         <Lines theme={ctx.theme} lines={[head]} />
         <Table
-          columns={columns(vm, list, ctx, rows[selected], totals)}
+          columns={columns(vm, state, list, ctx, rows[selected], totals)}
           rows={rows}
           selected={selected}
           totals={totals.row}
@@ -661,38 +828,44 @@ function tableSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sec
   };
 }
 
+function historyKeys(key: string, state: HistoryState, vm: HistoryVM): HistoryState | undefined {
+  if (key === "tab") return { ...state, focus: state.focus === "heat" ? "table" : "heat" };
+  const group = GROUP_KEYS[key];
+  if (group !== undefined) return { ...state, group, open: null };
+  if (key === "W") return openCurrent(vm, state, "week");
+  if (key === "M") return openCurrent(vm, state, "month");
+  if (key === "/") return { ...state, typing: true };
+  if (key === "return" || key === "enter") {
+    const list = listing(vm, state);
+    if (list.kind === "day" || selectedRow(vm, state, list) < 0) return undefined;
+    return { ...state, open: list.kind };
+  }
+  if (key === "escape") {
+    if (state.open !== null) return { ...state, open: null };
+    return state.filter === "" ? undefined : { ...state, filter: "" };
+  }
+  return move(key, state, vm);
+}
+
 export const history: View<HistoryVM, HistoryState> = {
   id: "history",
   title: "History",
   hints: [
     { key: "d/w/m", label: "group" },
-    { key: "/", label: "filter" },
+    { key: "/", label: "filter by model" },
     { key: "W/M", label: "this week/month" },
     { key: "tab", label: "heat map/table" },
     { key: "enter", label: "open" },
     { key: "esc", label: "back" },
+    { key: "←→↑↓", label: "move" },
   ],
   initial: { focus: "heat", group: "day", open: null, day: null, filter: "", typing: false },
   capturing: (state) => state.typing,
   keys(key, state, vm) {
     if (state.typing) return typed(key, state, vm);
     if (vm === undefined) return undefined;
-    if (key === "tab") return { ...state, focus: state.focus === "heat" ? "table" : "heat" };
-    const group = GROUP_KEYS[key];
-    if (group !== undefined) return { ...state, group, open: null };
-    if (key === "W") return openCurrent(vm, state, "week");
-    if (key === "M") return openCurrent(vm, state, "month");
-    if (key === "/") return { ...state, typing: true };
-    if (key === "return" || key === "enter") {
-      const list = listing(vm, state);
-      if (list.kind === "day" || selectedRow(vm, state, list) < 0) return undefined;
-      return { ...state, open: list.kind };
-    }
-    if (key === "escape") {
-      if (state.open !== null) return { ...state, open: null };
-      return state.filter === "" ? undefined : { ...state, filter: "" };
-    }
-    return move(key, state, vm);
+    const next = historyKeys(key, state, vm);
+    return next === undefined ? undefined : settle(vm, next);
   },
   sections(vm, state, ctx) {
     const sections = [heatSection(vm, state, ctx), tableSection(vm, state, ctx)];

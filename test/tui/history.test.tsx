@@ -35,7 +35,13 @@ import {
   readStoreAccounts,
   VmSession,
 } from "../../src/tui/vm/session.ts";
-import type { HistoryPeriod, HistoryVM, VmMessage } from "../../src/tui/vm/types.ts";
+import type {
+  HistoryDay,
+  HistoryEvent,
+  HistoryPeriod,
+  HistoryVM,
+  VmMessage,
+} from "../../src/tui/vm/types.ts";
 import { prng } from "../query/synthetic.ts";
 import { bundledTable, fixtureConfig } from "./fixture.ts";
 import { chars, cleanupRenderers, render, roles, settle } from "./render.ts";
@@ -195,7 +201,13 @@ function recordEvents(storePath: string): void {
   // work: 09:05 EST.
   record(ACCOUNTS[1], () => ({
     insert: [
-      event("passed_80", "weekly_all", "WEEKLY", "2026-12-06T17:00:00Z", "2026-12-03T14:05:00Z"),
+      event(
+        "passed_80",
+        "weekly_scoped",
+        "FABLE WEEKLY",
+        "2026-12-06T17:00:00Z",
+        "2026-12-03T14:05:00Z",
+      ),
     ],
     resume: [],
   }));
@@ -215,8 +227,8 @@ let vm: HistoryVM;
 let ids: Map<string, number>;
 
 /** History's view model at `now`, as the view-model Worker computes it. */
-function computeAt(now: number, scope: number | null = null): HistoryVM {
-  const db = openStoreReader(storePath);
+function computeAt(now: number, scope: number | null = null, path = storePath): HistoryVM {
+  const db = openStoreReader(path);
   if (db === null) throw new Error("store missing");
   try {
     const q = createQueries(db, table, TZ, () => now);
@@ -358,6 +370,7 @@ describe("the view model", () => {
 
   test("the average is the 30 days before today, per day", () => {
     const want = oracle(midnight("2026-11-03"), midnight("2026-12-03"));
+    expect(vm.averageDays).toBe(30);
     close(vm.average.cost, want.cost / 30);
     close(vm.average.tokens, want.tokens / 30);
     close(vm.weeksTotal.cost, oracle(midnight("2026-06-08"), midnight("2026-12-04")).cost);
@@ -370,7 +383,7 @@ describe("the view model", () => {
       {
         account: "work",
         kind: "passed_80",
-        window: "WEEKLY",
+        window: "FABLE WEEKLY",
         at: Date.parse("2026-12-03T14:05:00Z"),
         resumedAt: null,
       },
@@ -426,7 +439,85 @@ describe("the view model", () => {
       session.close();
     }
   });
+
+  test("a limit event recorded with no new usage reaches History through `changed` (critique m2)", () => {
+    // Its own store, built like the fixture's (a file copy could miss what's in the WAL).
+    const copy = join(dir, "events-copy.db");
+    const fresh = openStore(copy);
+    fresh.upsert(ROWS);
+    fresh.close();
+    recordEvents(copy);
+    const posted: VmMessage[] = [];
+    const queue: (() => void)[] = [];
+    const session = new VmSession(
+      {
+        type: "start",
+        storePath: copy,
+        overridesPath: join(dir, "no-overrides.json"),
+        mcpDir: join(dir, "mcp"),
+        mode: "owner",
+        settings: { tz: TZ, window: "all", scope: null },
+        scopeLabel: null,
+        config: fixtureConfig(),
+        discover: { home: join(dir, "home"), env: {} },
+        now: NOW,
+      },
+      (m) => posted.push(m),
+      {
+        monotonic: () => 0,
+        setTimeout: (fn) => queue.push(fn),
+        clearTimeout: () => {},
+      },
+    );
+    const history_ = () =>
+      posted.flatMap((m) => (m.type === "views" && m.views.history ? [m.views.history] : []));
+    try {
+      session.begin();
+      expect(history_().at(-1)?.days.at(-1)?.events).toHaveLength(2);
+      // The Worker records codex's hit at 15:30 EST and says so, as for usage.
+      const at = Date.parse("2026-12-03T20:30:00Z");
+      const store = openStore(copy);
+      store.recordLimitEvents(ACCOUNTS[2], 0, () => ({
+        insert: [
+          { kind: "reached", window: "codex_primary", label: "5-HOUR", resetsAt: at + HOUR, at },
+        ],
+        resume: [],
+      }));
+      store.close();
+      session.handle({ type: "changed", fromTs: at, toTs: at, accounts: [ACCOUNTS[2].identity] });
+      while (queue.length > 0) queue.shift()?.();
+      const events = history_().at(-1)?.days.at(-1)?.events ?? [];
+      expect(events.map((e) => [e.account, e.kind])).toContainEqual(["codex", "reached"]);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("the baseline averages the days since usage began, when fewer than 30 (critique n3)", () => {
+    const small = join(dir, "new-user.db");
+    const store = openStore(small);
+    // Usage on the 5 days before today and today: Nov 28 – Dec 3.
+    const rows = ROWS.filter((r) => r.ts >= midnight("2026-11-28"));
+    store.upsert(rows);
+    store.close();
+    const model = computeAt(NOW, null, small);
+    expect(rows.some((r) => r.ts < midnight("2026-11-29"))).toBe(true);
+    expect(model.averageDays).toBe(5);
+    close(model.average.cost, oracle(midnight("2026-11-28"), midnight("2026-12-03")).cost / 5);
+    // Usage only today: no baseline, so no ratio.
+    const fresh = join(dir, "today-only.db");
+    const s2 = openStore(fresh);
+    s2.upsert(ROWS.filter((r) => r.ts >= midnight("2026-12-03")));
+    s2.close();
+    const first = computeAt(NOW, null, fresh);
+    expect(first.averageDays).toBe(0);
+    expect(first.average).toEqual({ cost: 0, tokens: 0 });
+  });
 });
+
+function isOpusName(name: string): boolean {
+  return name.includes("opus");
+}
 
 function addKey(key: string, days: number): string {
   let out = key;
@@ -661,23 +752,20 @@ describe("the heat map and the table share one selection", () => {
     expect(press(vm, "up", "up", "up", "M")).toMatchObject({ open: "month", day: null });
   });
 
-  test("/ filters by model or account; typing takes every key; Enter applies, Esc clears", () => {
+  test("/ filters by model; typing takes every key; Enter applies, Esc clears", () => {
     let state = press(vm, "w", "/");
     expect(history.capturing?.(state)).toBe(true);
-    for (const k of ["m", "Y", "s", "t", "e", "r", "y"])
+    for (const k of ["m", "Y", "s", "t", "e", "r", "y"]) {
       state = history.keys(k, state, vm) ?? state;
+    }
     expect(state.filter).toBe("mYstery");
     state = history.keys("return", state, vm) ?? state;
     expect(state.typing).toBe(false);
     const rows = listing(vm, state).rows;
     expect(rows.length).toBeGreaterThan(0);
-    for (const r of rows) expect(r.models.some((m) => m.name === "claude-mystery-9")).toBe(true);
-    // An account name matches too; a filter with no match leaves no row.
-    expect(
-      listing(vm, press(vm, "/", "c", "o", "d", "e", "x", "return")).rows.every((r) =>
-        r.accounts.some((a) => a.name === "codex"),
-      ),
-    ).toBe(true);
+    for (const r of rows) expect(r.models.map((m) => m.name)).toEqual(["claude-mystery-9"]);
+    // Accounts are the `a` scope's: an account's name matches nothing.
+    expect(listing(vm, press(vm, "/", "c", "o", "d", "e", "x", "return")).rows).toEqual([]);
     expect(listing(vm, press(vm, "/", "z", "z", "return")).rows).toEqual([]);
     state = history.keys("escape", state, vm) ?? state;
     expect(state.filter).toBe("");
@@ -685,19 +773,48 @@ describe("the heat map and the table share one selection", () => {
     expect(typing).toMatchObject({ typing: false, filter: "" });
   });
 
-  test("a filtered table's totals are its rows'", async () => {
-    const keys = ["/", "m", "y", "s", "t", "e", "r", "y", "return"];
+  test("a model filter narrows every number to that model: rows, totals, bars, heat map, card", async () => {
+    const keys = ["/", "o", "p", "u", "s", "return"];
+    const isOpus = (r: UsageRow) => r.model.includes("opus");
+    const grid = { from: midnight("2026-06-08"), to: midnight("2026-12-04") };
+    const opus = oracle(grid.from, grid.to, isOpus);
+    const all = oracle(grid.from, grid.to);
+    expect(opus.cost).toBeGreaterThan(0);
+    expect(opus.cost).toBeLessThan(all.cost / 2);
     const { frame, setup } = await frameOf(vm, 120, 45, keys);
     const shown = listing(vm, press(vm, ...keys)).rows;
-    expect(shown.length).toBeGreaterThan(0);
-    expect(shown.length).toBeLessThan(vm.days.length - vm.gridStart);
-    let cost = 0;
-    for (const d of shown) cost += oracle(midnight(d.key), midnight(nextDay(d.key))).cost;
-    expect(line(frame, ` ${shown.length} days`)).toContain(money(cost));
-    expect(frame).toContain("filter mystery · esc clear");
-    // Today, the selected day, used no mystery model: the selection moved to the first row.
-    expect(vm.days.at(-1)?.models.map((m) => m.name)).not.toContain("claude-mystery-9");
-    expect(selectedLine(setup)).toStartWith(dayLabel((shown[0] as HistoryPeriod).key));
+    // Days without Opus go; each day left shows Opus's own cost and tokens.
+    const used = vm.days
+      .slice(vm.gridStart)
+      .filter((d) => d.models.some((m) => isOpusName(m.name)));
+    expect(shown.map((r) => r.key)).toEqual(used.map((d) => d.key).reverse());
+    for (const r of shown) {
+      const want = oracle(midnight(r.key), midnight(nextDay(r.key)), isOpus);
+      close(r.cost, want.cost);
+      expect(r.tokens).toBe(want.tokens);
+    }
+    // The totals row is Opus's spend over the 26 weeks, not every model's.
+    const totals = line(frame, ` ${shown.length} days`);
+    expect(totals).toContain(costText({ ...opus, pricedShare: 1, estimatedCost: 0 }).text);
+    expect(totals).not.toContain(money(all.cost));
+    // Titles say so; the heat map's cells and the card are Opus's too.
+    expect(frame).toContain("daily cost · filter: opus");
+    expect(frame).toContain("filter: opus · esc clear");
+    expect(frame).toContain("filter: opus ─");
+    const day = shown[0] as HistoryPeriod;
+    expect(selectedLine(setup)).toStartWith(dayLabel(day.key));
+    expect(frame).toContain(`cost     ${costText(day).text}`);
+    // Ratios are against Opus's own 30-day average.
+    const average = oracle(midnight("2026-11-03"), midnight("2026-12-03"), isOpus).cost / 30;
+    expect(line(frame, ` ${dayLabel(day.key)}`)).toContain(`${(day.cost / average).toFixed(1)}×`);
+    // No accounts column: the view model has no account split per model.
+    expect(line(frame, " date")).not.toContain("accounts");
+  });
+
+  test("Esc clears the filter, and every number is whole again", async () => {
+    const { frame } = await frameOf(vm, 120, 45, ["/", "o", "p", "u", "s", "return", "escape"]);
+    expect(line(frame, " 179 days")).toContain(costText(vm.weeksTotal).text);
+    expect(frame).not.toContain("filter:");
   });
 
   test("narrow: the heat map shows the latest weeks that fit, and follows the selection back", async () => {
@@ -707,6 +824,75 @@ describe("the heat map and the table share one selection", () => {
     expect(heatCursor(setup, vm)).toBe("2026-06-11");
     const { frame: now } = await frameOf(vm, 50, 30);
     expect(now).toContain("LAST 22 WEEKS");
+  });
+});
+
+// ── the day card and the selection's edges ───────────────────────────────────────
+
+describe("limit events on the card", () => {
+  test("hits come first and are never hidden behind +N more; the card grows for them", async () => {
+    const today = vm.days.at(-1) as HistoryDay;
+    const at = (utc: string) => Date.parse(`2026-12-03T${utc}:00Z`);
+    const marks: HistoryEvent[] = ["13:00", "13:30", "14:00", "14:20"].map((t) => ({
+      account: "work",
+      kind: "passed_80",
+      window: "WEEKLY",
+      at: at(t),
+      resumedAt: null,
+    }));
+    const hits: HistoryEvent[] = ["15:00", "17:00", "19:00", "20:00"].map((t) => ({
+      account: "personal",
+      kind: "reached",
+      window: "5-HOUR",
+      at: at(t),
+      resumedAt: at(t) + 30 * 60_000,
+    }));
+    const busy: HistoryVM = {
+      ...vm,
+      days: [...vm.days.slice(0, -1), { ...today, events: [...marks, ...hits] }],
+    };
+    for (const [width, height] of [
+      [105, 50],
+      [120, 45],
+    ] as const) {
+      const { frame } = await frameOf(busy, width, height);
+      // 15:00Z is 10:00 EST.
+      for (const t of ["10:00", "12:00", "14:00", "15:00"]) {
+        expect(frame).toContain(`hit 100% at ${t}`);
+      }
+      expect(frame).toContain("+4 more");
+      expect(frame.indexOf("hit 100% at 15:00")).toBeLessThan(frame.indexOf("+4 more"));
+      expect(frame).not.toContain("passed 80%");
+    }
+  });
+});
+
+describe("one side is always highlighted (critique m4)", () => {
+  test("a day older than the heat map, left by closing the oldest month, moves onto it", async () => {
+    // By month, the oldest month opened, its 3rd selected: Jun 3, before the heat map.
+    const opened = press(vm, "m", "tab", "end", "return");
+    expect(opened.open).toBe("month");
+    expect(selectedDay(vm, opened)).toBe("2026-06-03");
+    const back = history.keys("escape", opened, vm) as HistoryState;
+    expect(selectedDay(vm, back)).toBe("2026-06-03"); // the June row holds it
+    for (const k of ["d", "w"]) {
+      const next = history.keys(k, back, vm) as HistoryState;
+      expect(selectedDay(vm, next)).toBe("2026-06-08");
+      expect(selectedRow(vm, next, listing(vm, next))).toBeGreaterThanOrEqual(0);
+    }
+    const { setup } = await frameOf(vm, 120, 45, ["m", "tab", "end", "return", "escape", "d"]);
+    expect(heatCursor(setup, vm)).toBe("2026-06-08");
+    expect(selectedLine(setup)).toStartWith("Mon Jun 8");
+  });
+
+  test("from a day the filter hides, ↓ goes to the next older row and ↑ to the next newer", () => {
+    // Opus rows: … Dec 2, Nov 28 …; the heat map moves to Dec 1, which has no Opus.
+    const hidden = press(vm, "/", "o", "p", "u", "s", "return", "up");
+    expect(selectedDay(vm, hidden)).toBe("2026-12-01");
+    expect(selectedRow(vm, hidden, listing(vm, hidden))).toBe(-1);
+    const table = history.keys("tab", hidden, vm) as HistoryState;
+    expect(selectedDay(vm, history.keys("down", table, vm) as HistoryState)).toBe("2026-11-28");
+    expect(selectedDay(vm, history.keys("up", table, vm) as HistoryState)).toBe("2026-12-02");
   });
 });
 
@@ -728,8 +914,17 @@ describe.each([
     if (width >= 100) {
       expect(frame).toContain("personal 5h hit 100% at 10:02");
       expect(frame).toContain("waited 1h18m");
-      expect(frame).toContain("work weekly passed 80% at 09:05");
+      // A scoped window's label gives way before its time does (critique M2).
+      expect(frame).toContain("passed 80% at 09:05");
+      if (width >= 120) expect(frame).toContain("work fable weekly passed 80% at 09:05");
+      else expect(frame).toContain("work fable w… passed 80% at 09:05");
+    } else {
+      // Too short for the card: its one-line summary (critique m3).
+      expect(frame).toContain(` Thu Dec 3 · today  ${costText(today).text}  `);
+      expect(frame).toContain("1 limit hit · 1 at 80%");
     }
+    // Every month has its name: the first, partial one and this one included (critique n1).
+    expect(line(frame, "     Jun")).toMatch(/^ {5}Jun +Jul +Aug +Sep +Oct +Nov +Dec( |$)/);
     expect(frame).toMatchSnapshot();
   });
 

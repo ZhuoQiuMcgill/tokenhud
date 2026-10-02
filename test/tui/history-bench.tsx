@@ -146,6 +146,16 @@ try {
     `  grouping, W and M: p50 ${g.p50.toFixed(2)} p95 ${g.p95.toFixed(2)} max ${g.max.toFixed(2)} ms`,
   );
   verdict("switch grouping (key → frame, p95 of 100)", g.p95, BUDGET.frame);
+  // A model filter narrows every number on screen, worked out per frame from the view model.
+  for (const k of ["/", "o", "p", "u", "s", "return"]) await press(k);
+  const filtered: number[] = [];
+  for (let i = 0; i < 60; i++) filtered.push(await press(["w", "m", "d"][i % 3] as string));
+  const fl = stats(filtered);
+  console.log(
+    `  grouping with "/opus": p50 ${fl.p50.toFixed(2)} p95 ${fl.p95.toFixed(2)} max ${fl.max.toFixed(2)} ms`,
+  );
+  verdict("switch grouping, filtered by model (p95 of 60)", fl.p95, BUDGET.frame);
+  await press("escape", "\u001b");
   const moves: number[] = [];
   for (let i = 0; i < 50; i++)
     moves.push(await press(["left", "up", "right", "down"][i % 4] as string));

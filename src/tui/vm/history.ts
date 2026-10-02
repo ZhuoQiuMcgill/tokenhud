@@ -57,13 +57,7 @@ function total(u: Usage): HistoryTotal {
 }
 
 function share(name: string, u: Usage): HistoryShare {
-  return {
-    name,
-    cost: u.cost,
-    tokens: u.tokens.total,
-    pricedShare: u.coverage.pricedShare,
-    estimatedCost: u.estimatedCost,
-  };
+  return { name, ...total(u) };
 }
 
 function ranked(shares: HistoryShare[]): HistoryShare[] {
@@ -75,27 +69,30 @@ function ranked(shares: HistoryShare[]): HistoryShare[] {
 
 /** Shares summed by name (a model's tiers, a period's days), most cost first. */
 function merged(lists: Iterable<readonly HistoryShare[]>): HistoryShare[] {
-  const sums = new Map<
-    string,
-    { cost: number; tokens: number; priced: number; estimated: number }
-  >();
+  const sums = new Map<string, HistoryShare & { priced: number }>();
   for (const list of lists) {
     for (const s of list) {
-      const sum = sums.get(s.name) ?? { cost: 0, tokens: 0, priced: 0, estimated: 0 };
-      sum.cost += s.cost;
-      sum.tokens += s.tokens;
-      sum.priced += s.pricedShare * s.tokens;
-      sum.estimated += s.estimatedCost;
-      sums.set(s.name, sum);
+      const sum = sums.get(s.name);
+      if (sum === undefined) {
+        sums.set(s.name, { ...s, priced: s.pricedShare * s.tokens });
+        continue;
+      }
+      sums.set(s.name, {
+        ...sum,
+        cost: sum.cost + s.cost,
+        tokens: sum.tokens + s.tokens,
+        priced: sum.priced + s.pricedShare * s.tokens,
+        estimatedCost: sum.estimatedCost + s.estimatedCost,
+        input: sum.input + s.input,
+        output: sum.output + s.output,
+        cache: sum.cache + s.cache,
+      });
     }
   }
   return ranked(
-    [...sums].map(([name, s]) => ({
-      name,
-      cost: s.cost,
-      tokens: s.tokens,
-      pricedShare: s.tokens > 0 ? s.priced / s.tokens : 1,
-      estimatedCost: s.estimated,
+    [...sums.values()].map(({ priced, ...s }) => ({
+      ...s,
+      pricedShare: s.tokens > 0 ? priced / s.tokens : 1,
     })),
   );
 }
@@ -182,8 +179,14 @@ export function computeHistory(ctx: ComputeContext): Computed<HistoryVM> {
       days.filter((d) => d.key.startsWith(m.key)),
     ),
   );
+  // The baseline: the 30 days before today, or the days since the first one with usage
+  // when that is more recent, so a new user's ratios aren't inflated by empty days.
+  const last = days.length - 1;
+  const firstUsed = calendar.findIndex((d) => d.usage.records > 0);
+  const averageDays =
+    firstUsed < 0 ? 0 : Math.max(0, Math.min(AVERAGE_DAYS, last, last - firstUsed));
   const before = q.totals({
-    range: { from: zone.startOf(addDays(today, -AVERAGE_DAYS)), to: zone.startOf(today) },
+    range: { from: zone.startOf(addDays(today, -averageDays)), to: zone.startOf(today) },
     ...filter,
   }).usage;
   return {
@@ -194,9 +197,10 @@ export function computeHistory(ctx: ComputeContext): Computed<HistoryVM> {
       months,
       weeksTotal: total(q.totals({ range: grid, ...filter }).usage),
       monthsTotal: total(q.totals({ range, ...filter }).usage),
+      averageDays,
       average: {
-        cost: before.cost / AVERAGE_DAYS,
-        tokens: before.tokens.total / AVERAGE_DAYS,
+        cost: averageDays > 0 ? before.cost / averageDays : 0,
+        tokens: averageDays > 0 ? before.tokens.total / averageDays : 0,
       },
     },
     deps: [range],

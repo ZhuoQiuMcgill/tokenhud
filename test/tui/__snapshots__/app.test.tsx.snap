@@ -58,8 +58,8 @@ exports[`105×50 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- LAST 26 WEEKS · daily cost          less ■ ■ ■ ■ ■ more   ╭─ Tue Sep 29 · today ───────────────────────╮
-     Apr     May     Jun       Jul     Aug       Sep       │ cost     $2.38*   0.4× your 30-day avg     │
+ LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ───────────────────────╮
+     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $2.38*   0.4× your 30-day avg     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M                              │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · +2              │
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced   │
@@ -104,7 +104,7 @@ exports[`105×50 view 2 (history) 1`] = `
  ────────────────────────────────────────────────────────────────────────────────────────────────────────
  177 days     11.7M    7.2M   291.8M    $336.20*                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   d/w/m group   / filter   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ 1-4 views   d/w/m group   a account   s settings   ? help   q quit                       MCP ● 2 agents 
 "
 `;
 
@@ -269,8 +269,8 @@ exports[`120×45 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- LAST 26 WEEKS · daily cost          less ■ ■ ■ ■ ■ more   ╭─ Tue Sep 29 · today ──────────────────────────────────────╮
-     Apr     May     Jun       Jul     Aug       Sep       │ cost     $2.38*   0.4× your 30-day avg                    │
+ LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ──────────────────────────────────────╮
+     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $2.38*   0.4× your 30-day avg                    │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M  in 90K · out 61K · cache 2.4M              │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · gpt-5.5 40% · +1               │
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced                  │
@@ -310,7 +310,7 @@ exports[`120×45 view 2 (history) 1`] = `
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  177 days     11.7M    7.2M   291.8M    $336.20*                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   d/w/m group   / filter   W/M this week/month   a account   s settings   ? help   q quit     MCP ● 2 agents 
+ 1-4 views   d/w/m group   / filter by model   a account   s settings   ? help   q quit                  MCP ● 2 agents 
 "
 `;
 
@@ -444,8 +444,8 @@ exports[`80×24 view 2 (history) 1`] = `
 " tokenhud   1   2 History   3   4                  all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- LAST 26 WEEKS · daily cost          less ■ ■ ■ ■ ■ more                        
-     Apr     May     Jun       Jul     Aug       Sep                            
+ LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more                       
+     Apr   May       Jun     Jul     Aug       Sep     Oct                      
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                          
@@ -454,13 +454,13 @@ exports[`80×24 view 2 (history) 1`] = `
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                          
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                          
                                                                                 
+ Tue Sep 29 · today  $2.38*  0.4× avg  2.6M tokens  gpt-5.6-sol                 
+                                                                                
   Day   Week   Month     This week   This month                        / filter 
  date         input  output    cache        cost vs 30-day avg                  
  Tue Sep 29     90K     61K     2.4M      $2.38* ━━━━━━━━━━━━━━━━━━  0.4×       
  Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×       
  Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×       
- Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1×       
- Fri Sep 25    171K    101K     4.1M      $5.79* ━━━━━━━━━━━━━━━━━━  1.1×       
  ───────────────────────────────────────────────────────────────────────────────
  177 days     11.7M    7.2M   291.8M    $336.20*                                
 ────────────────────────────────────────────────────────────────────────────────
@@ -582,15 +582,15 @@ exports[`160×50 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- LAST 26 WEEKS · daily cost          less ■ ■ ■ ■ ■ more   ╭─ Tue Sep 29 · today ─────────────────────────────────────────╮                                     
-     Apr     May     Jun       Jul     Aug       Sep       │ cost     $2.38*   0.4× your 30-day avg                       │                                     
- Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M  in 90K · out 61K · cache 2.4M                 │                                     
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · gpt-5.5 40% · claude-mystery-9 0% │                                     
- Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced                     │                                     
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   none                                                │                                     
- Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day                               │                                     
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                              │                                     
- Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰──────────────────────────────────────────────────────────────╯                                     
+ LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ─────────────────────────────────────────────────────────╮                     
+     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $2.38*   0.4× your 30-day avg                                       │                     
+ Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M  in 90K · out 61K · cache 2.4M                                 │                     
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · gpt-5.5 40% · claude-mystery-9 0%                 │                     
+ Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced                                     │                     
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   none                                                                │                     
+ Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day                                               │                     
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                                              │                     
+ Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰──────────────────────────────────────────────────────────────────────────────╯                     
                                                                                                                                                                 
   Day   Week   Month     This week   This month                                                                              * not all tokens priced · / filter 
  date         input  output    cache        cost vs 30-day avg            top model        accounts                                                             
@@ -628,7 +628,7 @@ exports[`160×50 view 2 (history) 1`] = `
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  177 days     11.7M    7.2M   291.8M    $336.20*                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   d/w/m group   / filter   W/M this week/month   tab heat map/table   enter open   a account   s settings   ? help   q quit           MCP ● 2 agents 
+ 1-4 views   d/w/m group   / filter by model   W/M this week/month   tab heat map/table   a account   s settings   ? help   q quit               MCP ● 2 agents 
 "
 `;
 
@@ -1080,13 +1080,13 @@ exports[`states help overlay 1`] = `
                      │                                                              │                    
                      │   History                                                    │                    
                      │   d/w/m    group                                             │                    
-                     │   /        filter                                            │                    
+                     │   /        filter by model                                   │                    
                      │   W/M      this week/month                                   │                    
                      │   tab      heat map/table                                    │                    
                      │   enter    open                                              │                    
                      │   esc      back                                              │                    
+                     │   ←→↑↓     move                                              │                    
                      ╰──────────────────────────────────────────────────────────────╯                    
-                                                                                                         
                                                                                                          
                                                                                                          
                                                                                                          

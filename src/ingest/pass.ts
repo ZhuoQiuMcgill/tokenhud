@@ -41,7 +41,10 @@ export interface PassFile {
 
 export interface ChangedEvent {
   type: "changed";
-  /** Identities of the accounts whose rows were inserted, raised or removed. */
+  /**
+   * Identities of the accounts whose rows were inserted, raised or removed, or whose limit
+   * events were recorded (the Worker's limits schedule).
+   */
   accounts: string[];
   /** The span of those rows' timestamps (epoch ms, inclusive). */
   fromTs: number;
