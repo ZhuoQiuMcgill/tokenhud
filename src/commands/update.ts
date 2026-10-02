@@ -15,7 +15,8 @@ import {
   npmGlobalPrefix,
   parseVersion,
   type Release,
-  releasesApi,
+  type ReleaseSource,
+  releaseSource,
   replaceBinary,
   stagingPath,
   UpdateError,
@@ -148,9 +149,24 @@ export async function runUpdate(
     return 1;
   }
 
+  let source: ReleaseSource;
+  try {
+    source = releaseSource(deps.env);
+  } catch (error) {
+    if (!(error instanceof UpdateError)) throw error;
+    deps.err(error.message);
+    return 2;
+  }
+  if (source.overridden) {
+    deps.err(
+      `WARNING: releases come from ${source.api} (TOKENHUD_RELEASES_API), not GitHub. ` +
+        "Its SHA256SUMS comes from the same server, so use only a server you trust.",
+    );
+  }
+
   let release: Release | null;
   try {
-    release = await newestRelease(releasesApi(deps.env), prerelease, deps.fetch);
+    release = await newestRelease(source, prerelease, deps.fetch);
   } catch (error) {
     if (!(error instanceof UpdateError)) throw error;
     deps.err(error.message);
@@ -181,10 +197,15 @@ export async function runUpdate(
     else deps.out(`run: tokenhud update${prerelease ? " --prerelease" : ""}`);
     return 0;
   }
-  return selfUpdate(release, latest, deps);
+  return selfUpdate(release, latest, source, deps);
 }
 
-async function selfUpdate(release: Release, latest: string, deps: UpdateDeps): Promise<number> {
+async function selfUpdate(
+  release: Release,
+  latest: string,
+  source: ReleaseSource,
+  deps: UpdateDeps,
+): Promise<number> {
   const target = deps.target === undefined ? undefined : targetById(deps.target);
   if (target === undefined) {
     deps.err("this binary doesn't know its platform; reinstall it with install.sh or install.ps1");
@@ -197,7 +218,7 @@ async function selfUpdate(release: Release, latest: string, deps: UpdateDeps): P
     // Fails early, before a 100 MB download, when the binary's directory isn't writable.
     writeFileSync(staging, "");
     deps.out(`downloading ${name} from ${release.tag}…`);
-    const bytes = await downloadVerified(release, name, staging, deps.fetch);
+    const bytes = await downloadVerified(release, name, staging, deps.fetch, source.insecure);
     deps.out(`checksum ok (${(bytes / 1e6).toFixed(1)} MB)`);
     if (deps.platform !== "win32") chmodSync(staging, 0o755);
     // A binary that can't start (or isn't the version it claims) must not replace one that can.

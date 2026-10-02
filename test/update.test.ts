@@ -23,6 +23,8 @@ import {
   newestRelease,
   parseVersion,
   type Release,
+  type ReleaseSource,
+  releaseSource,
   removeStaleOld,
   replaceBinary,
   type Version,
@@ -179,10 +181,38 @@ function rawRelease(tag: string, extra: Record<string, unknown> = {}) {
   };
 }
 
+const SRC: ReleaseSource = { api: API, overridden: true, insecure: false };
+
+describe("where releases come from", () => {
+  test("GitHub by default; an https:// override is used and flagged", () => {
+    expect(releaseSource({})).toEqual({
+      api: "https://api.github.com/repos/ZhuoQiuMcgill/tokenhud",
+      overridden: false,
+      insecure: false,
+    });
+    expect(releaseSource({ TOKENHUD_RELEASES_API: `${API}/` })).toEqual(SRC);
+  });
+
+  test("an override that isn't https:// is refused, unless TOKENHUD_INSECURE_TEST=1", () => {
+    const local = { TOKENHUD_RELEASES_API: "http://127.0.0.1:8080/api" };
+    expect(() => releaseSource(local)).toThrow(
+      "TOKENHUD_RELEASES_API must be an https:// URL, not http://127.0.0.1:8080/api",
+    );
+    expect(() => releaseSource({ TOKENHUD_RELEASES_API: "file:///tmp/x" })).toThrow("https://");
+    expect(() => releaseSource({ TOKENHUD_RELEASES_API: "not a url" })).toThrow("not a URL");
+    expect(releaseSource({ ...local, TOKENHUD_INSECURE_TEST: "1" })).toEqual({
+      api: "http://127.0.0.1:8080/api",
+      overridden: true,
+      insecure: true,
+    });
+    expect(() => releaseSource({ ...local, TOKENHUD_INSECURE_TEST: "yes" })).toThrow("https://");
+  });
+});
+
 describe("newest release", () => {
   test("stable asks GitHub's latest and reads tag, kind and assets", async () => {
     const f = fakeFetch({ [`${API}/releases/latest`]: json(rawRelease("v0.2.0")) });
-    const r = (await newestRelease(API, false, f.fn)) as Release;
+    const r = (await newestRelease(SRC, false, f.fn)) as Release;
     expect(f.asked).toEqual([`${API}/releases/latest`]);
     expect(r.tag).toBe("v0.2.0");
     expect(r.prerelease).toBe(false);
@@ -192,7 +222,7 @@ describe("newest release", () => {
 
   test("no stable release yet is null", async () => {
     const f = fakeFetch({});
-    expect(await newestRelease(API, false, f.fn)).toBeNull();
+    expect(await newestRelease(SRC, false, f.fn)).toBeNull();
   });
 
   test("with prereleases, the highest version wins, whatever the list order; drafts never", async () => {
@@ -205,23 +235,23 @@ describe("newest release", () => {
         rawRelease("v0.0.9"),
       ]),
     });
-    expect(((await newestRelease(API, true, f.fn)) as Release).tag).toBe("v0.1.0-rc.10");
+    expect(((await newestRelease(SRC, true, f.fn)) as Release).tag).toBe("v0.1.0-rc.10");
   });
 
   test("a non-JSON answer is a clear error", async () => {
     const html = fakeFetch({ [`${API}/releases/latest`]: () => new Response("<html>oops</html>") });
-    await expect(newestRelease(API, false, html.fn)).rejects.toThrow("didn't answer with JSON");
+    await expect(newestRelease(SRC, false, html.fn)).rejects.toThrow("didn't answer with JSON");
   });
 
   test("a rate limit and an unreachable host are clear errors", async () => {
     const limited = fakeFetch({
       [`${API}/releases/latest`]: () => new Response("", { status: 403 }),
     });
-    await expect(newestRelease(API, false, limited.fn)).rejects.toThrow("rate limit");
+    await expect(newestRelease(SRC, false, limited.fn)).rejects.toThrow("rate limit");
     const down = (async () => {
       throw new Error("connection refused");
     }) as unknown as typeof fetch;
-    await expect(newestRelease(API, false, down)).rejects.toThrow(
+    await expect(newestRelease(SRC, false, down)).rejects.toThrow(
       "can't reach api.example: connection refused",
     );
   });
@@ -283,6 +313,29 @@ describe("download", () => {
     expect(f.asked).toEqual(["https://dl.example/v1.0.0/sums"]);
   });
 
+  test("downloads must be https://, wherever redirects lead, unless insecure for tests", async () => {
+    const plain: Release = {
+      ...release("v1.0.0"),
+      assets: new Map([
+        ["tokenhud-linux-x64", "http://dl.example/bin"],
+        ["SHA256SUMS", "http://dl.example/sums"],
+      ]),
+    };
+    const f = releaseFetch("v1.0.0", "NEW", sums("NEW"));
+    await expect(
+      downloadVerified(plain, "tokenhud-linux-x64", join(dir, "n"), f.fn),
+    ).rejects.toThrow("a release download must be an https:// URL, not http://dl.example/sums");
+    expect(f.asked).toEqual([]);
+    const downgraded = (async (url: string) => {
+      const res = new Response("x");
+      Object.defineProperty(res, "url", { value: String(url).replace("https:", "http:") });
+      return res;
+    }) as unknown as typeof fetch;
+    await expect(
+      downloadVerified(release("v1.0.0"), "tokenhud-linux-x64", join(dir, "n"), downgraded),
+    ).rejects.toThrow("not http://dl.example/v1.0.0/sums");
+  });
+
   test("SHA256SUMS is read in sha256sum's text and binary forms", () => {
     const hex = sha256("x");
     expect(sumFor(`${hex}  a\n${hex.toUpperCase()} *b\r\n`, "b")).toBe(hex);
@@ -341,7 +394,10 @@ describe("replacing the binary", () => {
 
 describe("tokenhud update", () => {
   /** A fake GitHub on localhost, serving `tags` with the asset downloads behind a redirect. */
-  function serve(tags: Record<string, string>, opts: { stable?: string; tamper?: boolean } = {}) {
+  function serve(
+    tags: Record<string, string>,
+    opts: { stable?: string; tamper?: boolean; missingBinary?: boolean } = {},
+  ) {
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -368,6 +424,7 @@ describe("tokenhud update", () => {
         const b = /^\/blob\/([^/]+)\/(bin|sums)$/.exec(url.pathname);
         const body = b === null ? undefined : tags[b[1] as string];
         if (b === null || body === undefined) return new Response("", { status: 404 });
+        if (b[2] === "bin" && opts.missingBinary) return new Response("", { status: 404 });
         if (b[2] === "bin") return new Response(opts.tamper ? `${body}!` : body);
         return new Response(formatSums(new Map([["tokenhud-linux-x64", sha256(body)]])));
       },
@@ -378,11 +435,12 @@ describe("tokenhud update", () => {
   function deps(port: number | undefined, over: Partial<UpdateDeps> = {}) {
     const out: string[] = [];
     const err: string[] = [];
+    const warnings: string[] = [];
     const exe = join(dir, "bin", "tokenhud");
     mkdirSync(join(dir, "bin"), { recursive: true });
     if (!existsSync(exe)) writeFileSync(exe, "OLD 0.0.9");
     const d: UpdateDeps = {
-      env: { TOKENHUD_RELEASES_API: `http://127.0.0.1:${port}/api` },
+      env: { TOKENHUD_RELEASES_API: `http://127.0.0.1:${port}/api`, TOKENHUD_INSECURE_TEST: "1" },
       version: "0.0.9",
       execPath: exe,
       compiled: true,
@@ -397,10 +455,11 @@ describe("tokenhud update", () => {
           ? "EACCES: permission denied"
           : `tokenhud ${readFileSync(bin, "utf8").replace(/^NEW /, "")}`,
       out: (line) => out.push(line),
-      err: (line) => err.push(line),
+      // The fake GitHub is an override, so every run warns first; tests look at the rest.
+      err: (line) => (line.startsWith("WARNING:") ? warnings : err).push(line),
       ...over,
     };
-    return { d, out, err, exe };
+    return { d, out, err, warnings, exe };
   }
 
   test("replaces an older binary with the newest stable release and says old → new", async () => {
@@ -521,9 +580,46 @@ describe("tokenhud update", () => {
   });
 
   test("GitHub unreachable: exit 1 with the reason", async () => {
-    const { d, err } = deps(1, { env: { TOKENHUD_RELEASES_API: "http://127.0.0.1:1/api" } });
+    const env = { TOKENHUD_RELEASES_API: "http://127.0.0.1:1/api", TOKENHUD_INSECURE_TEST: "1" };
+    const { d, err } = deps(1, { env });
     expect(await runUpdate([], d)).toBe(1);
     expect(err[0]).toStartWith("can't reach 127.0.0.1:1");
+  });
+
+  test("another release server: a warning naming it, every time", async () => {
+    using server = serve({ "v0.1.0": "NEW 0.1.0" }, { stable: "v0.1.0" });
+    const { d, warnings } = deps(server.port);
+    expect(await runUpdate(["--check"], d)).toBe(0);
+    expect(warnings).toEqual([
+      `WARNING: releases come from http://127.0.0.1:${server.port}/api (TOKENHUD_RELEASES_API), ` +
+        "not GitHub. Its SHA256SUMS comes from the same server, so use only a server you trust.",
+    ]);
+  });
+
+  test("a plain-http release server without TOKENHUD_INSECURE_TEST: refused, nothing asked", async () => {
+    let asked = 0;
+    const counting = (async () => {
+      asked++;
+      return new Response("");
+    }) as unknown as typeof fetch;
+    const env = { TOKENHUD_RELEASES_API: "http://127.0.0.1:1/api" };
+    const { d, err, exe } = deps(1, { env, fetch: counting });
+    expect(await runUpdate([], d)).toBe(2);
+    expect(err).toEqual([
+      "TOKENHUD_RELEASES_API must be an https:// URL, not http://127.0.0.1:1/api " +
+        "(TOKENHUD_INSECURE_TEST=1 allows http:// for tests)",
+    ]);
+    expect(asked).toBe(0);
+    expect(readFileSync(exe, "utf8")).toBe("OLD 0.0.9");
+  });
+
+  test("an asset the release lists but the server doesn't have: its own error", async () => {
+    using server = serve({ "v0.1.0": "NEW 0.1.0" }, { stable: "v0.1.0", missingBinary: true });
+    const { d, err, exe } = deps(server.port);
+    expect(await runUpdate([], d)).toBe(1);
+    expect(err[0]).toEndWith("/dl/v0.1.0/bin is not there (HTTP 404)");
+    expect(readFileSync(exe, "utf8")).toBe("OLD 0.0.9");
+    expect(readdirSync(join(dir, "bin"))).toEqual(["tokenhud"]);
   });
 
   test("a binary that doesn't know its platform asks for a reinstall", async () => {

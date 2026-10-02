@@ -126,12 +126,46 @@ export interface Release {
   readonly assets: ReadonlyMap<string, string>;
 }
 
-/** GitHub's REST API for the repository; tests point TOKENHUD_RELEASES_API at a fake one. */
-export function releasesApi(env: Readonly<Record<string, string | undefined>>): string {
-  return (env.TOKENHUD_RELEASES_API || `https://api.github.com/repos/${REPO}`).replace(/\/+$/, "");
+export class UpdateError extends Error {}
+
+/** GitHub's REST API for the repository. */
+export const GITHUB_RELEASES_API = `https://api.github.com/repos/${REPO}`;
+
+/** Where releases come from. */
+export interface ReleaseSource {
+  readonly api: string;
+  /** TOKENHUD_RELEASES_API points away from GitHub: the caller must say so. */
+  readonly overridden: boolean;
+  /** TOKENHUD_INSECURE_TEST=1: plain http:// is allowed, for tests against a local server. */
+  readonly insecure: boolean;
 }
 
-export class UpdateError extends Error {}
+/** Throws unless `url` is https://, or http:// with `insecure`. */
+export function requireHttps(url: string, what: string, insecure: boolean): void {
+  let scheme: string;
+  try {
+    scheme = new URL(url).protocol;
+  } catch {
+    throw new UpdateError(`${what} is not a URL: ${url}`);
+  }
+  if (scheme === "https:" || (insecure && scheme === "http:")) return;
+  throw new UpdateError(
+    `${what} must be an https:// URL, not ${url} (TOKENHUD_INSECURE_TEST=1 allows http:// for tests)`,
+  );
+}
+
+/**
+ * GitHub's API, or TOKENHUD_RELEASES_API for tests. An override must be https:// unless
+ * TOKENHUD_INSECURE_TEST=1. Its SHA256SUMS comes from the same server as its binaries, so
+ * callers warn whenever it is set.
+ */
+export function releaseSource(env: Readonly<Record<string, string | undefined>>): ReleaseSource {
+  const insecure = env.TOKENHUD_INSECURE_TEST === "1";
+  const api = (env.TOKENHUD_RELEASES_API || GITHUB_RELEASES_API).replace(/\/+$/, "");
+  const overridden = api !== GITHUB_RELEASES_API;
+  if (overridden) requireHttps(api, "TOKENHUD_RELEASES_API", insecure);
+  return { api, overridden, insecure };
+}
 
 const HEADERS = {
   accept: "application/vnd.github+json",
@@ -153,13 +187,14 @@ function toRelease(raw: unknown): Release | null {
   return { tag: r.tag_name, version, prerelease: r.prerelease === true, assets };
 }
 
-async function getJson(url: string, fetchFn: typeof fetch): Promise<unknown> {
+async function getJson(url: string, fetchFn: typeof fetch, insecure: boolean): Promise<unknown> {
   let res: Response;
   try {
     res = await fetchFn(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) });
   } catch (error) {
     throw new UpdateError(`can't reach ${new URL(url).host}: ${(error as Error).message}`);
   }
+  if (res.url !== "") requireHttps(res.url, "the releases API", insecure);
   if (res.status === 404) return null;
   if (res.status === 403 || res.status === 429) {
     throw new UpdateError("GitHub's API rate limit was hit; try again in an hour");
@@ -177,12 +212,13 @@ async function getJson(url: string, fetchFn: typeof fetch): Promise<unknown> {
  * highest version among the recent releases, prereleases included. Null when there is none.
  */
 export async function newestRelease(
-  api: string,
+  source: ReleaseSource,
   prerelease: boolean,
   fetchFn: typeof fetch = fetch,
 ): Promise<Release | null> {
-  if (!prerelease) return toRelease(await getJson(`${api}/releases/latest`, fetchFn));
-  const list = await getJson(`${api}/releases?per_page=30`, fetchFn);
+  const { api, insecure } = source;
+  if (!prerelease) return toRelease(await getJson(`${api}/releases/latest`, fetchFn, insecure));
+  const list = await getJson(`${api}/releases?per_page=30`, fetchFn, insecure);
   const releases = (Array.isArray(list) ? list : []).map(toRelease).filter((r) => r !== null);
   return releases.reduce<Release | null>(
     (best, r) => (best === null || compareVersions(r.version, best.version) > 0 ? r : best),
@@ -192,7 +228,8 @@ export async function newestRelease(
 
 // ── download and replace ────────────────────────────────────────────────────────────
 
-async function fetchOk(url: string, fetchFn: typeof fetch, timeoutMs: number) {
+async function fetchOk(url: string, fetchFn: typeof fetch, timeoutMs: number, insecure: boolean) {
+  requireHttps(url, "a release download", insecure);
   let res: Response;
   try {
     res = await fetchFn(url, {
@@ -200,8 +237,11 @@ async function fetchOk(url: string, fetchFn: typeof fetch, timeoutMs: number) {
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
-    throw new UpdateError(`download failed: ${(error as Error).message}`);
+    throw new UpdateError(`can't reach ${new URL(url).host}: ${(error as Error).message}`);
   }
+  // Where the redirects (GitHub sends assets to its CDN) ended up must be https:// too.
+  if (res.url !== "") requireHttps(res.url, "a release download", insecure);
+  if (res.status === 404) throw new UpdateError(`${url} is not there (HTTP 404)`);
   if (!res.ok || res.body === null) throw new UpdateError(`${url} answered HTTP ${res.status}`);
   return res;
 }
@@ -215,16 +255,17 @@ export async function downloadVerified(
   name: string,
   dest: string,
   fetchFn: typeof fetch = fetch,
+  insecure = false,
 ): Promise<number> {
   const url = release.assets.get(name);
   const sumsUrl = release.assets.get(SUMS_FILE);
   if (url === undefined) throw new UpdateError(`release ${release.tag} has no ${name}`);
   if (sumsUrl === undefined) throw new UpdateError(`release ${release.tag} has no ${SUMS_FILE}`);
-  const sums = await (await fetchOk(sumsUrl, fetchFn, 30_000)).text();
+  const sums = await (await fetchOk(sumsUrl, fetchFn, 30_000, insecure)).text();
   const expected = sumFor(sums, name);
   if (expected === null) throw new UpdateError(`${SUMS_FILE} of ${release.tag} lists no ${name}`);
 
-  const res = await fetchOk(url, fetchFn, 15 * 60_000);
+  const res = await fetchOk(url, fetchFn, 15 * 60_000, insecure);
   const hasher = new Bun.CryptoHasher("sha256");
   // An explicit handle, closed before anything runs the file: Windows refuses to start an
   // .exe that is still open for writing (EBUSY).
@@ -393,8 +434,9 @@ export async function availableUpdate(check: UpdateCheck): Promise<string | null
     check.now - state.checked_at < CHECK_INTERVAL_MS;
   if (!fresh) {
     try {
+      // An override that isn't https:// throws here, so the TUI never asks it.
       const release = await newestRelease(
-        releasesApi(check.env),
+        releaseSource(check.env),
         current.pre.length > 0,
         check.fetch ?? fetch,
       );
