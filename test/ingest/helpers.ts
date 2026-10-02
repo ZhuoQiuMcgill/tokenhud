@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Config, defaultConfig, type RootEntry } from "../../src/config.ts";
@@ -98,4 +98,37 @@ export function storedRows(store: Store) {
       },
     ]),
   );
+}
+
+/**
+ * Resolves once a live engine's fs.watch on `dir` (a fixture's transcript directory)
+ * delivers events. On macOS, fs.watch is backed by FSEvents, whose stream starts some time
+ * after watch() returns, so a change made right after startLive() can be missed: that is
+ * how T4's live test failed once on macOS CI. So this writes a probe file (not a
+ * transcript) into `dir` every 25 ms until a pass follows. Only the watcher can cause one:
+ * the sweep is a minute away and watched roots are not polled. `passes` counts passes
+ * (an engine's onPass, or the Worker's "pass" messages).
+ */
+export async function watcherReady(dir: string, passes: () => number, ms = 10_000): Promise<void> {
+  const before = passes();
+  const deadline = performance.now() + ms;
+  for (let i = 0; passes() === before; i++) {
+    if (performance.now() > deadline) throw new Error(`no watcher event within ${ms} ms`);
+    writeFileSync(join(dir, "watch-probe"), String(i));
+    await Bun.sleep(25);
+  }
+}
+
+/** fs.watch, deaf for its first `ms`: a watcher that starts late, as FSEvents can. */
+export function lateWatch(ms: number): typeof watch {
+  return ((
+    dir: string,
+    options: { recursive: boolean },
+    listener: (event: string, filename: string | null) => void,
+  ) => {
+    const armed = performance.now() + ms;
+    return watch(dir, options, (event, filename) => {
+      if (performance.now() >= armed) listener(event, filename);
+    });
+  }) as unknown as typeof watch;
 }

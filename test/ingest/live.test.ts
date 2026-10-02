@@ -7,7 +7,16 @@ import type { EngineOptions } from "../../src/ingest/engine.ts";
 import type { ChangedEvent } from "../../src/ingest/pass.ts";
 import { ledgerKey } from "../../src/store/key.ts";
 import { openStore } from "../../src/store/store.ts";
-import { claudeLine, cleanup, makeRoot, openEngine, storedRows, tempDir } from "./helpers.ts";
+import {
+  claudeLine,
+  cleanup,
+  lateWatch,
+  makeRoot,
+  openEngine,
+  storedRows,
+  tempDir,
+  watcherReady,
+} from "./helpers.ts";
 
 afterEach(cleanup);
 
@@ -27,8 +36,12 @@ async function waitFor<T>(probe: () => T | undefined | null | false, ms: number)
 const D1 = "2026-06-01T00:00:00Z";
 const D3 = "2026-06-03T00:00:00Z";
 
+// Watched roots are tested once the watcher is known to deliver events (see `watcherReady`),
+// also with a watcher that starts 300 ms late, as macOS's FSEvents can. Polled roots use
+// short poll intervals.
 const modes: [string, Partial<EngineOptions>][] = [
   ["watching (Linux roots)", {}],
+  ["watching, the watcher starting late", { watch: lateWatch(300) }],
   ["polling (Windows roots)", { pollAll: true, timing: { pollMs: 50, fastPollMs: 20 } }],
 ];
 
@@ -40,13 +53,23 @@ describe.each(modes)("live, %s", (_name, mode) => {
     const file = join(proj, "s.jsonl");
     writeFileSync(file, claudeLine("1", "1", 100, 0, { ts: D1 }));
     const events: ChangedEvent[] = [];
-    const engine = openEngine([root], { ...mode, onChanged: (e) => events.push(e) });
-    return { root, proj, file, events, engine };
+    let passes = 0;
+    const engine = openEngine([root], {
+      ...mode,
+      onChanged: (e) => events.push(e),
+      onPass: () => passes++,
+    });
+    /** Starts live updates and, for a watched root, waits until the watcher delivers. */
+    const start = async () => {
+      await engine.startLive();
+      if (mode.pollAll !== true) await watcherReady(join(root, "projects"), () => passes);
+    };
+    return { root, proj, file, events, engine, start };
   }
 
   test("an appended line becomes a changed event and the right row within 1 s", async () => {
-    const { file, events, engine } = setup();
-    await engine.startLive();
+    const { file, events, engine, start } = setup();
+    await start();
     expect(events).toHaveLength(1); // the first pass
     const identity = engine.roots.find((r) => r.source === "config")?.identity;
     const t0 = performance.now();
@@ -65,8 +88,8 @@ describe.each(modes)("live, %s", (_name, mode) => {
   });
 
   test("a streamed reply raises its row in place; the event spans the row's first timestamp", async () => {
-    const { file, events, engine } = setup();
-    await engine.startLive();
+    const { file, events, engine, start } = setup();
+    await start();
     appendFileSync(file, claudeLine("1", "1", 100, 50, { ts: D3 }));
     const event = await waitFor(() => events[1], 1000);
     expect(event.fromTs).toBe(Date.parse(D1));
@@ -78,9 +101,9 @@ describe.each(modes)("live, %s", (_name, mode) => {
   });
 
   test("truncating a file and writing it again counts nothing twice", async () => {
-    const { file, events, engine } = setup();
+    const { file, events, engine, start } = setup();
     appendFileSync(file, claudeLine("2", "2", 200, 0, { ts: D1 }));
-    await engine.startLive();
+    await start();
     truncateSync(file, 0);
     writeFileSync(
       file,
@@ -95,8 +118,8 @@ describe.each(modes)("live, %s", (_name, mode) => {
   });
 
   test("a new session in a new project directory is picked up", async () => {
-    const { root, events, engine } = setup();
-    await engine.startLive();
+    const { root, events, engine, start } = setup();
+    await start();
     const dir = join(root, "projects", "new-proj", "sess", "subagents");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "agent.jsonl"), claudeLine("9", "9", 900, 0, { ts: D3 }));
@@ -105,8 +128,8 @@ describe.each(modes)("live, %s", (_name, mode) => {
   });
 
   test("stop() ends live updates", async () => {
-    const { file, events, engine } = setup();
-    await engine.startLive();
+    const { file, events, engine, start } = setup();
+    await start();
     await engine.stop();
     appendFileSync(file, claudeLine("2", "2", 200));
     await Bun.sleep(150);
@@ -134,6 +157,10 @@ test("the ingest Worker passes, reports changes, and exits when asked", async ()
   );
   try {
     await waitFor(() => messages.find((m) => m.type === "ready"), 10_000);
+    await watcherReady(
+      join(root, "projects"),
+      () => messages.filter((m) => m.type === "pass").length,
+    );
     expect(messages.filter((m) => m.type === "changed")).toHaveLength(1);
     appendFileSync(file, claudeLine("2", "2", 200));
     await waitFor(() => messages.filter((m) => m.type === "changed").length === 2, 2000);

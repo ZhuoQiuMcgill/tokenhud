@@ -97,6 +97,12 @@ export interface EngineOptions {
   pollAll?: boolean;
   /** How recovery copies its sources (tests simulate a full disk). */
   recovery?: RecoveryOptions;
+  /**
+   * fs.watch. Tests pass one that starts late: on macOS it is backed by FSEvents, whose
+   * stream starts some time after watch() returns, and a change made meanwhile is missed
+   * (the 60 s sweep catches it later).
+   */
+  watch?: typeof watch;
 }
 
 /** Transcript directories of a root: Claude's `projects`; Codex's active and archived sessions. */
@@ -507,12 +513,16 @@ export class IngestEngine {
 
   #watch(dir: string, root: Root): void {
     try {
-      const watcher = watch(dir, { recursive: true }, (_event, filename) => {
-        if (typeof filename === "string" && filename.endsWith(".jsonl"))
-          this.#dirty.set(join(dir, filename), root);
-        else this.#rescan.add(root);
-        this.#scheduleFlush();
-      });
+      const watcher = (this.#options.watch ?? watch)(
+        dir,
+        { recursive: true },
+        (_event, filename) => {
+          if (typeof filename === "string" && filename.endsWith(".jsonl"))
+            this.#dirty.set(join(dir, filename), root);
+          else this.#rescan.add(root);
+          this.#scheduleFlush();
+        },
+      );
       watcher.on("error", () => {
         watcher.close();
         this.#watchers.delete(dir);
