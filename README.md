@@ -26,6 +26,10 @@ No Node is needed. Bun puts the `tokenhud` command in `~/.bun/bin`, which Bun's 
 adds to your PATH; `tokenhud doctor` says if it isn't there. Release candidates:
 `bun add -g tokenhud@next`.
 
+> **On Windows, Bun isn't supported yet.** `bun add -g tokenhud` installs a command that
+> fails at once with `interpreter executable "/bin/sh" not found`. On Windows, use
+> `npm i -g tokenhud` or the PowerShell installer (see **On Windows**, below).
+
 **With npm:**
 
 ```sh
@@ -39,10 +43,11 @@ is a small sh script that starts the binary: no JS runtime runs, so it needs nei
 nor Bun, and nothing in the directory you run it in (a `.env`, a `bunfig.toml`) can reach
 tokenhud.
 
-**On Windows**, install with npm (Node 18 or later), or with `install.ps1` below. npm's
-install script sets up a Node launcher for the command. Bun can't run the command on
-Windows: after `bun add -g tokenhud` it fails at once, with `interpreter executable
-"/bin/sh" not found`.
+**On Windows**, tokenhud is supported through npm (`npm i -g tokenhud`, Node 18 or later)
+or the PowerShell installer, `install.ps1`, below; not through Bun. npm's install script
+sets up a Node launcher for the command. If you installed with Bun, that command can't run,
+so switch by hand: `bun remove -g tokenhud`, then `npm i -g tokenhud`. `tokenhud doctor`,
+run from an npm or `install.ps1` copy, points out a bun install left behind.
 
 On Windows the command needs that install script. Where scripts are off, the command fails
 at once with `The system cannot find the path specified.` (`tokenhud update` says so too);

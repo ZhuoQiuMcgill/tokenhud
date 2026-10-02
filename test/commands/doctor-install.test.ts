@@ -214,11 +214,24 @@ describe("doctor: Install on Windows", () => {
       { path: join(bunBin, "tokenhud.exe"), method: "bun", version: "0.1.0", this_copy: true },
     ]);
     expect(install.bun_bin).toEqual({ path: bunBin, on_path: true });
+    // Bun can't run tokenhud's command on Windows: never the copy to keep, and a warning of
+    // its own with the way to npm.
+    const unsupported = {
+      problem:
+        "tokenhud is installed with bun, which isn't supported on Windows: its tokenhud " +
+        'command fails with "/bin/sh" not found. Switch to npm or install.ps1:',
+      fix: ["bun remove -g tokenhud", "npm install -g tokenhud   (or install.ps1: see the README)"],
+    };
     expect(install.warnings).toEqual([
       {
-        problem: `tokenhud is installed 2 ways: a standalone binary and bun. Keep one; to keep ${join(bunBin, "tokenhud.exe")} (0.1.0), remove the other:`,
-        fix: [`del "${ps1}"`],
+        problem: `tokenhud is installed 2 ways: a standalone binary and bun. Keep one; to keep ${ps1} (0.1.0), remove the other:`,
+        fix: ["bun remove -g tokenhud"],
       },
+      unsupported,
     ]);
+    // With bun's copy alone, and even with bun's bin dir off PATH: only that warning.
+    const alone = doctorReport({ ...env, Path: "" }, NOW, home, probe).install;
+    expect(alone.on_path).toEqual([]);
+    expect(alone.warnings).toEqual([unsupported]);
   });
 });

@@ -264,11 +264,17 @@ const RANK: Readonly<Record<CopyMethod, number>> = { bun: 0, npm: 1, binary: 2, 
 
 /**
  * The copy to keep of several: the newest; among equals (or unknown versions), bun's, then
- * npm's, then a standalone binary, then the first on PATH.
+ * npm's, then a standalone binary, then the first on PATH. On Windows, where bun can't run
+ * tokenhud's command, never bun's while there is another.
  */
-export function copyToKeep(copies: readonly VersionedCopy[]): VersionedCopy | undefined {
+export function copyToKeep(
+  copies: readonly VersionedCopy[],
+  platform: NodeJS.Platform = process.platform,
+): VersionedCopy | undefined {
   const version = (c: VersionedCopy) => (c.version === null ? null : parseVersion(c.version));
+  const unsupported = (c: VersionedCopy) => platform === "win32" && c.method === "bun";
   return [...copies].sort((a, b) => {
+    if (unsupported(a) !== unsupported(b)) return unsupported(a) ? 1 : -1;
     const va = version(a);
     const vb = version(b);
     if (va !== null && vb !== null && compareVersions(va, vb) !== 0) return compareVersions(vb, va);

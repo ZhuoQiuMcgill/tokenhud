@@ -199,7 +199,7 @@ describe("which copy to keep, and how to remove the others", () => {
     version,
   });
 
-  test("the newest; among equals, bun's, then npm's, then a binary; then PATH order", () => {
+  test("the newest; among equals, bun's, then npm's, then a binary; then PATH order; on Windows never bun's", () => {
     const a = copy("/a", "binary", "0.1.0-rc.1");
     const b = copy("/b", "bun", "0.1.0");
     const c = copy("/c", "npm", "0.1.0");
@@ -214,6 +214,9 @@ describe("which copy to keep, and how to remove the others", () => {
       "/x",
     );
     expect(copyToKeep([])).toBeUndefined();
+    // On Windows bun can't run tokenhud's command: its copy only when there is no other.
+    expect(copyToKeep([b, copy("/old", "binary", "0.0.1")], "win32")?.path).toBe("/old");
+    expect(copyToKeep([b], "win32")).toBe(b);
   });
 
   test("each method's own command; a binary's file by name, from ~ under home", () => {

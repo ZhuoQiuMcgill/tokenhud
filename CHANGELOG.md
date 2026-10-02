@@ -85,8 +85,10 @@ release candidate 0.1.0-rc.1 has all of it.
   and macOS, and needs no Node; npm keeps working everywhere. On Linux and macOS the command
   is now a small sh script that starts the binary, so no JS runtime runs and nothing in the
   directory you run it in (a `.env`, a `bunfig.toml`) reaches tokenhud, whichever package
-  manager installed it. On Windows, npm's install script sets up a Node launcher; Bun can't
-  run the command there, so install with npm or `install.ps1`. `tokenhud update` on a bun
+  manager installed it. On Windows, tokenhud is supported through npm, whose install script
+  sets up a Node launcher, or `install.ps1`; Bun isn't supported there yet (`bun add -g`
+  installs a command that fails with `"/bin/sh" not found`), and `tokenhud doctor` says so
+  if it finds a bun install, with how to switch. `tokenhud update` on a bun
   or npm install asks the package manager which version the `latest` tag points at (`next`
   for a release candidate, while `next` is no older), installs exactly that version, checks
   that the `tokenhud` command runs it, and never installs an older version unless given

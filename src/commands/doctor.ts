@@ -570,7 +570,7 @@ function installSection(env: Env, home: string, probe: InstallProbe): DoctorRepo
   const warnings: DoctorReport["install"]["warnings"] = [];
 
   const methods = [...new Set(copies.map((c) => c.method))];
-  const keep = copyToKeep(copies);
+  const keep = copyToKeep(copies, platform);
   const removed = new Set<VersionedCopy>();
   if (methods.length > 1 && keep !== undefined) {
     const others = copies.filter((c) => c !== keep);
@@ -604,13 +604,22 @@ function installSection(env: Env, home: string, probe: InstallProbe): DoctorRepo
     const bin = join(bunRoot, "bin");
     const onPath = pathDirs(env, platform).some((dir) => samePath(dir, bin, platform));
     bunBin = { path: bin, on_path: onPath };
-    if (!onPath) {
+    if (platform === "win32") {
+      // bun's Windows shim can't start the command (a sh script), so it never runs tokenhud.
+      warnings.push({
+        problem:
+          "tokenhud is installed with bun, which isn't supported on Windows: its tokenhud " +
+          'command fails with "/bin/sh" not found. Switch to npm or install.ps1:',
+        fix: [
+          "bun remove -g tokenhud",
+          "npm install -g tokenhud   (or install.ps1: see the README)",
+        ],
+      });
+    } else if (!onPath) {
       warnings.push({
         problem: `tokenhud is installed with bun, but ${shown(bin)} is not on PATH`,
         fix: [
-          platform === "win32"
-            ? `add ${bin} to your user PATH (bun's installer does)`
-            : `add it in your shell's profile (bun's installer does): export PATH="${inQuotes(bin, home)}:$PATH"`,
+          `add it in your shell's profile (bun's installer does): export PATH="${inQuotes(bin, home)}:$PATH"`,
         ],
       });
     }
