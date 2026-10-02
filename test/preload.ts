@@ -1,5 +1,8 @@
 // Runs before every test file (bunfig.toml).
-//
+import { afterAll, afterEach } from "bun:test";
+import { installClientStubs, takeSpawned } from "./stubs.ts";
+import { removeTempDir } from "./temp.ts";
+
 // GitHub's Windows runners keep %TEMP% on the VM's OS disk, C:. Measured on two runners
 // (T15): there a 4 KB write plus fsync took 5–8 ms at the median and up to 92 ms, and
 // creating a store with a backup 120–200 ms; on the runner's temp disk, RUNNER_TEMP on D:,
@@ -14,3 +17,19 @@ if (process.platform === "win32" && runnerTemp) {
   process.env.TEMP = runnerTemp;
   process.env.TMP = runnerTemp;
 }
+
+// No test may run the real `claude` or `codex` (T15: one ran the real claude against the
+// real home). Stubs come first on PATH, and the product refuses any other client while
+// TOKENHUD_TEST is set. Either way the attempt is recorded, and fails the test that made
+// it, even if the code under test swallowed the error. Tests that need a client make their
+// own stub and pass its path explicitly.
+const stubs = installClientStubs();
+afterEach(() => {
+  const spawned = takeSpawned();
+  if (spawned.length > 0) {
+    throw new Error(
+      `this test reached a real provider client (${spawned.join(", ")}); give it an explicit stub`,
+    );
+  }
+});
+afterAll(() => removeTempDir(stubs));

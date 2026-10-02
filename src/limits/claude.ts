@@ -2,6 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { VERSION } from "../version.ts";
 import { type Capture, LimitFetchError, normalizeClaudeLimits, SignedOut } from "./capture.ts";
+import { findOnPath, refuseRealClient } from "./clients.ts";
 
 /**
  * Claude's current limits, ported from cc-usage's `fetch_claude_limits`.
@@ -175,6 +176,7 @@ function expired(oauth: OAuth, now: number): boolean {
 
 /** Spawns the client with stdin closed and its output captured in memory, bounded. */
 async function spawnRefresh(run: RefreshRun): Promise<string> {
+  refuseRealClient(run.argv[0] as string);
   let proc: Bun.Subprocess<"ignore", "pipe", "pipe">;
   try {
     proc = Bun.spawn(run.argv, {
@@ -219,7 +221,7 @@ async function refresh(
   options: ClaudeFetchOptions,
   timeoutMs: number,
 ): Promise<{ oauth: OAuth; replaced: boolean }> {
-  const which = options.which ?? ((name: string) => Bun.which(name));
+  const which = options.which ?? findOnPath;
   const executable =
     process.platform === "win32" ? (which("claude.exe") ?? which("claude")) : which("claude");
   if (executable === null) {

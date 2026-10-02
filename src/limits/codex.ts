@@ -8,6 +8,7 @@ import {
   normalizeCodexLimits,
   SignedOut,
 } from "./capture.ts";
+import { findOnPath, refuseRealClient } from "./clients.ts";
 
 /**
  * Codex's current limits over the app-server JSON-RPC, ported from cc-usage's
@@ -103,7 +104,9 @@ export function codexAuthMtime(codexHome: string): number | null {
 }
 
 /** The `codex` executable on PATH (`codex.cmd` first on Windows), or null. */
-export function codexExecutable(which: (name: string) => string | null = Bun.which): string | null {
+export function codexExecutable(
+  which: (name: string) => string | null = findOnPath,
+): string | null {
   const names = process.platform === "win32" ? ["codex.cmd", "codex"] : ["codex"];
   for (const name of names) {
     const found = which(name);
@@ -112,8 +115,10 @@ export function codexExecutable(which: (name: string) => string | null = Bun.whi
   return null;
 }
 
-const defaultSpawn: RpcSpawner = (argv, env) =>
-  Bun.spawn(argv, { env, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+const defaultSpawn: RpcSpawner = (argv, env) => {
+  refuseRealClient(argv[0] as string);
+  return Bun.spawn(argv, { env, stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+};
 
 /** Splits a byte stream into lines; resolves null at the end of the stream. */
 class LineReader {
