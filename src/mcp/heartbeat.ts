@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { processAlive } from "../lock.ts";
 import { configDir } from "../paths.ts";
 
@@ -9,12 +9,16 @@ import { configDir } from "../paths.ts";
  * agents card. Each running `tokenhud mcp` (one per Claude Code session) keeps
  * `<config dir>/mcp/<pid>.json`:
  *
- *     {"pid", "host", "started_at", "updated_at", "calls": [{"at", "tool", "account"}]}
+ *     {"pid", "host", "project", "started_at", "updated_at",
+ *      "calls": [{"at", "tool", "account"}]}
  *
- * Times are epoch ms; `account` is the label a call resolved to, or null. The file is
- * rewritten atomically on start, after each tool call and at least every minute; it keeps
- * only the calls of the last 10 minutes (at most 20) and is removed on exit. It holds tool
- * names and account labels only. The TUI reads it with `readMcpActivity` below.
+ * Times are epoch ms; `account` is the label a call resolved to, or null. `project` is the
+ * name of the directory the server runs in, as Claude Code starts it in its session's
+ * project (`projectOf`), or null. The file is rewritten atomically on start, after each
+ * tool call and at least every minute; it keeps only the calls of the last 10 minutes (at
+ * most 20) and is removed on exit. It holds tool names, account labels and that one
+ * directory name, never a path. The TUI reads it with `readMcpActivity` below;
+ * `tokenhud json` never does.
  */
 
 export const MCP_DIR_NAME = "mcp";
@@ -26,6 +30,17 @@ export interface McpCall {
   at: number;
   tool: string;
   account: string | null;
+}
+
+/**
+ * The project a session runs in, as the agents card names it: the basename of `cwd`, never
+ * the path, which would show the user's name and where their work is. Null for the home
+ * directory, whose name is the user's, and for a filesystem root, which has none.
+ */
+export function projectOf(cwd: string, home: string): string | null {
+  if (relative(home, cwd) === "") return null;
+  const name = basename(cwd);
+  return name === "" ? null : name;
 }
 
 export function mcpDir(
@@ -40,6 +55,7 @@ export class Heartbeat {
   readonly #dir: string;
   readonly #pid: number;
   readonly #host: string;
+  readonly #project: string | null;
   readonly #now: () => number;
   readonly #startedAt: number;
   readonly #log: (message: string) => void;
@@ -49,12 +65,19 @@ export class Heartbeat {
 
   constructor(
     dir: string,
-    options: { pid?: number; now?: () => number; log?: (message: string) => void } = {},
+    options: {
+      pid?: number;
+      /** The server's working directory (tests pass a made-up one). */
+      cwd?: string;
+      now?: () => number;
+      log?: (message: string) => void;
+    } = {},
   ) {
     this.#dir = dir;
     this.#pid = options.pid ?? process.pid;
     this.#path = join(dir, `${this.#pid}.json`);
     this.#host = hostname();
+    this.#project = projectOf(options.cwd ?? process.cwd(), homedir());
     this.#now = options.now ?? Date.now;
     this.#startedAt = this.#now();
     this.#log = options.log ?? (() => {});
@@ -87,6 +110,7 @@ export class Heartbeat {
         `${JSON.stringify({
           pid: this.#pid,
           host: this.#host,
+          project: this.#project,
           started_at: this.#startedAt,
           updated_at: now,
           calls: this.#calls,
@@ -129,20 +153,37 @@ export interface McpActivity {
   /** The latest calls of any server, newest first, at most 20. */
   recent: McpCall[];
   /** Each agent session's (server's) latest call in the last 10 minutes, newest first. */
-  latest: McpCall[];
+  latest: AgentLatest[];
+}
+
+/** An agent session's latest call, with the project the session runs in. */
+export interface AgentLatest extends McpCall {
+  /** Its directory's name (`projectOf`); null when the heartbeat names none. */
+  project: string | null;
 }
 
 interface Beat {
   pid: number;
   host: string;
+  project: string | null;
   updatedAt: number;
   calls: McpCall[];
+}
+
+/**
+ * The heartbeat's project as the TUI may show it: a name, never a path, even from a file
+ * some other writer made, and without control characters, which would drive the terminal.
+ */
+function projectName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = basename(value).replace(/\p{Cc}/gu, "");
+  return name === "" ? null : name;
 }
 
 function parse(text: string): Beat | null {
   try {
     const raw = JSON.parse(text) as Record<string, unknown>;
-    const { pid, host, updated_at, calls } = raw;
+    const { pid, host, project, updated_at, calls } = raw;
     if (
       !Number.isInteger(pid) ||
       typeof host !== "string" ||
@@ -159,7 +200,13 @@ function parse(text: string): Beat | null {
         typeof c.tool === "string" &&
         (typeof c.account === "string" || c.account === null),
     );
-    return { pid: pid as number, host, updatedAt: updated_at, calls: valid };
+    return {
+      pid: pid as number,
+      host,
+      project: projectName(project),
+      updatedAt: updated_at,
+      calls: valid,
+    };
   } catch {
     return null;
   }
@@ -187,7 +234,7 @@ export function readMcpActivity(
   let servers = 0;
   let agents = 0;
   const recent: McpCall[] = [];
-  const latest: McpCall[] = [];
+  const latest: AgentLatest[] = [];
   for (const name of names) {
     let beat: Beat | null;
     try {
@@ -202,7 +249,7 @@ export function readMcpActivity(
     if (calls.length > 0) {
       agents++;
       // Calls are kept in the order made: on a tie the later one is the latest.
-      latest.push(calls.reduce((a, b) => (b.at >= a.at ? b : a)));
+      latest.push({ ...calls.reduce((a, b) => (b.at >= a.at ? b : a)), project: beat.project });
     }
     recent.push(...calls);
   }

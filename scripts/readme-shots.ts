@@ -318,7 +318,7 @@ const SHOTS: readonly Shot[] = [
         section: "limits",
         locate: (s) => card(s, /agents · MCP/),
         name: "Agents",
-        text: "Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: the account the call was about, the tool, and how long ago. With no recent calls, it says how many servers are running.",
+        text: "Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: its project (the name of the directory the session runs in, never its path; `claude session` when the server doesn't say), the account the call was about, the tool, and how long ago. A narrow card leaves out the account, then the project. With no recent calls, it says how many servers are running.",
       },
       {
         section: "spend",
@@ -435,7 +435,7 @@ const SHOTS: readonly Shot[] = [
         bare: true,
         badge: "l",
         name: "Tabs",
-        text: "What the table lists, switched with `a`/`d`; the one shown is in brackets. `this week` and `this month` list the days so far of the current week or month (History opens on this week), `days` every day of the heat map, `weeks` (Monday to Sunday) and `months` one row each. On the right, what `*` and `≈` mean, and `f`, the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.",
+        text: "What the table lists, switched with `a`/`d`; the one shown is in brackets. `this week` and `this month` list the days so far of the current week or month (History opens on this week), `days` every day of the heat map, `weeks` (Monday to Sunday) and `months` one row each. On the right, what `*` and `≈` mean, and `f`, the model filter: with a filter, every number on the screen counts only the models whose name or id contains what you typed.",
       },
       {
         section: "heat",

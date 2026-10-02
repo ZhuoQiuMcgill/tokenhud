@@ -600,7 +600,14 @@ describe("the heartbeat file", () => {
     const dir = join(f.m.xdg, "tokenhud", "mcp");
     expect(readdirSync(dir)).toEqual([`${process.pid}.json`]);
     const beat = JSON.parse(readFileSync(wiring.heartbeat.path, "utf8"));
-    expect(Object.keys(beat)).toEqual(["pid", "host", "started_at", "updated_at", "calls"]);
+    expect(Object.keys(beat)).toEqual([
+      "pid",
+      "host",
+      "project",
+      "started_at",
+      "updated_at",
+      "calls",
+    ]);
     expect(beat.pid).toBe(process.pid);
     expect(
       beat.calls.map((c: { tool: string; account: string | null }) => [c.tool, c.account]),

@@ -352,6 +352,26 @@ describe("states", () => {
     expect(text.split("╭─").length - 1).toBe(5);
   });
 
+  test("each agent line names its session's project, else claude session; accounts line up", async () => {
+    const lines = (await frame(160, 50)).text.split("\n");
+    const project = lines.find((l) => l.includes("● demo-app")) as string;
+    const none = lines.find((l) => l.includes("● claude session")) as string;
+    expect(project).toContain("● demo-app        work  limits");
+    expect(none).toContain("● claude session  personal  should_wait");
+    expect(project.indexOf("work")).toBe(none.indexOf("personal"));
+    // The compact form, too.
+    const compact = (await frame(80, 24)).text;
+    expect(compact).toContain("◆ MCP  demo-app        work  limits");
+    expect(compact).toContain("◆ MCP  claude session  personal  should_wait");
+  });
+
+  test("a long project name is cut, never the time", async () => {
+    const call = { tool: "limits", account: "work", project: "a-very-long-project-name", at: NOW };
+    const vm = { ...(views.overview as OverviewVM), agents: { servers: 1, calls: [call] } };
+    const { text } = await frame(160, 50, controller(fixtureConfig(), { overview: vm }));
+    expect(text).toMatch(/● a-very-long-pro… {2}work {2}limits +<1m │/);
+  });
+
   test("no limit events: a line says so", async () => {
     const vm = { ...(views.overview as OverviewVM), events: [] };
     const { text } = await frame(105, 50, controller(fixtureConfig(), { overview: vm }));

@@ -64,6 +64,8 @@ const TOP_MAX_WIDTH = 56;
 /** The top models' table itself: at most this wide, unless its names need more. */
 const TOP_TABLE_WIDTH = 46;
 const AGENT_ROWS = 3;
+/** An agent line's project is cut to this many cells. */
+const PROJECT_WIDTH = 16;
 const EVENT_ROWS = 8;
 const SPEND_LABELS: Readonly<Record<SpendColumn, string>> = {
   "1h": "1h",
@@ -296,8 +298,10 @@ function cardBody(card: LimitCard, width: number, ctx: ViewContext, asOf: number
 }
 
 /**
- * One line per agent session: `● claude session  personal  should_wait`, the time ago flush
- * right. Every line takes the same shape, the first that fits them all: the account goes
+ * One line per agent session: `● tokenhud  personal  should_wait`, the time ago flush right.
+ * The project is the name of the directory the session runs in, as its heartbeat gives it,
+ * or "claude session" when it gives none; the projects take one width, so the accounts line
+ * up. Every line takes the same shape, the first that fits them all: the account goes
  * first, then the project.
  */
 function agentLines(
@@ -314,11 +318,12 @@ function agentLines(
     ];
   }
   const shown = calls.length <= AGENT_ROWS ? calls : calls.slice(0, AGENT_ROWS - 1);
+  const named = (call: AgentCall) => call.project ?? "claude session";
+  const projectWidth = Math.min(PROJECT_WIDTH, Math.max(...shown.map((c) => textWidth(named(c)))));
   const line = (call: AgentCall, project: boolean, account: boolean): Line => ({
     left: [
       ...(dot ? [seg("● ", "live")] : []),
-      // The heartbeat names no project, and a project's path is content: "claude session".
-      ...(project ? [seg("claude session  ", "fg")] : []),
+      ...(project ? [seg(fit(truncate(named(call), projectWidth), projectWidth + 2), "fg")] : []),
       ...(account && call.account !== null ? [seg(`${call.account}  `, "mute")] : []),
       seg(call.tool, "fg"),
     ],

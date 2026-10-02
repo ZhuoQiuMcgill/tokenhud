@@ -536,6 +536,25 @@ describe("frames", () => {
   });
 });
 
+// The Models view's "who used it" card says requests for the same count.
+describe("the history line", () => {
+  test("counts requests, the word every view uses for usage rows", async () => {
+    expect(byLabel("personal").records).toBe(1630);
+    const frame = await frameAt(120, 45);
+    expect(frame).toContain(" history   1,630 requests since Jul 31 ");
+    expect(frame).not.toMatch(/\d records?\b/);
+  });
+
+  test("an account with none: no requests yet", async () => {
+    const accountsVM = {
+      ...vm,
+      rows: vm.rows.map((r) => (r.label === "personal" ? { ...r, records: 0 } : r)),
+    };
+    const frame = await frameAt(120, 45, "personal", { ...views, accounts: accountsVM });
+    expect(frame).toContain(" history   no requests yet ");
+  });
+});
+
 // Critique m1: between 72 and 91 columns (side by side, narrow detail) and at 80×24, no
 // line is cut: the meters shrink their bar, then drop "resets", then the bar; notes and
 // annotations have shorter forms.

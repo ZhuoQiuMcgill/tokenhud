@@ -18,7 +18,7 @@ import {
 } from "../../src/store/store.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Key } from "../../src/tui/controller.ts";
-import { dayLabel, money } from "../../src/tui/format.ts";
+import { dayLabel, modelName, money } from "../../src/tui/format.ts";
 import { theme } from "../../src/tui/theme.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import {
@@ -978,6 +978,40 @@ describe("the model filter", () => {
   });
 });
 
+// ── model names ──────────────────────────────────────────────────────────────────
+
+describe("model names", () => {
+  test("models go by the names the other views give them, never their ids: card, table, summary", async () => {
+    // Wed Dec 2: claude-opus-4-8 first, then gpt-5.5 and claude-sonnet-4-6.
+    const keys = [...toTab("days"), "down"];
+    const { frame } = await frameOf(vm, 120, 45, keys);
+    expect(frame).not.toContain("claude-");
+    expect(frame).toContain("models   Opus 4.8 43% · gpt-5.5 33% · Sonnet 4.6 23%");
+    expect(line(frame, " Wed Dec 2")).toMatch(/ 2\.3× Opus 4\.8 +personal, codex, work/);
+    expect(line(frame, " Mon Nov 30")).toMatch(/ 0\.2× Sonnet 4\.6 +work/);
+    // Too short for the card: its one-line summary.
+    const { frame: short } = await frameOf(vm, 70, 24, keys);
+    expect(short).toContain(" Wed Dec 2  $5.20  2.3× avg  3.5M tokens  Opus 4.8 ");
+  });
+
+  test("the filter finds a model by the name on screen or by its id", () => {
+    const found = (text: string) => {
+      const typed = [...text].map((ch) => (ch === " " ? "space" : ch));
+      const state = press(vm, ...toTab("weeks"), "f", ...typed, "return");
+      return [...new Set(listing(vm, state).rows.flatMap((r) => r.models.map((m) => m.name)))];
+    };
+    expect(found("opus 4.8")).toEqual(["claude-opus-4-8"]);
+    expect(found("4.6")).toEqual(["claude-sonnet-4-6"]);
+    expect(found("opus-4-8")).toEqual(["claude-opus-4-8"]);
+    expect(found("claude").sort()).toEqual([
+      "claude-haiku-4-5",
+      "claude-mystery-9",
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+    ]);
+  });
+});
+
 // ── the day card and the selection's edges ───────────────────────────────────────
 
 /** Today with 4 hits (10:00, 12:00, 14:00, 15:00 EST, each cleared 30 min later) and 4 marks. */
@@ -1117,9 +1151,9 @@ test("with costs hidden, tokens take their place: heat map, ratios, card and tab
   const ratio = today.tokens / vm.average.tokens;
   expect(line(frame, " Thu Dec 3")).toContain(`${ratio.toFixed(1)}×`);
   // Shares and the top model follow tokens, not cost.
-  const top = [...today.models].sort((a, b) => b.tokens - a.tokens)[0];
-  expect(line(frame, " Thu Dec 3")).toContain(top?.name as string);
-  expect(frame).toContain(`models   ${top?.name}`);
+  const top = modelName([...today.models].sort((a, b) => b.tokens - a.tokens)[0]?.name as string);
+  expect(line(frame, " Thu Dec 3")).toContain(top);
+  expect(frame).toContain(`models   ${top}`);
   expect(frame).toMatchSnapshot();
 });
 

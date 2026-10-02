@@ -61,7 +61,7 @@ exports[`105×50 Accounts: win-like says what it shares, and the account's total
  ACCOUNTS                         │  win-like · claude                           limits fetched 11:38:00 
                                   │                                                                      
  ● personal-like      claude  64% │  root      /mnt/c/Users/fixture/.claude  (watched)                   
- ● win-like           claude  64% │  history   17 records since Sep 1                                    
+ ● win-like           claude  64% │  history   17 requests since Sep 1                                   
  ● work-like          claude  40% │                                                                      
  + add a root…                    │  shared with personal-like                                           
                                   │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15    
@@ -326,7 +326,7 @@ exports[`120×45 Accounts: win-like says what it shares, and the account's total
  ACCOUNTS                          │  win-like · claude                                         limits fetched 11:38:00 
                                    │                                                                                    
  ● personal-like       claude  64% │  root      /mnt/c/Users/fixture/.claude  (watched)                                 
- ● win-like            claude  64% │  history   17 records since Sep 1                                                  
+ ● win-like            claude  64% │  history   17 requests since Sep 1                                                 
  ● work-like           claude  40% │                                                                                    
  + add a root…                     │  shared with personal-like                                                         
                                    │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15         

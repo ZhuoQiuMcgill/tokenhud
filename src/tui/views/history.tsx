@@ -11,7 +11,16 @@
 import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column, MonthLabel } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
-import { clock, countdown, dayLabel, monthName, textWidth, tokens, truncate } from "../format.ts";
+import {
+  clock,
+  countdown,
+  dayLabel,
+  modelName,
+  monthName,
+  textWidth,
+  tokens,
+  truncate,
+} from "../format.ts";
 import { sectionLine, type Tab, tabStrips } from "../frame.ts";
 import { hintText, type KeyEntry, MOVE_KEYS, moveKey, TEXT } from "../keys.ts";
 import { HEAT_ROLES, type Role } from "../theme.ts";
@@ -52,7 +61,7 @@ export interface HistoryState {
   readonly open: boolean;
   /** The selected day, YYYY-MM-DD; null follows today. */
   readonly day: string | null;
-  /** Only the models whose id contains this, ignoring case; "" for all. */
+  /** Only the models whose name or id contains this, ignoring case; "" for all. */
   readonly filter: string;
   /** The filter is being typed: every key goes to it. */
   readonly typing: boolean;
@@ -158,16 +167,24 @@ function sum(parts: readonly HistoryTotal[]): HistoryTotal {
 const slices = new WeakMap<HistoryPeriod, { filter: string; slice: HistoryPeriod }>();
 
 /**
- * The period counting only the models whose id contains `filter`: their cost and tokens,
- * no accounts (the view model has no account split per model). The whole period when
- * there is no filter.
+ * Whether `f` (lower case) is part of `model`'s id or of the name the view shows for it:
+ * "opus 4.8" finds `claude-opus-4-8` as "claude" does.
+ */
+function matches(model: string, f: string): boolean {
+  return model.toLowerCase().includes(f) || modelName(model).toLowerCase().includes(f);
+}
+
+/**
+ * The period counting only the models whose name or id contains `filter`: their cost and
+ * tokens, no accounts (the view model has no account split per model). The whole period
+ * when there is no filter.
  */
 function slice<P extends HistoryPeriod>(p: P, filter: string): P {
   if (filter === "") return p;
   const cached = slices.get(p);
   if (cached?.filter === filter) return cached.slice as P;
   const f = filter.toLowerCase();
-  const models = p.models.filter((m) => m.name.toLowerCase().includes(f));
+  const models = p.models.filter((m) => matches(m.name, f));
   const out = { ...p, ...sum(models), models, accounts: [] };
   slices.set(p, { filter, slice: out });
   return out;
@@ -417,6 +434,12 @@ function ranked(shares: readonly HistoryShare[], showCost: boolean): readonly Hi
   return showCost ? shares : [...shares].sort((a, b) => b.tokens - a.tokens);
 }
 
+/** The first of `models` by what is shown, by name; null when there are none. */
+function topModel(models: readonly HistoryShare[], ctx: ViewContext): string | null {
+  const top = ranked(models, ctx.showCost)[0];
+  return top === undefined ? null : modelName(top.name);
+}
+
 /** A period's cost (tokens with costs hidden) over the daily baseline times its days. */
 function ratioOf(
   p: HistoryPeriod,
@@ -468,7 +491,7 @@ function cardHead(
     `${all > 0 ? Math.round(((ctx.showCost ? s.cost : s.tokens) / all) * 100) : 0}%`;
   const models = ranked(day.models, ctx.showCost)
     .slice(0, 3)
-    .map((m) => `${m.name} ${percent(m)}`);
+    .map((m) => `${modelName(m.name)} ${percent(m)}`);
   lines.push({ left: [label("models"), seg(entries(models, width - LABEL), "fg")] });
   if (state.filter === "") {
     const accounts = ranked(day.accounts, ctx.showCost).map(
@@ -588,7 +611,7 @@ function summaryLine(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Line
     [seg(`  ${tokens(day.tokens)} tokens`, "tokens")],
     limits === "" ? [] : [seg(`  ${limits}`, "high")],
     limits === "" ? [] : [seg(`  ${KEYS.open.show} lists them`, "dim")],
-    [seg(`  ${ranked(day.models, ctx.showCost)[0]?.name ?? "—"}`, "fg")],
+    [seg(`  ${topModel(day.models, ctx) ?? "—"}`, "fg")],
   ];
   // Least important last: the top model goes first, then tokens, the hint and the ratio.
   const drop = [6, 3, 5, 2];
@@ -788,7 +811,7 @@ function columns(
       title: "top model",
       width: 9,
       role: "fg",
-      text: (r) => ranked(period(r)?.models ?? [], ctx.showCost)[0]?.name ?? "",
+      text: (r) => topModel(period(r)?.models ?? [], ctx) ?? "",
       drop: 7,
     },
   ];
@@ -962,7 +985,7 @@ const KEYS: Readonly<Record<"tabs" | "select" | "page" | "open" | "back" | "filt
     show: "f",
     aliases: ["/"],
     label: "filter",
-    does: `Filter every number by model: type part of a model id, ${MOVE_KEYS.open.show} applies it`,
+    does: `Filter every number by model: type part of its name or id, ${MOVE_KEYS.open.show} applies it`,
     act: (state) => ({ ...state, typing: true }),
   },
 };
@@ -972,8 +995,8 @@ const FIELD: Readonly<Record<"type" | "apply" | "clear" | "erase", Entry>> = {
   type: {
     keys: [TEXT],
     show: "type",
-    label: "a model's id",
-    does: "Type part of a model id",
+    label: "a model's name",
+    does: "Type part of a model's name or id",
     // The field's line says so; the footer keeps to what ends the typing.
     quiet: true,
     act: (state, _vm, key) =>

@@ -9,7 +9,7 @@ import { Zone } from "../../src/query/tz.ts";
 import { openStoreReader, type UsageRow } from "../../src/store/store.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
-import { tokens } from "../../src/tui/format.ts";
+import { modelName, tokens } from "../../src/tui/format.ts";
 import { breakpoint } from "../../src/tui/layout.ts";
 import { theme } from "../../src/tui/theme.ts";
 import { costText } from "../../src/tui/views/cells.ts";
@@ -30,7 +30,6 @@ import {
   computeModels,
   type ModelRow,
   type ModelsVM,
-  modelName,
   type PriceChange,
   priceChanges,
   rateCard,

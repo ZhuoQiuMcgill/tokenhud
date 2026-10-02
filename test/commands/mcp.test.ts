@@ -1,7 +1,7 @@
 // `tokenhud mcp` run as a fresh process, the way Claude Code runs it, on a fake HOME: no
 // real account, config or network is touched.
 import { afterEach, describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { guard } from "../guard.ts";
 import { CLI, cleanup, envOf, machine } from "../mcp/helpers.ts";
@@ -13,7 +13,11 @@ afterEach(cleanup);
 describe("tokenhud mcp", () => {
   test("speaks MCP on stdout only, and exits when stdin closes, removing its heartbeat", async () => {
     const m = machine();
+    // Claude Code starts the server in the session's project.
+    const project = join(m.home, "code", "demo-app");
+    mkdirSync(project, { recursive: true });
     const proc = Bun.spawn([process.execPath, CLI, "mcp"], {
+      cwd: project,
       env: envOf(m),
       stdin: "pipe",
       stdout: "pipe",
@@ -74,6 +78,10 @@ describe("tokenhud mcp", () => {
       wait_s: 0,
     });
     expect(readdirSync(join(m.xdg, "tokenhud", "mcp"))).toEqual([`${proc.pid}.json`]);
+    // The heartbeat names the project by its directory's name, never by its path.
+    const beat = readFileSync(join(m.xdg, "tokenhud", "mcp", `${proc.pid}.json`), "utf8");
+    expect(JSON.parse(beat).project).toBe("demo-app");
+    expect(beat).not.toContain(JSON.stringify(m.home).slice(1, -1));
 
     proc.stdin.end();
     const code = await Promise.race([proc.exited, Bun.sleep(10_000).then(() => "timeout")]);

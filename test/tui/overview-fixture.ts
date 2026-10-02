@@ -198,14 +198,17 @@ function recordEvents(storePath: string): void {
   }
 }
 
-/** Two agent sessions with recent calls, as T9's heartbeat files report them. */
+/**
+ * Two agent sessions with recent calls, as T9's heartbeat files report them: one in a
+ * project, one from a heartbeat that names none.
+ */
 export const MCP: McpActivity = {
   servers: 2,
   agents: 2,
   recent: [],
   latest: [
-    { at: NOW - 40_000, tool: "limits", account: "work" },
-    { at: NOW - 3 * MIN, tool: "should_wait", account: "personal" },
+    { at: NOW - 40_000, tool: "limits", account: "work", project: "demo-app" },
+    { at: NOW - 3 * MIN, tool: "should_wait", account: "personal", project: null },
   ],
 };
 

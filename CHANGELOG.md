@@ -93,6 +93,10 @@ release candidate 0.1.0-rc.1 has all of it.
   - Models: sort `o` → `r` (`o` still works);
   - Accounts and the settings account editor: `e`/`l`/`h` → `enter`, which opens the
     account's menu (show only it, enable or disable, rename, history only).
+- **One name for each thing on screen.** History shows models by name (`Opus 5.5`), as the
+  other views do, and its filter finds a model by name or id; Accounts counts `requests`,
+  as Models does; the Overview's agents card names each session's project (the name of
+  its directory, never the path) where it said "claude session".
 
 ### For contributors
 

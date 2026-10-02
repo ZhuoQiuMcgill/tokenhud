@@ -131,7 +131,7 @@ shows the keys of the view you are in.
 | `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
 | `enter` | On a week or month, list its days; on a day, list its limit events |
 | `esc` | Close the limit events, then the open week or month, then clear the filter |
-| `f` or `/` | Filter every number by model: type part of a model id, `enter` applies it |
+| `f` or `/` | Filter every number by model: type part of its name or id, `enter` applies it |
 
 ### Models
 
@@ -198,7 +198,7 @@ How close each account is to its limits, and what your usage is costing right no
 
 1. 🟥 **Header.** The four views, the one you are on highlighted. On the right, the account scope: `all accounts`, or the one account that every number in every view is narrowed to. Then the status dot. `● live · 5s` (teal): this tokenhud reads new transcript lines as Claude Code and Codex write them, and refreshes its clock-driven numbers every 5 seconds (the refresh interval setting). `● stale` (amber): it isn't reading transcripts itself, because another tokenhud is (this one shows what that one stores), or it is still starting, or reading failed. `● error` (red): the numbers have stopped updating while tokenhud restarts the part that computes them.
 2. 🟧 **Limits.** A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder that pace is measured over the last 30 minutes and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.
-3. 🟨 **Agents.** Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: the account the call was about, the tool, and how long ago. With no recent calls, it says how many servers are running.
+3. 🟨 **Agents.** Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: its project (the name of the directory the session runs in, never its path; `claude session` when the server doesn't say), the account the call was about, the tool, and how long ago. A narrow card leaves out the account, then the project. With no recent calls, it says how many servers are running.
 4. 🟩 **Spend.** What your usage would cost at the providers' API prices (not what your subscription costs), and its tokens: input, output, cache reads and cache writes together. `1h` and `5h` are the last 60 minutes and the last 5 hours (shown on screens 120 columns wide or more). `today`, `this week` and `this month` start at local midnight, on Monday and on the 1st. `all-time` is everything tokenhud has stored, including usage whose transcripts are gone. For `*` and `≈`, see [Glyphs and colours](#glyphs-and-colours).
 5. 🟦 **Activity.** Cost over the last 24 hours, one bar per time slot. The tabs on the right switch to the last 5 hours or 7 days (`a`/`d`; the one shown is in brackets), and `t` switches to tokens. The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.
 6. 🟪 **Top models.** The five models with the most cost in the last 24 hours: the cost, its share of the 24 hours' cost, and a bar of that share. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced` and comes last. Under the list, the chart's tallest slot and when it started.
@@ -245,7 +245,7 @@ Your usage day by day, week by week and month by month, and the days you hit a l
 <!-- shots:history -->
 ![The History view with six numbered boxes: tabs, heat map, day card, period table, totals, footer](docs-public/images/history.png)
 
-1. 🟥 **Tabs.** What the table lists, switched with `a`/`d`; the one shown is in brackets. `this week` and `this month` list the days so far of the current week or month (History opens on this week), `days` every day of the heat map, `weeks` (Monday to Sunday) and `months` one row each. On the right, what `*` and `≈` mean, and `f`, the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.
+1. 🟥 **Tabs.** What the table lists, switched with `a`/`d`; the one shown is in brackets. `this week` and `this month` list the days so far of the current week or month (History opens on this week), `days` every day of the heat map, `weeks` (Monday to Sunday) and `months` one row each. On the right, what `*` and `≈` mean, and `f`, the model filter: with a filter, every number on the screen counts only the models whose name or id contains what you typed.
 2. 🟧 **Heat map.** One square per day for the last 26 weeks: a column per week, Monday at the top. The shade is the day's cost against the busiest day shown: the darkest square is a day without usage, and the four lighter shades are under a quarter of the busiest day, under a half, under three quarters, and the rest. The table's selected row is white: here a day; on the weeks or months tab, that week's or month's days. Days after today are blank.
 3. 🟨 **Day card.** The selected day. `cost`, and how it compares with your usual day: `2.4×` is the day's cost divided by your average daily cost over the 30 days before today (or fewer, if your usage started more recently). `tokens`, split into input, output and cache (reads and writes). `models`: its three most expensive models, with their share of the day's cost. `accounts`: each account's cost that day. `limits`: the day's limit events. `hit 100% at 14:10 (waited 1h55m)` is a window that reached its limit, and how long it was until tokenhud saw it usable again; a weekly window crossing 80 % reads passed 80%.
 4. 🟩 **Period table.** The rows of the tab shown, newest first, moved through with `w`/`s`. On the weeks or months tab, `enter` lists a row's days and `esc` goes back; on a day with limit events, `enter` lists them. `input`, `output` and `cache` (reads and writes) are tokens; `cost` is at API prices. `vs 30-day avg` compares the period with your average day times the period's days so far: the bar is full at 2.25 times, 1 times is a little under half of it, and it turns red-orange above 1.5 times; the ratio follows it. `top model` is the period's most expensive model, `accounts` those with usage, most cost first.
@@ -491,7 +491,7 @@ pricing.overrides.json    your prices, if any
 limits.json               the last limits fetched
 update-check.json         when GitHub was last asked about a newer release, and its answer
 logs/tokenhud.log         errors, for tokenhud doctor and bug reports
-mcp/                      which MCP servers are running, for the Overview
+mcp/                      which MCP servers are running, and their projects' names, for the Overview
 ingest.lock.db            which tokenhud process writes the store
 ```
 

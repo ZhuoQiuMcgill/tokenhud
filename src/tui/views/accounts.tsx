@@ -301,11 +301,11 @@ function wherePart(a: AccountRow, vm: AccountsVM, width: number): Part {
   }
   const history: Line =
     a.records === 0
-      ? { left: [label("history"), seg("no records yet", "dim")] }
+      ? { left: [label("history"), seg("no requests yet", "dim")] }
       : {
           left: [
             label("history"),
-            seg(`${grouped(a.records)} record${a.records === 1 ? "" : "s"}`, "fg"),
+            seg(`${grouped(a.records)} request${a.records === 1 ? "" : "s"}`, "fg"),
             seg(` since ${localDay(a.firstSeen, vm.asOf, vm.tz)}`, "fg"),
           ],
         };
