@@ -185,6 +185,8 @@ describe("History", () => {
       key: "2026-04-06",
       cost: 0,
       tokens: 0,
+      pricedShare: 1,
+      estimatedCost: 0,
       input: 0,
       output: 0,
       cache: 0,

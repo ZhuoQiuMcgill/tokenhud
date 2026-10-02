@@ -107,7 +107,7 @@ const HIGH_CONTRAST: Palette = {
   tokens: "#66ccff",
   low: "#66ccff",
   mid: "#ffc233",
-  high: "#ff6e5e",
+  high: "#ff7566",
   live: "#3dffd0",
   sel: "#16365e",
   tab: "#24507f",
@@ -146,6 +146,14 @@ export function theme(name: ThemeName): Theme {
 /** gen.py `level`: utilisation below 50 % is low, below 80 % mid, else high. */
 export function level(fraction: number): "low" | "mid" | "high" {
   return fraction < 0.5 ? "low" : fraction < 0.8 ? "mid" : "high";
+}
+
+/**
+ * A text role as drawn on the selection (`sel`): dim would fade into it (2.8:1 in the dark
+ * theme), so it reads as mute there. Every other role keeps its colour.
+ */
+export function onSel(role: Role): Role {
+  return role === "dim" ? "mute" : role;
 }
 
 export const HEAT_ROLES: readonly Role[] = ["heat0", "heat1", "heat2", "heat3", "heat4"];

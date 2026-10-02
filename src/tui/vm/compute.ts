@@ -50,7 +50,12 @@ export interface Computed<V> {
   readonly validUntil: number;
 }
 
-const amount = (u: Usage): Amount => ({ cost: u.cost, tokens: u.tokens.total });
+const amount = (u: Usage): Amount => ({
+  cost: u.cost,
+  tokens: u.tokens.total,
+  pricedShare: u.coverage.pricedShare,
+  estimatedCost: u.estimatedCost,
+});
 
 function scoped(ctx: ComputeContext): { accounts?: readonly number[] } {
   return ctx.scope === null ? {} : { accounts: [ctx.scope] };
@@ -81,18 +86,18 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
   }
   const today = new Map(q.byAccount({ period: "today", ...filter }).map((a) => [a.account.id, a]));
   const last24 = new Map(q.byAccount({ range: day, ...filter }).map((a) => [a.account.id, a]));
-  const zero: Amount = { cost: 0, tokens: 0 };
+  const zero: Amount = { cost: 0, tokens: 0, pricedShare: 1, estimatedCost: 0 };
   const shown = ctx.accounts.filter((a) => ctx.scope === null || a.id === ctx.scope);
   const activity = q.activity({ range: day, buckets: ACTIVITY_BUCKETS, ...filter });
   const topModels = q
     .byModel({ range: day, ...filter })
     .slice(0, 5)
     .map((m) => ({
+      ...amount(m.usage),
       model: m.model,
       tier: m.tier,
-      cost: m.usage.cost,
-      tokens: m.usage.tokens.total,
       share: m.share,
+      status: m.status,
     }));
   const vm: OverviewVM = {
     accounts: shown.map((a) => {
@@ -141,9 +146,8 @@ export function computeHistory(ctx: ComputeContext): Computed<HistoryVM> {
     } else {
       const t = d.usage.tokens;
       days.push({
+        ...amount(d.usage),
         key,
-        cost: d.usage.cost,
-        tokens: t.total,
         input: t.input,
         output: t.output,
         cache: t.cacheRead + t.cacheWrite,
@@ -163,7 +167,17 @@ export function computeHistory(ctx: ComputeContext): Computed<HistoryVM> {
 }
 
 function emptyDay(key: string): HistoryDay {
-  return { key, cost: 0, tokens: 0, input: 0, output: 0, cache: 0, topModel: null };
+  return {
+    key,
+    cost: 0,
+    tokens: 0,
+    pricedShare: 1,
+    estimatedCost: 0,
+    input: 0,
+    output: 0,
+    cache: 0,
+    topModel: null,
+  };
 }
 
 export function computeModels(ctx: ComputeContext): Computed<ModelsVM> {
@@ -173,13 +187,12 @@ export function computeModels(ctx: ComputeContext): Computed<ModelsVM> {
   const rows: ModelRow[] = models.map((m) => {
     const t = m.usage.tokens;
     return {
+      ...amount(m.usage),
       model: m.model,
       tier: m.tier,
       input: t.input,
       output: t.output,
       cache: t.cacheRead + t.cacheWrite,
-      tokens: t.total,
-      cost: m.usage.cost,
       share: m.share,
       status: m.status,
       rates:
@@ -196,11 +209,10 @@ export function computeModels(ctx: ComputeContext): Computed<ModelsVM> {
       window: ctx.window,
       rows,
       total: {
+        ...amount(totals.usage),
         input: t.input,
         output: t.output,
         cache: t.cacheRead + t.cacheWrite,
-        tokens: t.total,
-        cost: totals.usage.cost,
       },
       pricedShare: totals.usage.coverage.pricedShare,
     },
@@ -225,15 +237,20 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
       ...a,
       firstSeen: s?.firstSeen ?? null,
       lastSeen: s?.lastSeen ?? null,
-      cost: u?.usage.cost ?? 0,
-      tokens: u?.usage.tokens.total ?? 0,
+      ...(u === undefined
+        ? { cost: 0, tokens: 0, pricedShare: 1, estimatedCost: 0 }
+        : amount(u.usage)),
       records: u?.usage.records ?? 0,
       share: u?.share ?? 0,
       spark: q.byDay({ range: sparkRange, accounts: [a.id] }).map((d) => d.usage.cost),
     };
   });
   rows.sort((x, y) => y.cost - x.cost || y.tokens - x.tokens || x.id - y.id);
-  return { vm: { rows }, deps: [ALL_TIME], validUntil: sparkRange.to };
+  return {
+    vm: { rows, asOf: ctx.now, tz: ctx.zone.name },
+    deps: [ALL_TIME],
+    validUntil: sparkRange.to,
+  };
 }
 
 export const COMPUTE: { readonly [V in ViewId]: (ctx: ComputeContext) => Computed<unknown> } = {

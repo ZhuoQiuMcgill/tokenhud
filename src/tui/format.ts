@@ -67,13 +67,6 @@ export function dayLabel(key: string): string {
   return `${WEEKDAYS[date.getUTCDay()]} ${MONTHS[m - 1]} ${d}`;
 }
 
-/** `2026-09` → `Sep 2026`; `2026-09-28` (a week's Monday) → `wk of Sep 28`. */
-export function periodLabel(key: string): string {
-  const [y, m, d] = key.split("-").map(Number) as [number, number, number | undefined];
-  if (d === undefined) return `${MONTHS[m - 1]} ${y}`;
-  return `wk of ${MONTHS[m - 1]} ${d}`;
-}
-
 export function monthName(month1: number): string {
   return MONTHS[month1 - 1] ?? "";
 }

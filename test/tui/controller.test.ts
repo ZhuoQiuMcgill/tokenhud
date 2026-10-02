@@ -106,7 +106,17 @@ describe("global keys", () => {
       days: Array.from({ length: 182 }, (_, i) =>
         i > 100
           ? null
-          : { key: `d${i}`, cost: 0, tokens: 0, input: 0, output: 0, cache: 0, topModel: null },
+          : {
+              key: `d${i}`,
+              cost: 0,
+              tokens: 0,
+              pricedShare: 1,
+              estimatedCost: 0,
+              input: 0,
+              output: 0,
+              cache: 0,
+              topModel: null,
+            },
       ),
       today: 100,
     };

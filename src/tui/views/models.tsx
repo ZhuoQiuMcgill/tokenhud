@@ -2,9 +2,10 @@
 // window, on the real view model, in one virtual table with a share bar.
 import type { Column } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
-import { money, percent, tokens } from "../format.ts";
+import { percent, tokens } from "../format.ts";
 import { sectionLine } from "../frame.ts";
 import type { ModelRow, ModelsVM } from "../vm/types.ts";
+import { costText } from "./cells.ts";
 import type { Section, View, ViewContext } from "./types.ts";
 
 export type ModelsState = { readonly selected: number };
@@ -21,68 +22,55 @@ export const WINDOW_LABELS: Readonly<Record<string, string>> = {
 
 const rate = (v: number | undefined) => (v === undefined ? "—" : v.toFixed(2));
 
+/**
+ * The rate board's columns. Narrow, they go in this order: the $/M rates, the share bar,
+ * cache, output, input, then the share %; the model and its cost stay.
+ */
 function columns(ctx: ViewContext, totals: ModelRow): Column<ModelRow>[] {
   const name = (m: ModelRow) =>
     `${m.model || "(no model)"}${m.tier === "fast" ? " (fast)" : ""}${m.status === "priced" ? "" : " *"}`;
-  const wide = ctx.bp !== "narrow";
+  const count = (title: string, f: (m: ModelRow) => number, drop: number): Column<ModelRow> => ({
+    title,
+    width: 8,
+    align: "right",
+    role: "tokens",
+    text: (m) => tokens(f(m)),
+    drop,
+  });
+  const price = (width: number, f: (m: ModelRow) => number | undefined): Column<ModelRow> => ({
+    title: "$/M",
+    width,
+    align: "right",
+    role: "dim",
+    text: (m) => rate(f(m)),
+    drop: 7,
+  });
   const cols: Column<ModelRow>[] = [
-    { title: "model", width: "fill", role: "fg", text: name },
-    { title: "input", width: 8, align: "right", role: "tokens", text: (m) => tokens(m.input) },
+    { title: "model", width: "fill", min: 18, role: "fg", text: name },
+    count("input", (m) => m.input, 3),
+    price(6, (m) => m.rates?.input),
+    count("output", (m) => m.output, 4),
+    price(6, (m) => m.rates?.output),
+    count("cache", (m) => m.cache, 5),
+    price(5, (m) => m.rates?.cacheRead),
   ];
-  if (wide)
-    cols.push({
-      title: "$/M",
-      width: 6,
-      align: "right",
-      role: "dim",
-      text: (m) => rate(m.rates?.input),
-    });
-  cols.push({
-    title: "output",
-    width: 8,
-    align: "right",
-    role: "tokens",
-    text: (m) => tokens(m.output),
-  });
-  if (wide)
-    cols.push({
-      title: "$/M",
-      width: 6,
-      align: "right",
-      role: "dim",
-      text: (m) => rate(m.rates?.output),
-    });
-  cols.push({
-    title: "cache",
-    width: 8,
-    align: "right",
-    role: "tokens",
-    text: (m) => tokens(m.cache),
-  });
-  if (wide)
-    cols.push({
-      title: "$/M",
-      width: 5,
-      align: "right",
-      role: "dim",
-      text: (m) => rate(m.rates?.cacheRead),
-    });
   if (ctx.showCost) {
     cols.push({
       title: "cost",
       width: 12,
       align: "right",
-      role: (m) => (m.status === "unpriced" ? "dim" : "cost"),
-      bold: (m) => m.status !== "unpriced",
-      text: (m) => (m.status === "unpriced" ? "unpriced" : money(m.cost)),
+      role: (m) => costText(m).role,
+      bold: (m) => costText(m).role === "cost",
+      text: (m) => costText(m).text,
     });
-    cols.push({ title: "share", width: 10, role: "cost", bar: (m) => m.share });
+    cols.push({ title: "share", width: 10, role: "cost", bar: (m) => m.share, drop: 6 });
     cols.push({
       title: "",
       width: 5,
       align: "right",
       role: "mute",
       text: (m) => (m === totals ? "" : percent(m.share)),
+      drop: 2,
     });
   }
   return cols;
@@ -97,6 +85,8 @@ function tableSection(vm: ModelsVM, state: ModelsState, ctx: ViewContext): Secti
     cache: vm.total.cache,
     tokens: vm.total.tokens,
     cost: vm.total.cost,
+    pricedShare: vm.total.pricedShare,
+    estimatedCost: vm.total.estimatedCost,
     share: 0,
     status: "priced",
     rates: null,

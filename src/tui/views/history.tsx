@@ -3,10 +3,11 @@
 import { type Line, seg } from "../components/base.ts";
 import type { Column, MonthLabel } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
-import { dayLabel, money, monthName, tokens } from "../format.ts";
+import { dayLabel, monthName, tokens } from "../format.ts";
 import { sectionLine } from "../frame.ts";
 import { HEAT_ROLES } from "../theme.ts";
 import type { HistoryDay, HistoryVM } from "../vm/types.ts";
+import { costText, noteWithLegend } from "./cells.ts";
 import type { Section, View, ViewContext } from "./types.ts";
 
 /** The selected day, as an index into the view model's days; null means today. */
@@ -37,7 +38,14 @@ function detailLines(day: HistoryDay | null, ctx: ViewContext): Line[] {
   return [
     { left: [seg(dayLabel(day.key), "head", true)] },
     ...(ctx.showCost
-      ? [{ left: [seg("cost    ", "mute"), seg(money(day.cost), "cost", true)] }]
+      ? [
+          {
+            left: [
+              seg("cost    ", "mute"),
+              seg(costText(day).text, costText(day).role, costText(day).role === "cost"),
+            ],
+          },
+        ]
       : []),
     { left: [seg("tokens  ", "mute"), seg(tokens(day.tokens), "tokens")] },
     {
@@ -54,14 +62,16 @@ function detailLines(day: HistoryDay | null, ctx: ViewContext): Line[] {
 }
 
 function heatSection(vm: HistoryVM, selected: number, ctx: ViewContext): Section {
+  // Narrower than the full grid, the most recent weeks that fit show (the grid keeps today).
+  const gridWidth = Math.min(HEAT_WIDTH, ctx.width);
+  const weeks = Math.min(vm.weeks, Math.floor((gridWidth - 5) / 2));
   const title: Line = {
-    left: [
-      seg(` LAST ${vm.weeks} WEEKS · daily ${ctx.showCost ? "cost" : "tokens"}`, "head", true),
-    ],
+    left: [seg(` LAST ${weeks} WEEKS · daily ${ctx.showCost ? "cost" : "tokens"}`, "head", true)],
     right: [seg("less ", "dim"), ...HEAT_ROLES.map((r) => seg("■ ", r)), seg("more ", "dim")],
   };
   const values = vm.days.map((d) => (d === null ? null : ctx.showCost ? d.cost : d.tokens));
-  const showDetail = ctx.width >= HEAT_WIDTH + 30;
+  // Beside the grid only when its longest line fits whole.
+  const showDetail = ctx.width >= HEAT_WIDTH + 3 + 40;
   return {
     id: "heat",
     priority: 2,
@@ -76,7 +86,7 @@ function heatSection(vm: HistoryVM, selected: number, ctx: ViewContext): Section
             selected={selected}
             months={months(vm)}
             theme={ctx.theme}
-            width={HEAT_WIDTH}
+            width={gridWidth}
             height={height - 1}
             flexShrink={0}
           />
@@ -94,19 +104,41 @@ function heatSection(vm: HistoryVM, selected: number, ctx: ViewContext): Section
 function tableSection(vm: HistoryVM, selected: number, ctx: ViewContext): Section {
   // Newest first; the selection is a day index, so map it to a row.
   const rows = vm.days.slice(0, vm.today + 1).reverse() as HistoryDay[];
+  // Narrow: the top model goes first, then cache, output and input; date and cost stay.
   const columns: Column<HistoryDay>[] = [
     { title: "date", width: 11, role: "fg", text: (d) => dayLabel(d.key) },
-    { title: "input", width: 7, align: "right", role: "tokens", text: (d) => tokens(d.input) },
-    { title: "output", width: 7, align: "right", role: "tokens", text: (d) => tokens(d.output) },
-    { title: "cache", width: 8, align: "right", role: "tokens", text: (d) => tokens(d.cache) },
+    {
+      title: "input",
+      width: 7,
+      align: "right",
+      role: "tokens",
+      text: (d) => tokens(d.input),
+      drop: 2,
+    },
+    {
+      title: "output",
+      width: 7,
+      align: "right",
+      role: "tokens",
+      text: (d) => tokens(d.output),
+      drop: 3,
+    },
+    {
+      title: "cache",
+      width: 8,
+      align: "right",
+      role: "tokens",
+      text: (d) => tokens(d.cache),
+      drop: 4,
+    },
     ctx.showCost
       ? {
           title: "cost",
           width: 11,
           align: "right",
-          role: "cost",
-          bold: true,
-          text: (d) => money(d.cost),
+          role: (d) => costText(d).role,
+          bold: (d) => costText(d).role === "cost",
+          text: (d) => costText(d).text,
         }
       : {
           title: "tokens",
@@ -115,7 +147,7 @@ function tableSection(vm: HistoryVM, selected: number, ctx: ViewContext): Sectio
           role: "tokens",
           text: (d) => tokens(d.tokens),
         },
-    { title: "top model", width: "fill", role: "mute", text: (d) => d.topModel ?? "" },
+    { title: "top model", width: "fill", role: "mute", text: (d) => d.topModel ?? "", drop: 5 },
   ];
   return {
     id: "table",
@@ -124,7 +156,15 @@ function tableSection(vm: HistoryVM, selected: number, ctx: ViewContext): Sectio
     minHeight: Math.min(4, 2 + rows.length),
     render: (height) => (
       <box flexDirection="column" height={height} flexShrink={0}>
-        <Lines theme={ctx.theme} lines={[sectionLine("BY DAY", "↑/↓ day · ←/→ week")]} />
+        <Lines
+          theme={ctx.theme}
+          lines={[
+            sectionLine(
+              "BY DAY",
+              noteWithLegend("BY DAY", "↑/↓ day · ←/→ week", rows, ctx.showCost, ctx.width),
+            ),
+          ]}
+        />
         <Table
           columns={columns}
           rows={rows}

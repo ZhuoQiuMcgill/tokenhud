@@ -256,6 +256,8 @@ export async function runApp(boot: Boot): Promise<number> {
     } catch {
       // the terminal is restored as far as OpenTUI could
     }
+    // OpenTUI turns on grapheme clustering (mode 2027) and leaves it on (critique n1).
+    if (process.stdout.isTTY) process.stdout.write("\x1b[?2027l");
     if (error !== undefined) {
       const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
       log.write("error", `crashed: ${text}`);

@@ -6,8 +6,8 @@ exports[`at width 105 plain text matches the snapshot 1`] = `
 
  LIMITS                                                                              limits: coming soon
  ╭─ personal · claude ─────────────────────────────╮  ╭─ work · claude ────────────────────────────────╮
- │ today $0.00  967K                               │  │ today $0.00  0                                 │
- │ 24h   $1.62  2.9M                               │  │ 24h   $0.00  0                                 │
+ │ today unpriced  967K                            │  │ today $0.00  0                                 │
+ │ 24h     $1.62*  2.9M                            │  │ 24h   $0.00  0                                 │
  │ limits: coming soon                             │  │ limits: coming soon                            │
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯
  ╭─ codex · codex ─────────────────────────────────╮  ╭─ codex-win · codex ────────────────────────────╮
@@ -21,10 +21,10 @@ exports[`at width 105 plain text matches the snapshot 1`] = `
  │ not signed in here                              │
  ╰─────────────────────────────────────────────────╯
 
- SPEND
-                  today    this week   this month     all-time
-  cost            $2.38        $8.55      $158.43      $336.20
-  tokens           2.6M         8.2M       142.8M       310.7M
+ SPEND                                                                           * not all tokens priced
+                today    this week   this month     all-time
+  cost         $2.38*       $8.55*     $158.43*     $336.20*
+  tokens         2.6M         8.2M       142.8M       310.7M
 
  ACTIVITY · cost per 20 min · 24h                                                    peak $1.07 at 21:20
  $1.07                             █                               ▂
@@ -37,10 +37,10 @@ exports[`at width 105 plain text matches the snapshot 1`] = `
        -24h              -18h              -12h             -6h             now
 
  TOP MODELS · 24h
- claude-opus-4-8                           $1.62  40% ━━━━━━
- gpt-5.6-sol                               $1.42  35% ━━━━━━
- gpt-5.5                                   $0.96  24% ━━━━━━
- claude-mystery-9                          $0.00   0% ━━━━━━
+ claude-opus-4-8                           $1.62  40% ━━
+ gpt-5.6-sol                               $1.42  35% ━━
+ gpt-5.5                                   $0.96  24% ━
+ claude-mystery-9                       unpriced   0%
 
  LIMIT EVENTS · 7 days
   limit events: coming soon
@@ -53,8 +53,8 @@ exports[`at width 105 ANSI colours match the snapshot and carry the same charact
 
 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m LIMITS                                                                              \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mpersonal · claude\x1B[0m\x1B[38;2;43;52;64m ─────────────────────────────╮  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mwork · claude\x1B[0m\x1B[38;2;43;52;64m ────────────────────────────────╮\x1B[0m
- \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  967K                               \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                                 \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
- \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$1.62\x1B[0m\x1B[38;2;108;182;255m  2.9M                               \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                                 \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
+ \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[38;2;95;106;119munpriced\x1B[0m\x1B[38;2;108;182;255m  967K                            \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                                 \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
+ \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m  $1.62*\x1B[0m\x1B[38;2;108;182;255m  2.9M                            \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                                 \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon                             \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon                            \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╰─────────────────────────────────────────────────╯  \x1B[0m\x1B[38;2;43;52;64m╰────────────────────────────────────────────────╯\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mcodex · codex\x1B[0m\x1B[38;2;43;52;64m ─────────────────────────────────╮  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mcodex-win · codex\x1B[0m\x1B[38;2;43;52;64m ────────────────────────────╮\x1B[0m
@@ -68,10 +68,10 @@ exports[`at width 105 ANSI colours match the snapshot and carry the same charact
  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mnot signed in here                              \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╰─────────────────────────────────────────────────╯\x1B[0m
 
-\x1B[0m\x1B[1m\x1B[38;2;238;242;246m SPEND\x1B[0m
-\x1B[0m\x1B[38;2;95;106;119m                  today    this week   this month     all-time\x1B[0m
-\x1B[0m\x1B[38;2;139;150;164m  cost    \x1B[0m\x1B[1m\x1B[38;2;232;163;61m        $2.38        $8.55      $158.43      $336.20\x1B[0m
-\x1B[0m\x1B[38;2;139;150;164m  tokens  \x1B[0m\x1B[38;2;108;182;255m         2.6M         8.2M       142.8M       310.7M\x1B[0m
+\x1B[0m\x1B[1m\x1B[38;2;238;242;246m SPEND                                                                           \x1B[0m\x1B[38;2;95;106;119m* not all tokens priced\x1B[0m
+\x1B[0m\x1B[38;2;95;106;119m                today    this week   this month     all-time\x1B[0m
+\x1B[0m\x1B[38;2;139;150;164m  cost  \x1B[0m\x1B[1m\x1B[38;2;232;163;61m       $2.38*       $8.55*     $158.43*     $336.20*\x1B[0m
+\x1B[0m\x1B[38;2;139;150;164m  tokens\x1B[0m\x1B[38;2;108;182;255m         2.6M         8.2M       142.8M       310.7M\x1B[0m
 
 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m ACTIVITY · cost per 20 min · 24h                                                    \x1B[0m\x1B[38;2;95;106;119mpeak $1.07 at 21:20\x1B[0m
  \x1B[0m\x1B[38;2;95;106;119m$1.07 \x1B[0m\x1B[38;2;232;163;61m                            █                               ▂\x1B[0m
@@ -87,7 +87,7 @@ exports[`at width 105 ANSI colours match the snapshot and carry the same charact
  \x1B[0m\x1B[38;2;200;208;217mclaude-opus-4-8                       \x1B[0m\x1B[38;2;232;163;61m    $1.62 \x1B[0m\x1B[38;2;139;150;164m 40% \x1B[0m\x1B[38;2;232;163;61m━━\x1B[0m\x1B[38;2;44;53;66m━━━━\x1B[0m
  \x1B[0m\x1B[38;2;200;208;217mgpt-5.6-sol                           \x1B[0m\x1B[38;2;232;163;61m    $1.42 \x1B[0m\x1B[38;2;139;150;164m 35% \x1B[0m\x1B[38;2;232;163;61m━━\x1B[0m\x1B[38;2;44;53;66m━━━━\x1B[0m
  \x1B[0m\x1B[38;2;200;208;217mgpt-5.5                               \x1B[0m\x1B[38;2;232;163;61m    $0.96 \x1B[0m\x1B[38;2;139;150;164m 24% \x1B[0m\x1B[38;2;232;163;61m━\x1B[0m\x1B[38;2;44;53;66m━━━━━\x1B[0m
- \x1B[0m\x1B[38;2;200;208;217mclaude-mystery-9                      \x1B[0m\x1B[38;2;232;163;61m    $0.00 \x1B[0m\x1B[38;2;139;150;164m  0% \x1B[0m\x1B[38;2;44;53;66m━━━━━━\x1B[0m
+ \x1B[0m\x1B[38;2;200;208;217mclaude-mystery-9                      \x1B[0m\x1B[38;2;95;106;119m unpriced \x1B[0m\x1B[38;2;139;150;164m  0% \x1B[0m\x1B[38;2;44;53;66m━━━━━━\x1B[0m
 
 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m LIMIT EVENTS · 7 days\x1B[0m
 \x1B[0m\x1B[38;2;95;106;119m  limit events: coming soon\x1B[0m
@@ -100,8 +100,8 @@ exports[`at width 120 plain text matches the snapshot 1`] = `
 
  LIMITS                                                                                             limits: coming soon
  ╭─ personal · claude ────────────────╮  ╭─ work · claude ────────────────────╮  ╭─ codex · codex ────────────────────╮
- │ today $0.00  967K                  │  │ today $0.00  0                     │  │ today $2.38  1.6M                  │
- │ 24h   $1.62  2.9M                  │  │ 24h   $0.00  0                     │  │ 24h   $2.38  1.6M                  │
+ │ today unpriced  967K               │  │ today $0.00  0                     │  │ today $2.38  1.6M                  │
+ │ 24h     $1.62*  2.9M               │  │ 24h   $0.00  0                     │  │ 24h   $2.38  1.6M                  │
  │ limits: coming soon                │  │ limits: coming soon                │  │ limits: coming soon                │
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯
  ╭─ codex-win · codex ────────────────╮  ╭─ old-laptop · claude ──────────────╮
@@ -110,16 +110,16 @@ exports[`at width 120 plain text matches the snapshot 1`] = `
  │ limits: coming soon                │  │ not signed in here                 │
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯
 
- SPEND
-                  today    this week   this month     all-time
-  cost            $2.38        $8.55      $158.43      $336.20
-  tokens           2.6M         8.2M       142.8M       310.7M
+ SPEND                                                                                          * not all tokens priced
+                today    this week   this month     all-time
+  cost         $2.38*       $8.55*     $158.43*     $336.20*
+  tokens         2.6M         8.2M       142.8M       310.7M
 
  ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h
- $1.07                             █                               ▂               claude-opus-4-8     $1.62  40% ━━━━━━
-                                   █                      ▆        █               gpt-5.6-sol         $1.42  35% ━━━━━━
-                                   █                      █        █               gpt-5.5             $0.96  24% ━━━━━━
- $0.53                             █▄                    ▃█        █               claude-mystery…     $0.00   0% ━━━━━━
+ $1.07                             █                               ▂               claude-opus-4-8     $1.62  40% ━━
+                                   █                      ▆        █               gpt-5.6-sol         $1.42  35% ━━
+                                   █                      █        █               gpt-5.5             $0.96  24% ━
+ $0.53                             █▄                    ▃█        █               claude-mystery…  unpriced   0%
                                    ██                    ██        █
                                    ██                    ██        █
      0                             ██                    ██        █
@@ -136,8 +136,8 @@ exports[`at width 120 ANSI colours match the snapshot and carry the same charact
 
 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m LIMITS                                                                                             \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mpersonal · claude\x1B[0m\x1B[38;2;43;52;64m ────────────────╮  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mwork · claude\x1B[0m\x1B[38;2;43;52;64m ────────────────────╮  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mcodex · codex\x1B[0m\x1B[38;2;43;52;64m ────────────────────╮\x1B[0m
- \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  967K                  \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                     \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$2.38\x1B[0m\x1B[38;2;108;182;255m  1.6M                  \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
- \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$1.62\x1B[0m\x1B[38;2;108;182;255m  2.9M                  \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                     \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$2.38\x1B[0m\x1B[38;2;108;182;255m  1.6M                  \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
+ \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[38;2;95;106;119munpriced\x1B[0m\x1B[38;2;108;182;255m  967K               \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                     \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164mtoday \x1B[0m\x1B[1m\x1B[38;2;232;163;61m$2.38\x1B[0m\x1B[38;2;108;182;255m  1.6M                  \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
+ \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m  $1.62*\x1B[0m\x1B[38;2;108;182;255m  2.9M               \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$0.00\x1B[0m\x1B[38;2;108;182;255m  0                     \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;139;150;164m24h   \x1B[0m\x1B[38;2;232;163;61m$2.38\x1B[0m\x1B[38;2;108;182;255m  1.6M                  \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon                \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon                \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon                \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╰────────────────────────────────────╯  \x1B[0m\x1B[38;2;43;52;64m╰────────────────────────────────────╯  \x1B[0m\x1B[38;2;43;52;64m╰────────────────────────────────────╯\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mcodex-win · codex\x1B[0m\x1B[38;2;43;52;64m ────────────────╮  \x1B[0m\x1B[38;2;43;52;64m╭─ \x1B[0m\x1B[1m\x1B[38;2;238;242;246mold-laptop · claude\x1B[0m\x1B[38;2;43;52;64m ──────────────╮\x1B[0m
@@ -146,16 +146,16 @@ exports[`at width 120 ANSI colours match the snapshot and carry the same charact
  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mlimits: coming soon                \x1B[0m\x1B[38;2;43;52;64m│  \x1B[0m\x1B[38;2;43;52;64m│ \x1B[0m\x1B[38;2;95;106;119mnot signed in here                 \x1B[0m\x1B[38;2;43;52;64m│\x1B[0m
  \x1B[0m\x1B[38;2;43;52;64m╰────────────────────────────────────╯  \x1B[0m\x1B[38;2;43;52;64m╰────────────────────────────────────╯\x1B[0m
 
-\x1B[0m\x1B[1m\x1B[38;2;238;242;246m SPEND\x1B[0m
-\x1B[0m\x1B[38;2;95;106;119m                  today    this week   this month     all-time\x1B[0m
-\x1B[0m\x1B[38;2;139;150;164m  cost    \x1B[0m\x1B[1m\x1B[38;2;232;163;61m        $2.38        $8.55      $158.43      $336.20\x1B[0m
-\x1B[0m\x1B[38;2;139;150;164m  tokens  \x1B[0m\x1B[38;2;108;182;255m         2.6M         8.2M       142.8M       310.7M\x1B[0m
+\x1B[0m\x1B[1m\x1B[38;2;238;242;246m SPEND                                                                                          \x1B[0m\x1B[38;2;95;106;119m* not all tokens priced\x1B[0m
+\x1B[0m\x1B[38;2;95;106;119m                today    this week   this month     all-time\x1B[0m
+\x1B[0m\x1B[38;2;139;150;164m  cost  \x1B[0m\x1B[1m\x1B[38;2;232;163;61m       $2.38*       $8.55*     $158.43*     $336.20*\x1B[0m
+\x1B[0m\x1B[38;2;139;150;164m  tokens\x1B[0m\x1B[38;2;108;182;255m         2.6M         8.2M       142.8M       310.7M\x1B[0m
 
 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m ACTIVITY · cost per 20 min · 24h                                                 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m TOP MODELS · 24h\x1B[0m
  \x1B[0m\x1B[38;2;95;106;119m$1.07 \x1B[0m\x1B[38;2;232;163;61m                            █                               ▂               \x1B[0m\x1B[38;2;200;208;217mclaude-opus-4-8 \x1B[0m\x1B[38;2;232;163;61m    $1.62 \x1B[0m\x1B[38;2;139;150;164m 40% \x1B[0m\x1B[38;2;232;163;61m━━\x1B[0m\x1B[38;2;44;53;66m━━━━\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                            █                      ▆        █               \x1B[0m\x1B[38;2;200;208;217mgpt-5.6-sol     \x1B[0m\x1B[38;2;232;163;61m    $1.42 \x1B[0m\x1B[38;2;139;150;164m 35% \x1B[0m\x1B[38;2;232;163;61m━━\x1B[0m\x1B[38;2;44;53;66m━━━━\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                            █                      █        █               \x1B[0m\x1B[38;2;200;208;217mgpt-5.5         \x1B[0m\x1B[38;2;232;163;61m    $0.96 \x1B[0m\x1B[38;2;139;150;164m 24% \x1B[0m\x1B[38;2;232;163;61m━\x1B[0m\x1B[38;2;44;53;66m━━━━━\x1B[0m
- \x1B[0m\x1B[38;2;95;106;119m$0.53 \x1B[0m\x1B[38;2;232;163;61m                            █▄                    ▃█        █               \x1B[0m\x1B[38;2;200;208;217mclaude-mystery… \x1B[0m\x1B[38;2;232;163;61m    $0.00 \x1B[0m\x1B[38;2;139;150;164m  0% \x1B[0m\x1B[38;2;44;53;66m━━━━━━\x1B[0m
+ \x1B[0m\x1B[38;2;95;106;119m$0.53 \x1B[0m\x1B[38;2;232;163;61m                            █▄                    ▃█        █               \x1B[0m\x1B[38;2;200;208;217mclaude-mystery… \x1B[0m\x1B[38;2;95;106;119m unpriced \x1B[0m\x1B[38;2;139;150;164m  0% \x1B[0m\x1B[38;2;44;53;66m━━━━━━\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                            ██                    ██        █\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                            ██                    ██        █\x1B[0m
      \x1B[0m\x1B[38;2;95;106;119m0 \x1B[0m\x1B[38;2;232;163;61m                            ██                    ██        █\x1B[0m

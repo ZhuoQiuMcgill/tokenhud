@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { THEME_CHOICES } from "../../src/config.ts";
-import { level, PALETTES, ROLES, theme } from "../../src/tui/theme.ts";
+import { level, onSel, PALETTES, ROLES, theme } from "../../src/tui/theme.ts";
 
 function luminance(hex: string): number {
   const n = Number.parseInt(hex.slice(1), 16);
@@ -88,8 +88,12 @@ describe("readable contrast", () => {
     "%s: text on a selected row or active tab stays readable",
     (name) => {
       const p = PALETTES[name];
+      // Any text can sit on a selected row (dim drawn as mute there); the active tab
+      // holds only its name.
+      for (const role of TEXT_ROLES) {
+        expect({ role, ok: contrast(p[onSel(role)], p.sel) >= 4.5 }).toEqual({ role, ok: true });
+      }
       for (const role of ["fg", "head", "cost", "tokens"] as const) {
-        expect(contrast(p[role], p.sel)).toBeGreaterThanOrEqual(4.5);
         expect(contrast(p[role], p.tab)).toBeGreaterThanOrEqual(4.5);
       }
     },

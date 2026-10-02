@@ -9,10 +9,17 @@ import type { Provider, RootSource } from "../../sources/roots.ts";
 export type ViewId = "overview" | "history" | "models" | "accounts";
 export const VIEW_IDS: readonly ViewId[] = ["overview", "history", "models", "accounts"];
 
-export interface Amount {
+/** A cost and its tokens, with how much of it has a price. */
+export interface Priced {
   readonly cost: number;
   readonly tokens: number;
+  /** Share of the tokens priced, 0..1 (1 when there are none). Below 1 the cost leaves some out. */
+  readonly pricedShare: number;
+  /** The part of `cost` priced from an estimated card (e.g. Codex auto-review). */
+  readonly estimatedCost: number;
 }
+
+export type Amount = Priced;
 
 /** An account as the TUI shows it: the store's account with its display label. */
 export interface AccountInfo {
@@ -30,12 +37,11 @@ export interface OverviewAccount extends AccountInfo {
   readonly last24h: Amount;
 }
 
-export interface TopModel {
+export interface TopModel extends Priced {
   readonly model: string;
   readonly tier: "standard" | "fast";
-  readonly cost: number;
-  readonly tokens: number;
   readonly share: number;
+  readonly status: PriceStatus;
 }
 
 export interface OverviewVM {
@@ -54,11 +60,9 @@ export interface OverviewVM {
   readonly pricedShare: number;
 }
 
-export interface HistoryDay {
+export interface HistoryDay extends Priced {
   /** YYYY-MM-DD, local. */
   readonly key: string;
-  readonly cost: number;
-  readonly tokens: number;
   readonly input: number;
   readonly output: number;
   readonly cache: number;
@@ -73,14 +77,12 @@ export interface HistoryVM {
   readonly today: number;
 }
 
-export interface ModelRow {
+export interface ModelRow extends Priced {
   readonly model: string;
   readonly tier: "standard" | "fast";
   readonly input: number;
   readonly output: number;
   readonly cache: number;
-  readonly tokens: number;
-  readonly cost: number;
   readonly share: number;
   readonly status: PriceStatus;
   /** USD per 1M tokens now; null when the model has no price at this tier. */
@@ -94,21 +96,17 @@ export interface ModelRow {
 export interface ModelsVM {
   readonly window: Window;
   readonly rows: readonly ModelRow[];
-  readonly total: {
+  readonly total: Priced & {
     readonly input: number;
     readonly output: number;
     readonly cache: number;
-    readonly tokens: number;
-    readonly cost: number;
   };
   readonly pricedShare: number;
 }
 
-export interface AccountRow extends AccountInfo {
+export interface AccountRow extends AccountInfo, Priced {
   readonly firstSeen: number | null;
   readonly lastSeen: number | null;
-  readonly cost: number;
-  readonly tokens: number;
   readonly records: number;
   readonly share: number;
   /** Daily cost over the last 30 days, oldest first. */
@@ -117,6 +115,9 @@ export interface AccountRow extends AccountInfo {
 
 export interface AccountsVM {
   readonly rows: readonly AccountRow[];
+  /** When it was computed (epoch ms) and in which zone: dates show a year unless it's this one. */
+  readonly asOf: number;
+  readonly tz: string;
 }
 
 export interface ViewModels {

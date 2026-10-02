@@ -1,7 +1,7 @@
 import type { OptimizedBuffer, RenderContext } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
-import { fit } from "../format.ts";
-import type { Role } from "../theme.ts";
+import { fit, textWidth } from "../format.ts";
+import { onSel, type Role } from "../theme.ts";
 import { Themed, type ThemedOptions } from "./base.ts";
 import { shareCells } from "./hbar.ts";
 
@@ -16,6 +16,16 @@ export interface Column<R> {
   readonly text?: (row: R) => string;
   /** Draw a `━` share bar (0..1) on an `empty` track instead of text. */
   readonly bar?: (row: R) => number;
+  /**
+   * When the table is too narrow, columns go highest `drop` first; 0 (the default) never
+   * goes.
+   */
+  readonly drop?: number;
+  /**
+   * The fill column's narrowest width before other columns go (default `MIN_FILL`), or its
+   * widest text if that is less. Narrower than that, its text is cut with `…`.
+   */
+  readonly min?: number;
 }
 
 export interface TableOptions<R> extends ThemedOptions<TableRenderable<R>> {
@@ -30,15 +40,50 @@ export interface TableOptions<R> extends ThemedOptions<TableRenderable<R>> {
   header?: boolean;
 }
 
-/** Integer widths for `columns` in `width` cells: fixed ones as given, "fill" the rest. */
-export function columnWidths<R>(
+/** The fill column's narrowest useful width, before other columns start to go. */
+export const MIN_FILL = 8;
+
+/**
+ * Which columns show, and their integer widths, in `width` cells (critique m2). A text
+ * column is as wide as its widest cell on screen (`texts(i)`, header and totals included)
+ * and at least its `width`, so a number is never cut. When the columns don't fit, they go
+ * highest `drop` first (rightmost on ties). The fill column (names, cut with … if need
+ * be) takes what is left.
+ */
+export function layoutColumns<R>(
   columns: readonly Column<R>[],
   width: number,
   gap: number,
-): number[] {
-  const fixed = columns.reduce((sum, c) => sum + (c.width === "fill" ? 0 : c.width), 0);
-  const fill = Math.max(0, width - fixed - gap * Math.max(0, columns.length - 1));
-  return columns.map((c) => (c.width === "fill" ? fill : c.width));
+  texts: (index: number) => readonly string[],
+): { index: number; width: number }[] {
+  const natural = columns.map((c, i) => {
+    if (c.width === "fill") {
+      let widest = textWidth(c.title);
+      for (const t of texts(i)) widest = Math.max(widest, textWidth(t));
+      return Math.min(c.min ?? MIN_FILL, widest);
+    }
+    if (c.bar) return c.width;
+    let w = c.width;
+    for (const t of texts(i)) w = Math.max(w, textWidth(t));
+    return w;
+  });
+  const kept = columns.map((_, i) => i);
+  const used = () =>
+    kept.reduce((sum, i) => sum + (natural[i] as number), 0) + gap * (kept.length - 1);
+  while (used() > width) {
+    let worst = -1;
+    for (const i of kept) {
+      const d = columns[i]?.drop ?? 0;
+      if (d > 0 && (worst < 0 || d >= (columns[worst]?.drop ?? 0))) worst = i;
+    }
+    if (worst < 0) break; // nothing may go: the right edge cuts it, as a last resort
+    kept.splice(kept.indexOf(worst), 1);
+  }
+  const spare = Math.max(0, width - used());
+  return kept.map((i) => ({
+    index: i,
+    width: (natural[i] as number) + (columns[i]?.width === "fill" ? spare : 0),
+  }));
 }
 
 /** The first row to show so that `selected` is visible, moving as little as possible from `top`. */
@@ -114,14 +159,16 @@ export class TableRenderable<R = unknown> extends Themed {
     buffer: OptimizedBuffer,
     row: R,
     y: number,
-    widths: readonly number[],
+    layout: readonly { index: number; width: number }[],
+    texts: readonly string[],
     bg?: Role,
     totals = false,
   ): void {
     let x = this.x;
     const right = this.x + this.width;
-    for (const [i, col] of this.#columns.entries()) {
-      const w = Math.min(widths[i] as number, right - x);
+    for (const { index, width } of layout) {
+      const col = this.#columns[index] as Column<R>;
+      const w = Math.min(width, right - x);
       if (w <= 0) break;
       const role = typeof col.role === "function" ? col.role(row) : col.role;
       if (col.bar && totals) {
@@ -133,10 +180,10 @@ export class TableRenderable<R = unknown> extends Themed {
       } else {
         const bold = typeof col.bold === "function" ? col.bold(row) : col.bold === true;
         buffer.drawText(
-          fit(col.text?.(row) ?? "", w, col.align ?? "left"),
+          fit(texts[index] ?? "", w, col.align ?? "left"),
           x,
           y,
-          this.color(role),
+          this.color(bg === "sel" ? onSel(role) : role),
           bg === undefined ? undefined : this.color(bg),
           bold ? TextAttributes.BOLD : TextAttributes.NONE,
         );
@@ -147,29 +194,47 @@ export class TableRenderable<R = unknown> extends Themed {
 
   protected override renderSelf(buffer: OptimizedBuffer): void {
     if (this.width <= 0 || this.height <= 0) return;
-    const widths = columnWidths(this.#columns, this.width, this.#gap);
+    const visible = this.pageSize;
+    this.#top = scrollTop(this.#top, this.#selected, visible, this.#rows.length);
+    const end = Math.min(this.#rows.length, this.#top + visible);
+    // The cells on screen, formatted once: they size the columns and are drawn.
+    const cells = (row: R) => this.#columns.map((c) => (c.bar ? "" : (c.text?.(row) ?? "")));
+    const shown: string[][] = [];
+    for (let i = this.#top; i < end; i++) shown.push(cells(this.#rows[i] as R));
+    const totals = this.#totals === null ? null : cells(this.#totals);
+    const layout = layoutColumns(this.#columns, this.width, this.#gap, (i) => [
+      this.#header ? (this.#columns[i]?.title ?? "") : "",
+      ...shown.map((r) => r[i] as string),
+      ...(totals === null ? [] : [totals[i] as string]),
+    ]);
     let y = this.y;
     if (this.#header) {
       let x = this.x;
-      for (const [i, col] of this.#columns.entries()) {
-        const w = Math.min(widths[i] as number, this.x + this.width - x);
+      for (const { index, width } of layout) {
+        const col = this.#columns[index] as Column<R>;
+        const w = Math.min(width, this.x + this.width - x);
         if (w <= 0) break;
         buffer.drawText(fit(col.title, w, col.align ?? "left"), x, y, this.color("dim"));
         x += w + this.#gap;
       }
       y++;
     }
-    const visible = this.pageSize;
-    this.#top = scrollTop(this.#top, this.#selected, visible, this.#rows.length);
-    const end = Math.min(this.#rows.length, this.#top + visible);
     for (let i = this.#top; i < end; i++, y++) {
       const selected = i === this.#selected;
       if (selected) buffer.fillRect(this.x, y, this.width, 1, this.color("sel"));
-      this.#drawRow(buffer, this.#rows[i] as R, y, widths, selected ? "sel" : undefined);
+      const row = this.#rows[i] as R;
+      this.#drawRow(
+        buffer,
+        row,
+        y,
+        layout,
+        shown[i - this.#top] as string[],
+        selected ? "sel" : undefined,
+      );
     }
-    if (this.#totals !== null && y + 1 < this.y + this.height) {
+    if (totals !== null && y + 1 < this.y + this.height) {
       buffer.drawText("─".repeat(this.width), this.x, y, this.color("rule"));
-      this.#drawRow(buffer, this.#totals, y + 1, widths, undefined, true);
+      this.#drawRow(buffer, this.#totals as R, y + 1, layout, totals, undefined, true);
     }
   }
 }

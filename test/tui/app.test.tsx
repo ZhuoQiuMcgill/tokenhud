@@ -1,13 +1,25 @@
 // The frame and every placeholder view at the four sizes the user runs (T10 §4): 105×50
 // and 120×45 (half screens), 80×24, 160×50. Deterministic: a fixture store, a fixed clock,
 // and view models computed exactly as the view-model Worker computes them.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Config } from "../../src/config.ts";
+import { Heartbeat, readMcpActivity } from "../../src/mcp/heartbeat.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import { money, tokens } from "../../src/tui/format.ts";
 import { theme } from "../../src/tui/theme.ts";
-import type { AccountInfo, OverviewVM, ViewModels } from "../../src/tui/vm/types.ts";
+import { costText } from "../../src/tui/views/cells.ts";
+import type {
+  AccountInfo,
+  AccountsVM,
+  ModelsVM,
+  OverviewVM,
+  Priced,
+  ViewModels,
+} from "../../src/tui/vm/types.ts";
 import { type Fixture, fixtureConfig, fixtureViews, makeFixtureStore } from "./fixture.ts";
 import { chars, cleanupRenderers, render, roles, settle } from "./render.ts";
 
@@ -86,6 +98,39 @@ describe.each(SIZES)("%i×%i", (width, height) => {
   });
 });
 
+// Critique m2: below the narrow breakpoint, columns and sections go and numbers turn
+// compact, but no number is ever cut.
+describe.each([
+  [50, 20],
+  [60, 20],
+] as const)("narrow %i×%i", (width, height) => {
+  test.each(VIEWS)("view %s (%s): every number whole", async (k, name) => {
+    const c = controller();
+    const setup = await render(
+      <Frame controller={c} width={width} height={height} />,
+      width,
+      height,
+    );
+    await settle(setup, () => c.key(key(k)));
+    const frame = chars(setup);
+    for (const line of frame.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(width);
+    expect(frame).not.toMatch(/[\d$%*]…|…\d/);
+    const priced: Priced[] =
+      name === "models"
+        ? [...(views.models as ModelsVM).rows]
+        : name === "accounts"
+          ? [...(views.accounts as AccountsVM).rows]
+          : name === "overview"
+            ? (views.overview as OverviewVM).accounts.flatMap((a) => [a.today, a.last24h])
+            : [];
+    for (const p of priced) {
+      const forms = [costText(p).text, costText(p, true).text];
+      expect(forms.some((f) => frame.includes(f))).toBe(true);
+    }
+    expect(frame).toMatchSnapshot();
+  });
+});
+
 describe("colours", () => {
   test("the Overview at 120×45 in the dark theme, by role", async () => {
     const c = controller();
@@ -99,6 +144,41 @@ describe("colours", () => {
     const out = roles(setup.captureSpans(), theme("light"));
     expect(out).not.toContain("#"); // every cell is one of the theme's roles
     expect(out).toMatchSnapshot();
+  });
+});
+
+// PM addendum (b): the footer's MCP status and agent count come from T9's heartbeat files.
+describe("footer MCP status, from the heartbeat files", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "tokenhud-mcp-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  async function footer(now: number): Promise<string> {
+    const c = controller();
+    c.vmMessage({ type: "mcp", activity: readMcpActivity(dir, now) });
+    const setup = await render(<Frame controller={c} width={105} height={30} />, 105, 30);
+    return roles(setup.captureSpans(), theme("dark")).split("\n")[29] as string;
+  }
+
+  test("two servers that called tools in the last 10 min: MCP ● 2 agents", async () => {
+    const now = Date.now();
+    for (const pid of [process.pid, process.ppid]) {
+      new Heartbeat(dir, { pid, now: () => now - 60_000 }).record("usage", null);
+    }
+    const line = await footer(now);
+    expect(line).toContain("[live/bg]●");
+    expect(line).toMatchSnapshot();
+  });
+
+  test("no heartbeat in the last 10 min: a dim MCP ○", async () => {
+    const now = Date.now();
+    new Heartbeat(dir, { pid: process.pid, now: () => now - 11 * 60_000 }).record("usage", null);
+    const line = await footer(now);
+    expect(line).toContain("[dim/bg]MCP ○");
+    expect(line).not.toContain("agent");
+    expect(line).toMatchSnapshot();
   });
 });
 

@@ -219,6 +219,11 @@ describe("accounts", () => {
     expect(labelProblem("personal", work, ROOTS)).toBe("'personal' is taken");
     expect(labelProblem("x".repeat(25), work, ROOTS)).toBe("a label is at most 24 characters");
     expect(labelProblem("work", work, ROOTS)).toBeNull();
+    // A store-only account (imported, or an old machine's) keeps its label (critique m9).
+    const store = [{ label: "personal" }, { label: "work" }, { label: "old-laptop" }];
+    expect(labelProblem("old-laptop", work, ROOTS, store)).toBe("'old-laptop' is taken");
+    expect(labelProblem("work", work, ROOTS, store)).toBeNull();
+    expect(labelProblem("new-name", work, ROOTS, store)).toBeNull();
     const clash = drive([
       ...open,
       "down",

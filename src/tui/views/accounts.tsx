@@ -3,38 +3,44 @@
 import { type Line, seg } from "../components/base.ts";
 import type { Column } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
-import { dayLabel, money, percent, tokens } from "../format.ts";
+import { dayLabel, money, percent, textWidth, tokens } from "../format.ts";
 import { sectionLine } from "../frame.ts";
 import type { AccountRow, AccountsVM } from "../vm/types.ts";
+import { costText, noteWithLegend } from "./cells.ts";
 import type { Section, View, ViewContext } from "./types.ts";
 
 export type AccountsState = { readonly selected: number };
 
-function localDay(t: number | null, tz: string): string {
+/** A first or last day: `Sep 9`, with the year when it isn't the year of `asOf` (`Oct 2 '25`). */
+export function localDay(t: number | null, asOf: number, tz: string): string {
   if (t === null) return "—";
-  const key = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(t);
-  return dayLabel(key).slice(4);
+  const key = (at: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(at);
+  const day = key(t);
+  const label = dayLabel(day).slice(4);
+  return day.slice(0, 4) === key(asOf).slice(0, 4) ? label : `${label} '${day.slice(2, 4)}`;
 }
 
-function columns(ctx: ViewContext): Column<AccountRow>[] {
+/** Narrow, the columns go in this order: share bar, provider, first seen, share %, tokens. */
+function columns(vm: AccountsVM, ctx: ViewContext): Column<AccountRow>[] {
   const marker = (a: AccountRow) => (a.id === ctx.scope ? "▸ " : "  ");
   const cols: Column<AccountRow>[] = [
     {
       title: "  account",
       width: "fill",
+      min: 14,
       role: (a) => (a.historyOnly ? "mute" : "fg"),
       text: (a) => `${marker(a)}${a.label}${a.historyOnly ? " (history only)" : ""}`,
     },
-    { title: "provider", width: 8, role: "mute", text: (a) => a.provider },
+    { title: "provider", width: 8, role: "mute", text: (a) => a.provider, drop: 5 },
   ];
   if (ctx.showCost) {
     cols.push({
       title: "cost",
       width: 12,
       align: "right",
-      role: "cost",
-      bold: true,
-      text: (a) => money(a.cost),
+      role: (a) => costText(a).role,
+      bold: (a) => costText(a).role === "cost",
+      text: (a) => costText(a).text,
     });
   }
   cols.push({
@@ -43,19 +49,22 @@ function columns(ctx: ViewContext): Column<AccountRow>[] {
     align: "right",
     role: "tokens",
     text: (a) => tokens(a.tokens),
+    drop: 2,
   });
-  if (ctx.showCost && ctx.bp !== "narrow") {
-    cols.push({ title: "share", width: 10, role: "cost", bar: (a) => a.share });
+  if (ctx.showCost) {
+    cols.push({ title: "share", width: 10, role: "cost", bar: (a) => a.share, drop: 6 });
     cols.push({
       title: "",
       width: 5,
       align: "right",
       role: "mute",
       text: (a) => percent(a.share, 0),
+      drop: 3,
     });
   }
-  cols.push({ title: "first", width: 6, role: "dim", text: (a) => localDay(a.firstSeen, ctx.tz) });
-  cols.push({ title: "last", width: 6, role: "dim", text: (a) => localDay(a.lastSeen, ctx.tz) });
+  const day = (t: number | null) => localDay(t, vm.asOf, vm.tz);
+  cols.push({ title: "first", width: 6, role: "dim", text: (a) => day(a.firstSeen), drop: 4 });
+  cols.push({ title: "last", width: 6, role: "dim", text: (a) => day(a.lastSeen) });
   return cols;
 }
 
@@ -67,9 +76,17 @@ function listSection(vm: AccountsVM, selected: number, ctx: ViewContext): Sectio
     minHeight: Math.min(4, 2 + vm.rows.length),
     render: (height) => (
       <box flexDirection="column" height={height} flexShrink={0}>
-        <Lines theme={ctx.theme} lines={[sectionLine("ACCOUNTS · all time", "▸ = scope")]} />
+        <Lines
+          theme={ctx.theme}
+          lines={[
+            sectionLine(
+              "ACCOUNTS · all time",
+              noteWithLegend("ACCOUNTS · all time", "▸ = scope", vm.rows, ctx.showCost, ctx.width),
+            ),
+          ]}
+        />
         <Table
-          columns={columns(ctx)}
+          columns={columns(vm, ctx)}
           rows={vm.rows}
           selected={selected}
           theme={ctx.theme}
@@ -83,8 +100,10 @@ function listSection(vm: AccountsVM, selected: number, ctx: ViewContext): Sectio
 }
 
 function sparkSection(row: AccountRow, ctx: ViewContext): Section {
-  const total = row.spark.reduce((a, b) => a + b, 0);
+  const total = `  ${money(row.spark.reduce((a, b) => a + b, 0))}`;
   const label: Line = { left: [seg(" spend 30d ", "mute")] };
+  // The total keeps its room; the sparkline shows the latest days that fit beside it.
+  const sparkWidth = Math.max(0, Math.min(row.spark.length, ctx.width - 11 - textWidth(total) - 1));
   return {
     id: "spark",
     priority: 2,
@@ -98,14 +117,14 @@ function sparkSection(row: AccountRow, ctx: ViewContext): Section {
             values={row.spark}
             colorRole="cost"
             theme={ctx.theme}
-            width={row.spark.length}
+            width={sparkWidth}
             height={1}
             flexShrink={0}
           />
           <Lines
             theme={ctx.theme}
-            lines={[{ left: [seg(`  ${money(total)}`, "cost", true)] }]}
-            width={16}
+            lines={[{ left: [seg(total, "cost", true)] }]}
+            width={textWidth(total)}
           />
         </box>
       </box>

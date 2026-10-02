@@ -8,7 +8,7 @@ import { shareCells } from "../../src/tui/components/hbar.ts";
 import { heatLevel } from "../../src/tui/components/heat-grid.ts";
 import { filledCells } from "../../src/tui/components/meter.ts";
 import { sparkChar } from "../../src/tui/components/spark.ts";
-import { type Column, columnWidths, scrollTop } from "../../src/tui/components/table.ts";
+import { type Column, layoutColumns, scrollTop } from "../../src/tui/components/table.ts";
 import { chartCell, chartColumns } from "../../src/tui/components/vchart.ts";
 import { Table } from "../../src/tui/elements.tsx";
 import { theme } from "../../src/tui/theme.ts";
@@ -109,7 +109,10 @@ describe("Meter", () => {
   // The dark palette's mid is the cost amber, so the role reads "cost|mid".
   test.each([
     [0.27, "low"],
+    [0.5, "cost|mid"],
     [0.62, "cost|mid"],
+    [0.79, "cost|mid"],
+    [0.8, "high"],
     [0.83, "high"],
   ])(
     "%p fills round(value · width) cells in the %s colour, the rest empty",
@@ -297,9 +300,46 @@ describe("Table", () => {
     { title: "share", width: 6, role: "cost", bar: (r) => r.share },
   ];
 
-  test("column widths: fixed as given, one fill column takes the rest", () => {
-    expect(columnWidths(columns, 40, 1)).toEqual([23, 9, 6]);
-    expect(columnWidths(columns, 10, 1)).toEqual([0, 9, 6]);
+  test("column layout: fixed as given, one fill column takes the rest", () => {
+    const short = () => ["$1.00"];
+    expect(layoutColumns(columns, 40, 1, short)).toEqual([
+      { index: 0, width: 23 },
+      { index: 1, width: 9 },
+      { index: 2, width: 6 },
+    ]);
+  });
+
+  test("column layout: a text column widens to its widest text rather than cut a number", () => {
+    const texts = (i: number) => (i === 1 ? ["$1.00", "$123,456.78"] : []);
+    expect(layoutColumns(columns, 40, 1, texts)).toEqual([
+      { index: 0, width: 21 },
+      { index: 1, width: 11 },
+      { index: 2, width: 6 },
+    ]);
+  });
+
+  test("column layout: too narrow drops columns by priority, highest drop first", () => {
+    const ranked: Column<Row>[] = [
+      columns[0] as Column<Row>,
+      { ...(columns[1] as Column<Row>), drop: 1 },
+      { ...(columns[2] as Column<Row>), drop: 2 },
+    ];
+    const names = (i: number) => (i === 0 ? ["claude-opus-4-8"] : []);
+    // 8 (the name's minimum) + 9 + 6 + 2 gaps = 25: the bar goes first, then the cost.
+    expect(layoutColumns(ranked, 25, 1, names).map((c) => c.index)).toEqual([0, 1, 2]);
+    expect(layoutColumns(ranked, 20, 1, names)).toEqual([
+      { index: 0, width: 10 },
+      { index: 1, width: 9 },
+    ]);
+    expect(layoutColumns(ranked, 12, 1, names)).toEqual([{ index: 0, width: 12 }]);
+    // A wider minimum for the names makes the others go sooner.
+    const named = [{ ...(ranked[0] as Column<Row>), min: 15 }, ...ranked.slice(1)];
+    expect(layoutColumns(named, 25, 1, names)).toEqual([
+      { index: 0, width: 15 },
+      { index: 1, width: 9 },
+    ]);
+    // Columns without a drop rank are never dropped.
+    expect(layoutColumns(columns, 10, 1, names).map((c) => c.index)).toEqual([0, 1, 2]);
   });
 
   test("scrolling keeps the selection on screen, moving as little as possible", () => {

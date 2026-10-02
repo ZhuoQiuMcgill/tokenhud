@@ -41,11 +41,20 @@ export function frameToAnsi(frame: CapturedFrame, background: string): string {
   return `${lines.join("\n").replace(/\n+$/, "")}\n`;
 }
 
-/** The frame's characters only, trailing spaces trimmed. */
-export function frameToText(frame: CapturedFrame): string {
+/**
+ * The frame's characters only, trailing spaces trimmed. Without colour a bar's track (drawn
+ * in the `track` colour, the theme's `empty`) would read as filled, so it is left blank:
+ * a bar's length is then its share, as in gen.py's plain output.
+ */
+export function frameToText(frame: CapturedFrame, track?: string): string {
+  const blank = track?.toLowerCase();
   const lines = frame.lines.map((line) =>
     line.spans
-      .map((s) => s.text)
+      .map((s) =>
+        blank !== undefined && rgbToHex(s.fg as RGBA).toLowerCase() === blank
+          ? " ".repeat(s.text.length)
+          : s.text,
+      )
       .join("")
       .trimEnd(),
   );

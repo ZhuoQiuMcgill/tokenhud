@@ -123,7 +123,3 @@ export function sectionLine(title: string, note?: string): Line {
     ? { left: [seg(` ${title}`, "head", true)] }
     : { left: [seg(` ${title}`, "head", true)], right: [seg(`${note} `, "dim")] };
 }
-
-export function blankLine(): Line {
-  return { left: [] };
-}

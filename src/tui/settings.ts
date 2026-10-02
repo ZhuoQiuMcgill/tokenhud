@@ -87,6 +87,8 @@ export interface SettingsKey {
 export interface SettingsInput {
   readonly config: Config;
   readonly roots: readonly RootInfo[];
+  /** The store's accounts by display label, store-only ones (imported, old) included. */
+  readonly accounts?: readonly { readonly label: string }[];
   /** "system" first, then the IANA zones on offer. */
   readonly zones: readonly string[];
   /** The zone "system" means, for display. */
@@ -213,16 +215,25 @@ export function renameRoot(config: Config, root: RootInfo, label: string): Confi
   return { ...config, [key]: entries };
 }
 
-/** Why `label` can't name `root`, or null when it can. */
+/**
+ * Why `label` can't name `root`, or null when it can. Labels are unique across the roots
+ * found here and every account in the store (critique m9): a store-only account keeps its
+ * label, and the saved scope is a label.
+ */
 export function labelProblem(
   label: string,
   root: RootInfo,
   roots: readonly RootInfo[],
+  accounts: readonly { readonly label: string }[] = [],
 ): string | null {
   if (label === "") return "a label can't be empty";
   if (label.length > MAX_LABEL) return `a label is at most ${MAX_LABEL} characters`;
   if (label.toLowerCase() === "all") return "'all' is reserved for the all-accounts scope";
   if (roots.some((r) => r !== root && r.label === label)) return `'${label}' is taken`;
+  // The root's own account carries the root's current label.
+  if (label !== root.label && accounts.some((a) => a.label === label)) {
+    return `'${label}' is taken`;
+  }
   return null;
 }
 
@@ -370,7 +381,7 @@ export function settingsKey(
       if (key.name === "return" || key.name === "enter") {
         const label = state.text.trim();
         if (label === root.label) return { state: toList };
-        const problem = labelProblem(label, root, roots);
+        const problem = labelProblem(label, root, roots, input.accounts);
         if (problem !== null) return { state: { ...state, message: problem } };
         return { state: toList, config: renameRoot(config, root, label), accountsChanged: true };
       }

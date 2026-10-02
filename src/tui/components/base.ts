@@ -7,7 +7,7 @@ import {
   TextAttributes,
 } from "@opentui/core";
 import { clip, textWidth } from "../format.ts";
-import { type Role, type Theme, theme as themeNamed } from "../theme.ts";
+import { onSel, type Role, type Theme, theme as themeNamed } from "../theme.ts";
 
 /** A run of text in one colour role. */
 export interface Seg {
@@ -62,7 +62,7 @@ export function drawSegs(
       text,
       x + used,
       y,
-      t.rgba[s.role],
+      t.rgba[bg === "sel" ? onSel(s.role) : s.role],
       bg === undefined ? undefined : t.rgba[bg],
       s.bold ? TextAttributes.BOLD : TextAttributes.NONE,
     );

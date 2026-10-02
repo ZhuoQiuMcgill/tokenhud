@@ -8,7 +8,6 @@ import {
   money,
   moneyShort,
   percent,
-  periodLabel,
   textWidth,
   tokens,
   truncate,
@@ -75,11 +74,9 @@ describe("countdown", () => {
   ])("%p ms → %s", (ms, text) => expect(countdown(ms)).toBe(text));
 });
 
-test("dayLabel and periodLabel read local keys without a zone", () => {
+test("dayLabel reads local keys without a zone", () => {
   expect(dayLabel("2026-09-29")).toBe("Tue Sep 29");
   expect(dayLabel("2026-10-01")).toBe("Thu Oct 1");
-  expect(periodLabel("2026-09")).toBe("Sep 2026");
-  expect(periodLabel("2026-09-28")).toBe("wk of Sep 28");
 });
 
 test("clock formats wall time in the given zone", () => {

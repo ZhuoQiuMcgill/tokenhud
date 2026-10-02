@@ -4,7 +4,10 @@
 // `tokenhud json`, through a read-only connection, and so may run beside the TUI.
 import type { Database } from "bun:sqlite";
 import { homedir } from "node:os";
-import { testRender } from "@opentui/react/test-utils";
+import type { CapturedFrame } from "@opentui/core";
+import { createTestRenderer } from "@opentui/core/testing";
+import { createRoot, flushSync } from "@opentui/react";
+import type { ReactNode } from "react";
 import { type Config, configPath, loadConfig } from "../config.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
@@ -78,7 +81,7 @@ export async function renderOverview(input: OnceInput): Promise<string> {
     scope: scoped?.label ?? "all accounts",
     status: { kind: "asof", time: clock(input.now, tz) },
   });
-  const setup = await testRender(
+  return paint(
     <box flexDirection="column" width={width} height={height} backgroundColor={t.hex.bg}>
       <Lines theme={t} lines={[header, ruleLine(width), { left: [] }]} />
       {sections.flatMap((s, i) => [
@@ -88,15 +91,32 @@ export async function renderOverview(input: OnceInput): Promise<string> {
         </box>,
       ])}
     </box>,
-    { width, height },
+    width,
+    height,
+    (frame) => (input.color ? frameToAnsi(frame, t.hex.bg) : frameToText(frame, t.hex.empty)),
   );
-  // testRender turns on React's act() checks, which only make sense in tests.
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
+}
+
+/**
+ * Renders `node` once, off screen, and hands back the captured frame. OpenTUI's headless
+ * renderer is the one its `/testing` entry exports (no terminal, a memory buffer); it is
+ * used here directly, with React's own `createRoot` and a synchronous commit, rather than
+ * through `@opentui/react/test-utils`, whose `act()` setup is for tests.
+ */
+async function paint(
+  node: ReactNode,
+  width: number,
+  height: number,
+  out: (frame: CapturedFrame) => string,
+): Promise<string> {
+  const setup = await createTestRenderer({ width, height });
+  const root = createRoot(setup.renderer);
   try {
+    flushSync(() => root.render(node));
     await setup.renderOnce();
-    const frame = setup.captureSpans();
-    return input.color ? frameToAnsi(frame, t.hex.bg) : frameToText(frame);
+    return out(setup.captureSpans());
   } finally {
+    flushSync(() => root.unmount());
     setup.renderer.destroy();
   }
 }

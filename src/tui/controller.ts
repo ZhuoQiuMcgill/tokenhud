@@ -234,6 +234,7 @@ export class Controller {
     const result = settingsKey(s.settings, key, {
       config: s.config,
       roots: s.roots,
+      accounts: s.accounts,
       zones: this.zones,
       systemZone: this.systemZone,
     });
