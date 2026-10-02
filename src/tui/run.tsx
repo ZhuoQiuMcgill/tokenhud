@@ -11,7 +11,7 @@ import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
 import { errorLine, fileLog } from "./log.ts";
 import { theme } from "./theme.ts";
-import { RESTART_BACKOFF_MS, type VmWorker } from "./vm/client.ts";
+import { RestartBackoff, type VmWorker } from "./vm/client.ts";
 import type { VmMessage } from "./vm/types.ts";
 
 export interface TuiPaths {
@@ -63,7 +63,8 @@ export async function runApp(boot: Boot): Promise<number> {
   let lock = boot.lock;
   let ingest: IngestWorker | null = null;
   let generation = 0;
-  let ingestFailures = 0;
+  // Reset only after a minute up since `ready`, never on `ready` itself (critique m3).
+  const ingestBackoff = new RestartBackoff();
   let ingestRetry: ReturnType<typeof setTimeout> | null = null;
   let ingestError: string | null = null;
   let resolveExit: (code: number) => void = () => {};
@@ -117,7 +118,7 @@ export async function runApp(boot: Boot): Promise<number> {
     if (message.type === "log" && message.level === "error")
       ingestError = errorLine(message.message);
     if (message.type === "ready") {
-      ingestFailures = 0;
+      ingestBackoff.up();
       controller.setIngestDown(null);
       controller.setIngest("live");
     }
@@ -145,10 +146,7 @@ export async function runApp(boot: Boot): Promise<number> {
         // It died: say why on one line, and start another after 1 s, 2 s, 5 s, then 30 s.
         if (closing || own !== generation) return;
         ingest = null;
-        const delay = RESTART_BACKOFF_MS[
-          Math.min(ingestFailures, RESTART_BACKOFF_MS.length - 1)
-        ] as number;
-        ingestFailures++;
+        const delay = ingestBackoff.next();
         const reason = ingestError ?? `exited with code ${code}`;
         ingestError = null;
         log.write("error", `ingest worker stopped: ${reason}; restarting in ${delay} ms`);

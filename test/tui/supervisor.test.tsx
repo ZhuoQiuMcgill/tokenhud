@@ -9,6 +9,7 @@ import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import {
   RESTART_BACKOFF_MS,
+  RestartBackoff,
   STABLE_MS,
   superviseVmWorker,
   type VmWorker,
@@ -181,3 +182,43 @@ test("the back-off starts over once a Worker has stayed up a minute", async () =
   await until(() => delays.length >= 3, "three failures");
   expect(delays.slice(0, 3)).toEqual([1000, 1000, 1000]);
 }, 30_000);
+
+// The policy both Workers restart by: the view-model Worker comes up with its first view
+// models, the ingest Worker with `ready` (src/tui/run.tsx). Critique m3: the ingest Worker
+// used to start over at 1 s on every `ready`, so one dying soon after it restarted every
+// second for ever, re-running its first scan each time.
+describe("RestartBackoff", () => {
+  test("dying right after coming up, every time: 1 s, 2 s, 5 s, then every 30 s", () => {
+    let clock = 0;
+    const backoff = new RestartBackoff(RESTART_BACKOFF_MS, () => clock);
+    const delays: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      backoff.up(); // `ready`
+      clock += 3_000; // the limits round starts, and the Worker dies
+      delays.push(backoff.next());
+      clock += delays[delays.length - 1] as number;
+    }
+    expect(delays).toEqual([1000, 2000, 5000, 30_000, 30_000, 30_000]);
+  });
+
+  test("never coming up backs off the same way", () => {
+    const backoff = new RestartBackoff(RESTART_BACKOFF_MS, () => 0);
+    expect([1, 2, 3, 4, 5].map(() => backoff.next())).toEqual([1000, 2000, 5000, 30_000, 30_000]);
+  });
+
+  test("a minute up since it came up starts over; 59.9 s, or a second `ready`, doesn't", () => {
+    let clock = 0;
+    const backoff = new RestartBackoff(RESTART_BACKOFF_MS, () => clock);
+    backoff.next();
+    backoff.next(); // 1 s, 2 s: the next would be 5 s
+    backoff.up();
+    clock += STABLE_MS - 100;
+    backoff.up(); // only the first `up` of a life counts
+    clock += 99;
+    expect(backoff.next()).toBe(5000);
+    backoff.up();
+    clock += STABLE_MS;
+    expect(backoff.next()).toBe(1000);
+    expect(backoff.next()).toBe(2000);
+  });
+});
