@@ -20,8 +20,9 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run check
-      # ubuntu-latest ships shellcheck; install.sh must stay POSIX sh.
-      - run: shellcheck --shell=sh install.sh
+      # ubuntu-latest ships shellcheck; install.sh and the npm package's command must stay
+      # POSIX sh.
+      - run: shellcheck --shell=sh install.sh npm/tokenhud/bin/tokenhud
 
   # `claude plugin validate` is local and needs no account: the CLI installs from npm and
   # runs on the runner's empty home. Pinned to the version the plugin was checked with.
@@ -50,6 +51,12 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      # The images the Alpine and Debian tests run in: tests never pull one (test/docker.ts).
+      - name: Pull the test images
+        if: runner.os == 'Linux'
+        run: |
+          docker pull --quiet alpine:3.22
+          docker pull --quiet debian:13-slim
       - run: bun test
 
   build:
@@ -96,3 +103,96 @@ jobs:
             echo "::error::expected '$expected', got '$out'"
             exit 1
           fi
+
+  # `bun add -g tokenhud` and `npm install -g tokenhud` end to end
+  # (test/release/npm-e2e.test.ts): this OS's packages, staged by scripts/stage-npm.ts and
+  # packed by `bun pm pack`, from a fake npm registry on localhost. bun runs with no Node on
+  # PATH, npm with no Bun; each installs a build that says 0.0.1, runs --version, doctor and
+  # update --print, runs in a project whose .env and bunfig.toml must not reach tokenhud,
+  # and `tokenhud update` moves it to this build through its package manager. On Windows,
+  # bun's command must fail before anything runs.
+  install:
+    name: install with bun and npm (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+
+      - name: Build this version, and an older one to update from
+        run: |
+          bun scripts/build.ts
+          mkdir -p e2e/new e2e/old
+          mv dist/tokenhud* e2e/new/
+          bun -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = "0.0.1"; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n")'
+          bun scripts/build.ts
+          mv dist/tokenhud* e2e/old/
+          git checkout -- package.json
+
+      # Both tests must run: one skipped (no npm on the runner) fails the job.
+      - name: Install, run and update with bun (no Node) and npm (no Bun)
+        env:
+          TOKENHUD_NPM_E2E_NEW: ${{ runner.os == 'Windows' && 'e2e/new/tokenhud.exe' || 'e2e/new/tokenhud' }}
+          TOKENHUD_NPM_E2E_OLD: ${{ runner.os == 'Windows' && 'e2e/old/tokenhud.exe' || 'e2e/old/tokenhud' }}
+        run: |
+          bun test test/release/npm-e2e.test.ts 2>&1 | tee npm-e2e.log
+          if ! grep -Eq '^ *2 pass' npm-e2e.log || ! grep -Eq '^ *0 fail' npm-e2e.log; then
+            echo "::error::both install tests (bun and npm) must run and pass"
+            exit 1
+          fi
+
+  # The same on Alpine (musl, BusyBox sh), in a container: the musl binaries, bun's musl
+  # build, and Node and npm from Alpine's packages. The musl package is installed by name
+  # beside tokenhud, as the README says.
+  install-alpine:
+    name: install with bun and npm (alpine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      # Every platform's OpenTUI native package, so the musl binaries can embed theirs.
+      - run: bun install --frozen-lockfile --os="*" --cpu="*"
+
+      - name: Build this version, and an older one to update from, for musl
+        run: |
+          bun scripts/build.ts --target=bun-linux-x64-musl
+          mkdir -p e2e/new e2e/old
+          mv dist/tokenhud e2e/new/
+          bun -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = "0.0.1"; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n")'
+          bun scripts/build.ts --target=bun-linux-x64-musl
+          mv dist/tokenhud e2e/old/
+          git checkout -- package.json
+
+      # Checked against the SHA-256 in that release's SHASUMS256.txt.
+      - name: Bun for musl, the version CI pins
+        run: |
+          curl -fsSL -o bun-linux-x64-musl.zip https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-musl.zip
+          echo "4835eca59d6da70f4674f5642f6e459dcadab773695b2ed9922d131057989742  bun-linux-x64-musl.zip" | sha256sum --check --strict
+
+      - name: Install, run and update in Alpine with bun (no Node) and npm (no Bun)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w \
+            -e TOKENHUD_NPM_E2E_NEW=e2e/new/tokenhud -e TOKENHUD_NPM_E2E_OLD=e2e/old/tokenhud \
+            alpine:3.22 sh -euc '
+              apk add --no-cache --quiet libstdc++ libgcc nodejs npm
+              mkdir -p /opt && unzip -q bun-linux-x64-musl.zip -d /opt
+              export PATH="/opt/bun-linux-x64-musl:$PATH"
+              bun test test/release/npm-e2e.test.ts 2>&1 | tee /tmp/npm-e2e.log
+              if ! grep -Eq "^ *2 pass" /tmp/npm-e2e.log || ! grep -Eq "^ *0 fail" /tmp/npm-e2e.log; then
+                echo "::error::both install tests (bun and npm) must run and pass on Alpine"
+                exit 1
+              fi
+            '

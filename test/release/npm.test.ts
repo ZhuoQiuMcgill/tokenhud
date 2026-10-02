@@ -1,8 +1,9 @@
-// The npm launcher (npm/tokenhud/bin/tokenhud.cjs) in a node_modules tree like the one npm
-// installs, with a shell script standing in for the platform package's binary. It runs
-// under Node (`npx`, `npm install -g`) and under Bun (`bunx` on a machine without Node), so
-// every case runs on each runtime there is: Bun always, Node when the `node` on PATH really
-// is Node (`bun run` puts its own `node` alias there).
+// The Node launcher (npm/tokenhud/lib/tokenhud.cjs), the command npm installs on Windows,
+// in a node_modules tree like the one npm installs, with a shell script standing in for the
+// platform package's binary. Its logic knows every platform, so every case runs here, on each
+// runtime there is: Bun always, Node when the `node` on PATH really is Node (`bun run` puts
+// its own `node` alias there). The Linux and macOS command, bin/tokenhud, is a sh script:
+// test/release/launcher.test.ts.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
@@ -12,6 +13,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,7 +23,8 @@ import { guard } from "../guard.ts";
 
 guard();
 
-const SHIM = join(import.meta.dir, "..", "..", "npm", "tokenhud", "bin", "tokenhud.cjs");
+const PKG = join(import.meta.dir, "..", "..", "npm", "tokenhud");
+const SHIM = join(PKG, "lib", "tokenhud.cjs");
 
 function realNode(): string | null {
   const node = Bun.which("node");
@@ -39,6 +42,11 @@ const RUNTIMES: ReadonlyArray<readonly [name: string, path: string]> = [
   ["bun", process.execPath],
   ...(NODE === null ? [] : [["node", NODE] as const]),
 ];
+
+test("the command is a sh script; the Windows launcher is Node's, never Bun's", () => {
+  expect(readFileSync(join(PKG, "bin", "tokenhud"), "utf8").split("\n")[0]).toBe("#!/bin/sh");
+  expect(readFileSync(SHIM, "utf8").split("\n")[0]).toBe("#!/usr/bin/env node");
+});
 
 test("the launcher knows exactly the platforms releases are built for", () => {
   const list = /const SUPPORTED = \[([^\]]*)\]/.exec(readFileSync(SHIM, "utf8"))?.[1] ?? "";
@@ -130,6 +138,21 @@ describe.skipIf(process.platform === "win32").each(RUNTIMES)(
       expect(out.stderr).toContain("npm install tokenhud         (in a project)");
     });
 
+    // Bun ignores `libc` and installs a glibc package on Alpine too (and the other way
+    // round, by hand): a binary for the other libc can't start, so it is never run.
+    test.skipIf(process.platform !== "linux")(
+      "a package for the other libc is not run: the missing one is named",
+      async () => {
+        const mine = id;
+        id = `${mine}-musl`;
+        platformPackage("echo ran");
+        id = mine;
+        const out = await result(launch("--version"));
+        expect([out.code, out.stdout]).toEqual([1, ""]);
+        expect(out.stderr).toContain(`@tokenhud/${mine},`);
+      },
+    );
+
     test("a binary killed by a signal: the launcher dies of the same signal", async () => {
       platformPackage("kill -TERM $$");
       const out = await result(launch());
@@ -192,3 +215,76 @@ describe.skipIf(process.platform === "win32").each(RUNTIMES)(
     });
   },
 );
+
+// The package's preinstall (npm/tokenhud/preinstall.cjs): on Windows under Node (npm), it
+// puts the Node launcher in place of the sh command before npm links it; everywhere else, and
+// under Bun, it changes nothing.
+describe("the preinstall", () => {
+  const PREINSTALL = join(PKG, "preinstall.cjs");
+  const command = readFileSync(join(PKG, "bin", "tokenhud"), "utf8");
+  const node = readFileSync(SHIM, "utf8");
+  let pkg: string;
+
+  beforeEach(() => {
+    pkg = mkdtempSync(join(tmpdir(), "tokenhud-preinstall-test-"));
+    mkdirSync(join(pkg, "bin"));
+    mkdirSync(join(pkg, "lib"));
+    writeFileSync(join(pkg, "bin", "tokenhud"), command);
+    chmodSync(join(pkg, "bin", "tokenhud"), 0o755);
+    writeFileSync(join(pkg, "lib", "tokenhud.cjs"), node);
+    copyFileSync(PREINSTALL, join(pkg, "preinstall.cjs"));
+  });
+  afterEach(() => {
+    rmSync(pkg, { recursive: true, force: true });
+  });
+
+  const preinstall = (runtime: string) =>
+    Bun.spawnSync([runtime, join(pkg, "preinstall.cjs")], {
+      cwd: pkg,
+      env: { ...process.env },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  const installed = () => readFileSync(join(pkg, "bin", "tokenhud"), "utf8");
+
+  test.skipIf(NODE === null || process.platform !== "win32")(
+    "Windows, under Node: the Node launcher in the command's place, and nothing else left",
+    () => {
+      const run = preinstall(NODE as string);
+      expect([run.exitCode, run.stderr.toString()]).toEqual([0, ""]);
+      expect(installed()).toBe(node);
+      expect(readdirSync(join(pkg, "bin"))).toEqual(["tokenhud"]);
+      // Again (a reinstall over it): the same.
+      expect(preinstall(NODE as string).exitCode).toBe(0);
+      expect(installed()).toBe(node);
+    },
+  );
+
+  test.skipIf(NODE === null || process.platform !== "win32")(
+    "Windows, a launcher it can't copy: the install goes on, and it says how to repair it",
+    () => {
+      rmSync(join(pkg, "lib", "tokenhud.cjs"));
+      const run = preinstall(NODE as string);
+      expect(run.exitCode).toBe(0);
+      expect(run.stderr.toString()).toContain("couldn't set up the Windows command");
+      expect(installed()).toBe(command);
+      expect(readdirSync(join(pkg, "bin"))).toEqual(["tokenhud"]);
+    },
+  );
+
+  test.skipIf(NODE === null || process.platform === "win32")(
+    "Linux and macOS, under Node: the sh command stays, executable",
+    () => {
+      const run = preinstall(NODE as string);
+      expect([run.exitCode, run.stderr.toString()]).toEqual([0, ""]);
+      expect(installed()).toBe(command);
+      expect(statSync(join(pkg, "bin", "tokenhud")).mode & 0o777).toBe(0o755);
+    },
+  );
+
+  test("under Bun (a trusted install), on any OS: unchanged", () => {
+    const run = preinstall(process.execPath);
+    expect([run.exitCode, run.stderr.toString()]).toEqual([0, ""]);
+    expect(installed()).toBe(command);
+  });
+});

@@ -18,6 +18,7 @@ on:
       - scripts/stage-npm.ts
       - src/release.ts
       - src/update.ts
+      - src/installs.ts
       - src/commands/update.ts
       - install.sh
       - install.ps1
@@ -67,6 +68,19 @@ jobs:
       # The musl binary runs in an Alpine container.
       - name: Smoke test (linux-x64, linux-x64-musl)
         run: bun scripts/build.ts --smoke linux-x64 linux-x64-musl
+
+      # Every npm package as `npm publish` would send it, without sending it. The registry is
+      # an address nothing listens on, so this never asks npm anything (npm 11 looks up the
+      # published versions even in a dry run).
+      - name: npm publish --dry-run
+        run: |
+          bun scripts/stage-npm.ts
+          version=$(bun -e 'process.stdout.write(require("./package.json").version)')
+          dist_tag=latest
+          case "$version" in *-*) dist_tag=next ;; esac
+          for dir in dist/npm/*/; do
+            npm publish "$dir" --dry-run --access public --tag "$dist_tag" --registry http://127.0.0.1:9/
+          done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -364,3 +378,21 @@ jobs:
             fi
             npm publish "$dir" --access public --tag "$dist_tag" --provenance
           done
+          # A release moves `next` up to it too, so next is never older than latest: but only
+          # when it is newer than next, which may already hold the next release's candidates
+          # (0.3.0-rc.1 while 0.2.1 ships).
+          if [ "$dist_tag" = latest ]; then
+            for dir in "${packages[@]}" dist/npm/tokenhud/; do
+              name=$(node -p "require('./${dir}package.json').name")
+              next=$(npm view "$name" dist-tags.next 2>/dev/null || true)
+              order=1
+              if [ -n "$next" ]; then
+                order=$(V="$version" N="$next" bun -e 'process.stdout.write(String(Bun.semver.order(process.env.V, process.env.N)))')
+              fi
+              if [ "$order" = 1 ]; then
+                npm dist-tag add "$name@$version" next
+              else
+                echo "$name: next stays at $next, not older than $version"
+              fi
+            done
+          fi

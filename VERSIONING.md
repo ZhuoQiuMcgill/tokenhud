@@ -42,7 +42,11 @@ A release candidate is `X.Y.Z-rc.N`, an earlier preview `X.Y.Z-beta.N`. A prerel
 before its release (`0.1.0-rc.2` < `0.1.0`). Prereleases are published as GitHub
 prereleases, which `install.sh`, `install.ps1` and `tokenhud update` install only when asked
 (`TOKENHUD_VERSION=0.1.0-rc.2`, `tokenhud update --prerelease`), and on npm under the `next`
-tag (`npm install -g tokenhud@next`).
+tag (`bun add -g tokenhud@next`, `npm install -g tokenhud@next`). A release moves `next` up
+to it too when it is newer than `next`, so `next` is never older than `latest`; a `next`
+already on the following release's candidates stays. `tokenhud update` on a bun or npm
+install of a release candidate follows `next` while `next` is no older than it, and never
+installs an older version unless given `--allow-downgrade`.
 
 ## Making a release
 
@@ -68,8 +72,11 @@ The version lives in `package.json` (the binary reads it at build time). The plu
      Windows;
    - creates the GitHub Release with the binaries and `SHA256SUMS`, as a prerelease when the
      tag has a suffix;
-   - publishes the npm packages when the repository has an `NPM_TOKEN` secret, and otherwise
-     logs `npm publish skipped (no NPM_TOKEN)`.
+   - publishes the npm packages when the repository has an `NPM_TOKEN` secret, the platform
+     packages first and then `tokenhud`, and otherwise logs `npm publish skipped (no
+     NPM_TOKEN)`. Pull requests that touch the release path run `npm publish --dry-run` for
+     every package, and CI installs and updates the packages with bun and with npm from a
+     registry on localhost on Linux, macOS and Windows.
 
 A run that failed for a passing reason (a runner outage, a network error) can be re-run
 as it is: a release that already exists gets its assets replaced, and npm packages already

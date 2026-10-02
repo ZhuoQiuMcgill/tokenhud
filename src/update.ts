@@ -1,8 +1,17 @@
 // The pieces of `tokenhud update` (src/commands/update.ts): how this copy of tokenhud was
-// installed, which release is the newest on GitHub, and replacing the binary with a
-// downloaded one only once its SHA-256 matches the release's SHA256SUMS.
+// installed, which release is the newest on GitHub, replacing the binary with a downloaded
+// one only once its SHA-256 matches the release's SHA256SUMS, and the command that updates
+// a bun or npm install through its package manager.
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { open } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { REPO, SUMS_FILE, sumFor } from "./release.ts";
@@ -61,7 +70,8 @@ export type InstallMethod =
   | { readonly kind: "source" }
   | { readonly kind: "npx" }
   | { readonly kind: "bunx" }
-  | { readonly kind: "bun-global" }
+  /** `bun add -g`: under `<root>/install/global`, where root is BUN_INSTALL (~/.bun by default). */
+  | { readonly kind: "bun-global"; readonly root: string }
   /** npm, globally (under `npm prefix -g`) or as a project's dependency. */
   | { readonly kind: "npm"; readonly global: boolean }
   /** A standalone binary: install.sh, install.ps1, a download, or a local build. */
@@ -72,32 +82,187 @@ export function isCompiled(main: string = Bun.main): boolean {
   return /^(?:\/\$bunfs\/|[A-Za-z]:[/\\]~BUN[/\\])/.test(main);
 }
 
+const isWindowsPath = (path: string) => /^[A-Za-z]:[/\\]/.test(path);
+
+/** `path` with links resolved, slashes forward and no trailing slash; as given if it can't be. */
+function canonical(path: string): string {
+  let real = path;
+  try {
+    real = realpathSync(path);
+  } catch {}
+  return real.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+/**
+ * The bun install root (BUN_INSTALL) whose global packages (`<root>/install/global`) hold
+ * `path`, or null: `~/.bun`, or wherever BUN_INSTALL points, through links too (macOS's
+ * /var is /private/var, and a binary's own path has its links resolved). Returned as `path`
+ * spells it.
+ */
+export function bunGlobalRoot(path: string, bunInstall: string | undefined): string | null {
+  const slashed = path.replaceAll("\\", "/");
+  const at = slashed.indexOf("/install/global/node_modules/");
+  if (at < 0) return null;
+  const root = slashed.slice(0, at);
+  if (root.endsWith("/.bun")) return path.slice(0, at);
+  const custom = bunInstall?.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!custom) return null;
+  const fold = (p: string) => (isWindowsPath(path) ? p.toLowerCase() : p);
+  const same = fold(root) === fold(custom) || fold(canonical(root)) === fold(canonical(custom));
+  return same ? path.slice(0, at) : null;
+}
+
 /**
  * How this copy was installed, from where its binary lives. The npm launcher runs the binary
  * from its platform package (`node_modules/@tokenhud/<platform>/bin/`), so that path tells
  * the package manager apart: npx and bunx keep packages in their caches, `bun add -g` in
- * `~/.bun/install/global`, and npm everywhere else, globally when under its prefix.
- * `npmPrefix` is `npm prefix -g`, asked only when the answer depends on it.
+ * `~/.bun/install/global` (or BUN_INSTALL's), and npm everywhere else, globally when under
+ * its prefix. `npmPrefix` is `npm prefix -g`, asked only when the answer depends on it.
  */
 export function installMethod(
   execPath: string,
   compiled: boolean,
   npmPrefix: () => string | null,
+  env: Readonly<Record<string, string | undefined>> = {},
 ): InstallMethod {
   if (!compiled) return { kind: "source" };
   const path = execPath.replaceAll("\\", "/");
   if (!/\/node_modules\/@tokenhud\/[^/]+\/bin\/[^/]+$/.test(path)) return { kind: "binary" };
   if (path.includes("/_npx/")) return { kind: "npx" };
   if (/\/bunx-[^/]*\//.test(path) || path.includes("/.bun/install/cache/")) return { kind: "bunx" };
-  if (path.includes("/.bun/install/global/")) return { kind: "bun-global" };
+  const root = bunGlobalRoot(execPath, env.BUN_INSTALL);
+  if (root !== null) return { kind: "bun-global", root };
   const prefix = npmPrefix()?.replaceAll("\\", "/").replace(/\/+$/, "");
   // Without npm to ask, a global install is the likelier one.
   if (prefix === undefined || prefix === "") return { kind: "npm", global: true };
-  const windows = /^[A-Za-z]:\//.test(path);
-  const under = windows
+  const under = isWindowsPath(path)
     ? path.toLowerCase().startsWith(`${prefix.toLowerCase()}/`)
     : path.startsWith(`${prefix}/`);
   return { kind: "npm", global: under };
+}
+
+/** A global bun or npm install of tokenhud, as `tokenhud update` updates it. */
+export interface PackageManager {
+  readonly name: "bun" | "npm";
+  /**
+   * What to install: tokenhud, and on musl the binary's own package too, which is not a
+   * dependency of tokenhud (scripts/stage-npm.ts says why).
+   */
+  readonly packages: readonly string[];
+  /** Variables it runs with, over the environment: for bun, the root that holds this copy. */
+  readonly env: Readonly<Record<string, string>>;
+  /**
+   * Where it runs: the directory that holds this install's node_modules. Never the user's
+   * working directory, whose bunfig.toml and .env bun would read, and .npmrc npm would.
+   */
+  readonly cwd: string;
+  /** The command a shell runs for this install, which an update must leave working. */
+  readonly command: string;
+}
+
+/**
+ * The global bun or npm install this binary belongs to, or null for any other install.
+ * `npmPrefix` is `npm prefix -g`; without it, the prefix is read off the binary's path.
+ */
+export function packageManagerFor(
+  method: InstallMethod,
+  execPath: string,
+  platform: NodeJS.Platform,
+  npmPrefix: string | null,
+): PackageManager | null {
+  const windows = platform === "win32";
+  const sep = windows ? "\\" : "/";
+  const at = execPath.replaceAll("\\", "/").indexOf("/node_modules/");
+  if (at < 0) return null;
+  const cwd = execPath.slice(0, at);
+  const platformPackage = /\/node_modules\/(@tokenhud\/[^/]+)\/bin\/[^/]+$/.exec(
+    execPath.replaceAll("\\", "/"),
+  )?.[1];
+  const packages = ["tokenhud", ...(platformPackage?.endsWith("-musl") ? [platformPackage] : [])];
+  if (method.kind === "bun-global") {
+    return {
+      name: "bun",
+      packages,
+      // The bun install that holds this copy, whatever BUN_INSTALL the shell has.
+      env: { BUN_INSTALL: method.root },
+      cwd,
+      command: [method.root, "bin", windows ? "tokenhud.exe" : "tokenhud"].join(sep),
+    };
+  }
+  if (method.kind === "npm" && method.global) {
+    // npm's global packages are in <prefix>/lib/node_modules, or <prefix>\node_modules.
+    const prefix = npmPrefix?.replace(/[/\\]+$/, "") || (windows ? cwd : cwd.replace(/\/lib$/, ""));
+    return {
+      name: "npm",
+      packages,
+      env: {},
+      cwd,
+      command: windows ? `${prefix}\\tokenhud.cmd` : `${prefix}/bin/tokenhud`,
+    };
+  }
+  return null;
+}
+
+/** The command that lists tokenhud's dist-tags as JSON (`{"latest": "0.1.0", …}`). */
+export function distTagsCommand(pm: PackageManager): string[] {
+  return pm.name === "bun"
+    ? ["bun", "info", "tokenhud", "dist-tags", "--json"]
+    : ["npm", "view", "tokenhud", "dist-tags", "--json"];
+}
+
+/** The command that installs `spec` (a version or a dist-tag) of tokenhud's packages. */
+export function installCommand(pm: PackageManager, spec: string): string[] {
+  const packages = pm.packages.map((p) => `${p}@${spec}`);
+  // --no-cache: bun otherwise answers from a registry reply it keeps for minutes, and would
+  // miss a release that new.
+  return pm.name === "bun"
+    ? ["bun", "add", "-g", "--no-cache", ...packages]
+    : ["npm", "install", "-g", ...packages];
+}
+
+export interface DistTags {
+  readonly latest?: string;
+  readonly next?: string;
+}
+
+/** The `latest` and `next` versions in a dist-tags JSON answer; null if it isn't one. */
+export function parseDistTags(text: string): DistTags | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const { latest, next } = raw as Record<string, unknown>;
+  const valid = (v: unknown) => (typeof v === "string" && parseVersion(v) !== null ? v : undefined);
+  const tags: { latest?: string; next?: string } = {};
+  if (valid(latest) !== undefined) tags.latest = latest as string;
+  if (valid(next) !== undefined) tags.next = next as string;
+  return tags;
+}
+
+/**
+ * The dist-tag to follow and its version, or null when the registry lacks it. `--prerelease`
+ * follows `next`. So does a prerelease build, as long as `next` isn't older than it;
+ * otherwise `latest`.
+ */
+export function chooseTarget(
+  tags: DistTags,
+  running: Version,
+  prerelease: boolean,
+): { tag: "latest" | "next"; version: string } | null {
+  const next = tags.next === undefined ? null : parseVersion(tags.next);
+  const followNext =
+    prerelease || (running.pre.length > 0 && next !== null && compareVersions(next, running) >= 0);
+  const tag = followNext ? "next" : "latest";
+  const version = tags[tag];
+  return version === undefined ? null : { tag, version };
+}
+
+/** The dist-tag `--print` names, which it chooses without asking the registry. */
+export function printTag(running: Version | null, prerelease: boolean): "latest" | "next" {
+  return prerelease || (running !== null && running.pre.length > 0) ? "next" : "latest";
 }
 
 /** `npm prefix -g`, or null when npm can't be run. */
@@ -358,25 +523,53 @@ export function replaceBinary(
   }
 }
 
-/** Deletes `<exe>.old` and `<exe>.<n>.old` left by an update on Windows; ignores locked ones. */
-export function removeStaleOld(exe: string): void {
-  const base = basename(exe);
+/**
+ * Where a package manager's update parks this .exe on Windows: beside the package tree
+ * (`~/.bun/install/global`, npm's prefix), outside it. Null for a binary not in one.
+ *
+ * Windows can't delete a running .exe but can move it. Left in its package, it stops the
+ * package manager from removing the old package: npm (10.9) then warns and leaves the whole
+ * old copy behind for good. Moved out first, the package is free to replace, for npm and
+ * bun alike; the next start deletes the parked file (`removeStaleOld`).
+ */
+export function parkingPath(exe: string, pid: number = process.pid): string | null {
+  const at = exe.replaceAll("\\", "/").indexOf("/node_modules/");
+  return at < 0 ? null : join(exe.slice(0, at), `tokenhud-update-${pid}.old`);
+}
+
+const PARKED = /^tokenhud-update-\d+\.old$/;
+
+/** Deletes the files in `dir` that `stale` picks; ignores locked ones. */
+function sweep(dir: string, stale: (name: string) => boolean): void {
   let names: string[];
   try {
-    names = readdirSync(dirname(exe));
+    names = readdirSync(dir);
   } catch {
     return;
   }
   for (const name of names) {
-    if (!name.startsWith(`${base}.`) || !/^\.(?:\d+\.)?old$/.test(name.slice(base.length))) {
-      continue;
-    }
+    if (!stale(name)) continue;
     try {
-      rmSync(join(dirname(exe), name), { force: true });
+      rmSync(join(dir, name), { force: true });
     } catch {
       // Still running (a TUI or MCP server started before the update); next time.
     }
   }
+}
+
+/**
+ * Deletes what updates on Windows left behind: `<exe>.old` and `<exe>.<n>.old` beside a
+ * standalone binary, and the .exe a package manager's update parked (`parkingPath`).
+ * Ignores locked ones.
+ */
+export function removeStaleOld(exe: string): void {
+  const base = basename(exe);
+  sweep(
+    dirname(exe),
+    (name) => name.startsWith(`${base}.`) && /^\.(?:\d+\.)?old$/.test(name.slice(base.length)),
+  );
+  const parked = parkingPath(exe);
+  if (parked !== null) sweep(dirname(parked), (name) => PARKED.test(name));
 }
 
 // ── the TUI's update note ───────────────────────────────────────────────────────────

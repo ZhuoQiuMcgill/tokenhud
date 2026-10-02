@@ -1,6 +1,7 @@
 // `tokenhud doctor [--json]`: what the store holds, whether it is backed up and recovered,
 // how much of it is priced, what is still only in cc-usage, which transcript roots tokenhud
-// follows, and which of them share one subscription account. Read-only throughout: the
+// follows, which of them share one subscription account, and every tokenhud on PATH with how
+// it was installed. Read-only throughout (another install is named, never removed): the
 // store through a read-only connection, the cursor cache and limits.json likewise,
 // cc-usage's ledger through a private snapshot copy. It prints config paths (the store, its
 // backup, the overrides file, the cache, cc-usage's directory), never a transcript, prompt
@@ -22,6 +23,20 @@ import { parseArgs } from "node:util";
 import { type Config, configPath, loadConfig } from "../config.ts";
 import { cachePath, readCacheSummary } from "../ingest/cursors.ts";
 import { transcriptDirs } from "../ingest/engine.ts";
+import {
+  bunInstallRoot,
+  COPY_METHODS,
+  type CopyMethod,
+  copyToKeep,
+  copyVersion,
+  isCopyOf,
+  type PathCopy,
+  pathDirs,
+  removeCommand,
+  samePath,
+  tokenhudsOnPath,
+  type VersionedCopy,
+} from "../installs.ts";
 import { type GroupSource, Limits, limitsPath, manualLinks } from "../limits/index.ts";
 import { detectInstall } from "../mcp/install.ts";
 import { ccUsageDir, pricingOverridesPath, storePath } from "../paths.ts";
@@ -43,6 +58,14 @@ import { StoreCorrupt, StoreError } from "../store/errors.ts";
 import { ImportSourceError, readCcUsageKeys } from "../store/import-cc-usage.ts";
 import { rollupCountsAgree, rollupSchemaIntact } from "../store/schema.ts";
 import { emptyStoreDatabase, type ImportRecord, openStoreReader } from "../store/store.ts";
+import {
+  compareVersions,
+  type InstallMethod,
+  installMethod,
+  isCompiled,
+  npmGlobalPrefix,
+  parseVersion,
+} from "../update.ts";
 import { shortPath } from "./import-cc-usage.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -52,8 +75,9 @@ export const DOCTOR_HELP = `Usage:
 
 Reports on the store (rows, accounts, imports, rollup health, backup age, recovery),
 pricing (overrides, unpriced models, priced coverage), cc-usage (rows not imported yet),
-the transcript roots tokenhud follows, the roots that share one subscription account and,
-per Claude account, whether the tokenhud plugin or MCP server is installed. Read-only.`;
+the transcript roots tokenhud follows, the roots that share one subscription account, every
+tokenhud on PATH with how it was installed (and how to remove an extra one) and, per Claude
+account, whether the tokenhud plugin or MCP server is installed. Read-only.`;
 
 export interface DoctorAccount {
   id: number;
@@ -167,6 +191,25 @@ export interface DoctorReport {
   }>;
   /** `separate_accounts` pairs, by label: never one account, whatever auto-detection finds. */
   kept_apart: Array<{ roots: [string, string] }>;
+  /**
+   * How this copy was installed, and every tokenhud on PATH: the same tokenhud installed
+   * twice, an older one shadowing a newer one, or bun's bin directory missing from PATH.
+   */
+  install: {
+    /** This copy's install, as `tokenhud update` treats it. */
+    method: InstallMethod["kind"];
+    /** Every tokenhud on PATH, in PATH order: a shell runs the first. */
+    on_path: Array<{
+      path: string;
+      method: CopyMethod;
+      version: string | null;
+      this_copy: boolean;
+    }>;
+    /** When tokenhud is installed with bun: bun's bin directory, and whether PATH has it. */
+    bun_bin: { path: string; on_path: boolean } | null;
+    /** Each problem, and the commands that fix it. Nothing is removed for you. */
+    warnings: Array<{ problem: string; fix: string[] }>;
+  };
   claude_code: {
     /** `tokenhud` resolves on PATH: the plugin and `claude mcp add` start it from there. */
     tokenhud_on_path: boolean;
@@ -481,11 +524,125 @@ function claudeCodeSection(env: Env, home: string, config: Config): DoctorReport
   };
 }
 
+/** What the install section looks at, so tests can fake a copy, a platform and versions. */
+export interface InstallProbe {
+  readonly execPath: string;
+  readonly compiled: boolean;
+  readonly platform: NodeJS.Platform;
+  readonly npmPrefix: () => string | null;
+  /** What a copy on PATH says its version is, or null. */
+  readonly versionOf: (copy: PathCopy) => string | null;
+}
+
+function defaultProbe(env: Env): InstallProbe {
+  return {
+    execPath: process.execPath,
+    compiled: isCompiled(),
+    platform: process.platform,
+    npmPrefix: npmGlobalPrefix,
+    versionOf: (copy) => copyVersion(copy, env, process.platform),
+  };
+}
+
+/** `path` inside a POSIX shell's double quotes, from `$HOME` when it is under `home`. */
+function inQuotes(path: string, home: string): string {
+  const under = home !== "" && path.startsWith(`${home}/`);
+  const rest = (under ? path.slice(home.length) : path).replace(/["\\$`]/g, "\\$&");
+  return under ? `$HOME${rest}` : rest;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  return items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** This copy's install, every tokenhud on PATH, and what is wrong with them. */
+function installSection(env: Env, home: string, probe: InstallProbe): DoctorReport["install"] {
+  const { platform } = probe;
+  const method = installMethod(probe.execPath, probe.compiled, probe.npmPrefix, env);
+  const copies: VersionedCopy[] = tokenhudsOnPath(env, platform).map((copy) => ({
+    ...copy,
+    version: probe.versionOf(copy),
+  }));
+  const shown = (path: string) => (platform === "win32" ? path : shortPath(path, home));
+  const warnings: DoctorReport["install"]["warnings"] = [];
+
+  const methods = [...new Set(copies.map((c) => c.method))];
+  const keep = copyToKeep(copies, platform);
+  const removed = new Set<VersionedCopy>();
+  if (methods.length > 1 && keep !== undefined) {
+    const others = copies.filter((c) => c !== keep);
+    for (const c of others) removed.add(c);
+    warnings.push({
+      problem:
+        `tokenhud is installed ${methods.length} ways: ${listed(methods.map((m) => COPY_METHODS[m]))}. ` +
+        `Keep one; to keep ${shown(keep.path)}${keep.version === null ? "" : ` (${keep.version})`}, ` +
+        `remove ${others.length === 1 ? "the other" : "the others"}:`,
+      fix: others.map((c) => removeCommand(c, platform, home)),
+    });
+  }
+  const first = copies[0];
+  const firstVersion = first?.version == null ? null : parseVersion(first.version);
+  const newest = keep?.version == null ? null : parseVersion(keep.version);
+  if (first !== undefined && keep !== undefined && firstVersion !== null && newest !== null) {
+    if (compareVersions(firstVersion, newest) < 0) {
+      warnings.push({
+        problem:
+          `${shown(first.path)} comes first on PATH, so \`tokenhud\` runs it, but it is ` +
+          `${first.version} and ${shown(keep.path)} is ${keep.version}` +
+          (removed.has(first) ? "." : ". If you don't use it:"),
+        fix: removed.has(first) ? [] : [removeCommand(first, platform, home)],
+      });
+    }
+  }
+
+  const bunRoot = method.kind === "bun-global" ? method.root : bunInstallRoot(env, home);
+  let bunBin: DoctorReport["install"]["bun_bin"] = null;
+  if (bunRoot !== null) {
+    const bin = join(bunRoot, "bin");
+    const onPath = pathDirs(env, platform).some((dir) => samePath(dir, bin, platform));
+    bunBin = { path: bin, on_path: onPath };
+    if (platform === "win32") {
+      // bun's Windows shim can't start the command (a sh script), so it never runs tokenhud.
+      warnings.push({
+        problem:
+          "tokenhud is installed with bun, which isn't supported on Windows: its tokenhud " +
+          'command fails with "/bin/sh" not found. Switch to npm or install.ps1:',
+        fix: [
+          "bun remove -g tokenhud",
+          "npm install -g tokenhud   (or install.ps1: see the README)",
+        ],
+      });
+    } else if (!onPath) {
+      warnings.push({
+        problem: `tokenhud is installed with bun, but ${shown(bin)} is not on PATH`,
+        fix: [
+          `add it in your shell's profile (bun's installer does): export PATH="${inQuotes(bin, home)}:$PATH"`,
+        ],
+      });
+    }
+  }
+  return {
+    method: method.kind,
+    on_path: copies.map((c) => ({
+      path: c.path,
+      method: c.method,
+      version: c.version,
+      this_copy: isCopyOf(c, method, probe.execPath, platform),
+    })),
+    bun_bin: bunBin,
+    warnings,
+  };
+}
+
 /** Gathers the report. Never throws for a missing or unreadable store: that is reported. */
 export function doctorReport(
   env: Env = process.env,
   now: number = Date.now(),
   home: string = homedir(),
+  probe: InstallProbe = defaultProbe(env),
 ): DoctorReport {
   const path = storePath(env, home);
   const config = loadConfig(configPath(env, home));
@@ -565,6 +722,7 @@ export function doctorReport(
       cc_usage: ccUsageSection(env, db, imports),
       sources: sourcesSection(env, home, config, zone),
       ...sharedSection(env, home, config, zone),
+      install: installSection(env, home, probe),
       claude_code: claudeCodeSection(env, home, config),
     };
   } finally {
@@ -593,7 +751,7 @@ function bytes(x: number): string {
 const day = (iso: string | null) => (iso === null ? "?" : iso.slice(0, 10));
 const when = (iso: string) => iso.replace("T", " ").slice(0, 16);
 
-export function renderDoctor(r: DoctorReport): string {
+export function renderDoctor(r: DoctorReport, home: string = homedir()): string {
   const out: string[] = [];
   const line = (label: string, value: string) => out.push(`  ${label.padEnd(13)} ${value}`);
   const more = (value: string) => out.push(`  ${"".padEnd(13)} ${value}`);
@@ -754,6 +912,8 @@ export function renderDoctor(r: DoctorReport): string {
     line("kept apart", `${p.roots.join(" | ")} (separate_accounts: never linked)`);
   }
 
+  renderInstall(r.install, home, line, more, out);
+
   out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");
   const cc = r.claude_code;
   if (!cc.tokenhud_on_path) {
@@ -778,6 +938,55 @@ export function renderDoctor(r: DoctorReport): string {
     more('"Use with Claude Code"');
   }
   return out.join("\n");
+}
+
+const INSTALL_METHODS: Readonly<Record<InstallMethod["kind"], string>> = {
+  source: "a source checkout (bun src/cli.ts)",
+  npx: "npx's cache",
+  bunx: "bunx's cache",
+  "bun-global": "bun (bun add -g)",
+  npm: "npm",
+  binary: "a standalone binary (install.sh, install.ps1 or a download)",
+};
+
+function renderInstall(
+  install: DoctorReport["install"],
+  home: string,
+  line: (label: string, value: string) => void,
+  more: (value: string) => void,
+  out: string[],
+): void {
+  out.push("", "Install (every tokenhud on PATH; a shell runs the first)");
+  line("this copy", INSTALL_METHODS[install.method]);
+  if (install.on_path.length === 0) line("on PATH", "none");
+  install.on_path.forEach((c, i) => {
+    const parts = [shortPath(c.path, home), COPY_METHODS[c.method], c.version ?? "version unknown"];
+    if (i === 0) parts.push("runs as tokenhud");
+    if (c.this_copy) parts.push("this copy");
+    (i === 0 ? (v: string) => line("on PATH", v) : more)(parts.join(" · "));
+  });
+  if (install.bun_bin?.on_path) {
+    line("bun bin", `${shortPath(install.bun_bin.path, home)} is on PATH`);
+  }
+  for (const w of install.warnings) {
+    wrap(w.problem, 76).forEach((text, i) => {
+      (i === 0 ? (v: string) => line("warning", v) : more)(text);
+    });
+    for (const fix of w.fix) more(`  ${fix}`);
+  }
+}
+
+/** `text` in lines of at most `width` characters, broken at spaces (a longer word stays whole). */
+function wrap(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let current = "";
+  for (const word of text.split(" ")) {
+    if (current !== "" && current.length + 1 + word.length > width) {
+      lines.push(current);
+      current = word;
+    } else current = current === "" ? word : `${current} ${word}`;
+  }
+  return [...lines, current];
 }
 
 function renderBackup(

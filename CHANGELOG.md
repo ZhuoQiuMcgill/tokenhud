@@ -69,16 +69,39 @@ release candidate 0.1.0-rc.1 has all of it.
 - **Import from cc-usage**: automatic on first run (history, settings, last limits), and
   `tokenhud import-cc-usage` for price edits or a later re-import. cc-usage's files are only
   read.
-- **Install**: standalone binaries for Linux (x64, arm64; glibc and musl), macOS (x64,
-  arm64) and Windows (x64, arm64) on GitHub Releases with SHA-256 checksums; `install.sh`
-  and `install.ps1`; an npm package (`tokenhud`) that runs the right binary.
-- **`tokenhud update`**: updates a standalone binary in place after checking its checksum,
-  or tells npm, npx and bunx users the command. `--check` only reports. The TUI notes a
-  newer release in its footer, checking at most once a day (a setting turns it off); it
-  never updates on its own.
+- **Install**: `bun add -g tokenhud`, which needs no Node, or `npm install -g tokenhud`: a
+  launcher that runs the right prebuilt binary. Standalone binaries for Linux (x64, arm64;
+  glibc and musl), macOS (x64, arm64) and Windows (x64, arm64) on GitHub Releases with
+  SHA-256 checksums, and `install.sh` and `install.ps1` to install them.
+- **`tokenhud update`**: updates a bun or npm install through its package manager, and a
+  standalone binary in place after checking its checksum; tells npx and bunx users the
+  command. `--check` only reports, `--print` prints the command. The TUI notes a newer
+  release in its footer, checking at most once a day (a setting turns it off); it never
+  updates on its own.
 
 ### Changed since 0.1.0-rc.1
 
+- **Install and update with Bun.** `bun add -g tokenhud` is the recommended install on Linux
+  and macOS, and needs no Node; npm keeps working everywhere. On Linux and macOS the command
+  is now a small sh script that starts the binary, so no JS runtime runs and nothing in the
+  directory you run it in (a `.env`, a `bunfig.toml`) reaches tokenhud, whichever package
+  manager installed it. On Windows, tokenhud is supported through npm, whose install script
+  sets up a Node launcher, or `install.ps1`; Bun isn't supported there yet (`bun add -g`
+  installs a command that fails with `"/bin/sh" not found`), and `tokenhud doctor` says so
+  if it finds a bun install, with how to switch. `tokenhud update` on a bun
+  or npm install asks the package manager which version the `latest` tag points at (`next`
+  for a release candidate, while `next` is no older), installs exactly that version, checks
+  that the `tokenhud` command runs it, and never installs an older version unless given
+  `--allow-downgrade`; it used to print the command. `--print` prints the command instead.
+  On Windows the running `tokenhud.exe` is moved aside meanwhile, so the package manager
+  replaces the old copy whole. On musl Linux (Alpine), the binary's package is now installed
+  by name beside tokenhud (`@tokenhud/linux-x64-musl`): as an optional dependency, Bun would
+  download it on every Linux machine, since it ignores `libc`.
+- **`tokenhud doctor` lists every tokenhud on PATH**, with its version and how it was
+  installed, and marks the one a shell runs. It warns when tokenhud is installed more than
+  one way or an older copy comes first, names the command that removes the extra one, quoted
+  so it can be pasted (it never removes anything), and checks that bun's bin directory is on
+  PATH. `tokenhud update` warns after updating when another copy comes first on PATH.
 - **Keys: one movement scheme for every view**, all within reach of the left hand. `a`/`d`
   (or `←`/`→`) switch the tab, `w`/`s` (or `↑`/`↓`) move the selection, `enter` opens it
   and `esc` goes back one step, in every view, the settings screen and the new account
