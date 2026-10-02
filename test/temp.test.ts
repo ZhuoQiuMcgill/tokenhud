@@ -5,7 +5,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { guard } from "./guard.ts";
 import { removeTempDir } from "./temp.ts";
+
+guard();
 
 const windows = process.platform === "win32";
 
@@ -41,8 +44,13 @@ await Bun.sleep(60_000);
       const reader = child.stdout.getReader();
       await reader.read();
       reader.releaseLock();
-      // Held now, and Bun's rmSync gives up at once, maxRetries or not.
-      expect(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 })).toThrow();
+      // Held now. Node's rmSync would retry this for 1 + 2 + 3 + 4 + 5 = 15 s before it
+      // threw; Bun 1.4.2 ignores the options and throws at once.
+      const t0 = performance.now();
+      expect(() =>
+        rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 1000 }),
+      ).toThrow();
+      expect(performance.now() - t0).toBeLessThan(5000);
       child.kill();
       removeTempDir(dir); // the handle goes as the process tears down
       expect(existsSync(dir)).toBe(false);

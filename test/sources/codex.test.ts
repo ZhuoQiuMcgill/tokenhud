@@ -5,8 +5,11 @@ import { codexSessionIndex } from "../../src/ingest/pass.ts";
 import { codexSessionId, readCodexFile } from "../../src/sources/codex.ts";
 import { comparePyPaths } from "../../src/sources/pypath.ts";
 import type { Root } from "../../src/sources/roots.ts";
+import { guard } from "../guard.ts";
 import { cleanup, storedRows, tempDir } from "../ingest/helpers.ts";
 import { openCodexEngine } from "./codex-helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

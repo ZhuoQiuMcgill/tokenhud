@@ -5,6 +5,9 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { errorLine, fileLog, logPath, MAX_LOG_BYTES, scrub } from "../../src/tui/log.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const dirs: string[] = [];
 afterEach(() => {

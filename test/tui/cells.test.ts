@@ -3,6 +3,9 @@ import { expect, test } from "bun:test";
 import { localDay } from "../../src/tui/views/accounts.tsx";
 import { costNote, costText, noteWithLegend } from "../../src/tui/views/cells.ts";
 import type { Priced } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const priced = (over: Partial<Priced> = {}): Priced => ({
   cost: 12.5,

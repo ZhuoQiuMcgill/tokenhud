@@ -4,6 +4,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { childEnv } from "../../guard.ts";
 import { claudeLine } from "../../ingest/helpers.ts";
 import { Vt } from "./vt.ts";
 
@@ -47,14 +48,14 @@ export function makeHome(options: { store?: string; base?: string; refresh?: num
     lines += claudeLine(`PTY${i}`, `PTY${i}`, 1000 + i, 200, { ts, model: "claude-opus-4-8" });
   }
   writeFileSync(join(projects, "00000000-0000-4000-8000-000000000001.jsonl"), lines);
-  const env: Record<string, string> = {
+  const env = childEnv({
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     HOME: dir,
     XDG_CONFIG_HOME: join(dir, "config"),
     TOKENHUD_WSL_USERS: "",
     TERM: "xterm-256color",
     LANG: "C.UTF-8",
-  };
+  });
   return {
     dir,
     env,

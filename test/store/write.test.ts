@@ -2,7 +2,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { openStore, type Store, UNATTRIBUTED } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { cleanup, HOUR, row, T0, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -5,7 +5,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Cursor, CursorCache, readCacheSummary } from "../../src/ingest/cursors.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

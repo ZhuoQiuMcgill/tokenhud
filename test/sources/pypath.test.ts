@@ -8,7 +8,10 @@ import {
   pyRealpath,
   type RealpathFs,
 } from "../../src/sources/pypath.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "../ingest/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

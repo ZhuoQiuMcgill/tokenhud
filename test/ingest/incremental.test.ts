@@ -13,6 +13,7 @@ import {
 import { join } from "node:path";
 import { CursorCache } from "../../src/ingest/cursors.ts";
 import { ledgerKey } from "../../src/store/key.ts";
+import { guard } from "../guard.ts";
 import {
   claudeLine,
   cleanup,
@@ -22,6 +23,8 @@ import {
   T0_MS,
   tempDir,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

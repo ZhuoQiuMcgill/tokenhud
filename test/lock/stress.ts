@@ -5,6 +5,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { childEnv } from "../guard.ts";
 
 const CONTENDER = join(import.meta.dir, "contender.ts");
 
@@ -72,7 +73,7 @@ export async function round(n = 16, ms = 300, kills = 4, holds = 24): Promise<Ro
         stdout: "ignore",
         stderr: "ignore",
         // Never a real config: the contenders' home is the round's temp dir.
-        env: { PATH: process.env.PATH ?? "", HOME: base, XDG_CONFIG_HOME: join(base, "xdg") },
+        env: childEnv({ PATH: process.env.PATH, HOME: base, XDG_CONFIG_HOME: join(base, "xdg") }),
       }),
     );
     const ready = () => readdirSync(dir).filter((f) => f.startsWith("ready-")).length;

@@ -8,9 +8,12 @@ import { renderOverview } from "../../src/tui/once.tsx";
 import { readAccountEvents } from "../../src/tui/vm/history.ts";
 import { displayAccounts, readStoreAccounts } from "../../src/tui/vm/session.ts";
 import type { OverviewVM } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { bundledTable, fixtureConfig, NOW } from "./fixture.ts";
 import { MCP, makeOverviewFixture, type OverviewFixture, ROOTS } from "./overview-fixture.ts";
 import { expectOverviewWhole } from "./overview-numbers.ts";
+
+guard();
 
 const ESC = String.fromCharCode(27);
 let fixture: OverviewFixture;

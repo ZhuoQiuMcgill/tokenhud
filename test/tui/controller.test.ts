@@ -10,6 +10,9 @@ import type {
   RootInfo,
   VmSettings,
 } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const key = (name: string, sequence = name.length === 1 ? name : ""): Key => ({
   name,

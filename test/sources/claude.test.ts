@@ -9,7 +9,10 @@ import {
   readClaudeFile,
 } from "../../src/sources/claude.ts";
 import { ledgerKey } from "../../src/store/key.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "../ingest/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -42,9 +42,12 @@ import type {
   HistoryVM,
   VmMessage,
 } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { prng } from "../query/synthetic.ts";
 import { bundledTable, fixtureConfig } from "./fixture.ts";
 import { chars, cleanupRenderers, render, roles, settle } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 

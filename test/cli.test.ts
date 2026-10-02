@@ -3,6 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { version } from "../package.json";
+import { childEnv, guard } from "./guard.ts";
+
+guard();
 
 // Run the CLI the way users do: a fresh Bun process on the entry file, observed only
 // through its exit code and output streams.
@@ -20,8 +23,8 @@ function runHome(...args: string[]) {
     const proc = Bun.spawnSync([process.execPath, CLI, ...args], {
       stdout: "pipe",
       stderr: "pipe",
-      env: {
-        PATH: process.env.PATH ?? "",
+      env: childEnv({
+        PATH: process.env.PATH,
         HOME: home,
         // Windows: the home is USERPROFILE, and Bun fills in the real one when it is
         // missing. The child then read the real ~\.claude, and wrote Bun's transpiler cache
@@ -32,7 +35,7 @@ function runHome(...args: string[]) {
         TMP: home,
         XDG_CONFIG_HOME: join(home, "config"),
         TOKENHUD_WSL_USERS: "",
-      },
+      }),
     });
     return { code: proc.exitCode, stdout: proc.stdout.toString(), stderr: proc.stderr.toString() };
   } finally {

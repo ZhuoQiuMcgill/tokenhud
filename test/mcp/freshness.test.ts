@@ -6,8 +6,11 @@ import {
   Freshener,
   type FreshnessOptions,
 } from "../../src/mcp/freshness.ts";
+import { guard } from "../guard.ts";
 import { claudeLine } from "../ingest/helpers.ts";
 import { cleanup, MIN, machine, NOW, rootNamed, usageRow, wire, writeStore } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

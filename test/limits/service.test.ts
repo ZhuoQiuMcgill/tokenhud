@@ -13,6 +13,7 @@ import { codexAuthMtime, fetchCodexLimits } from "../../src/limits/codex.ts";
 import { Limits } from "../../src/limits/index.ts";
 import { LimitsService, type LimitsServiceOptions } from "../../src/limits/service.ts";
 import type { Root } from "../../src/sources/roots.ts";
+import { guard } from "../guard.ts";
 import {
   capture,
   cleanup,
@@ -23,6 +24,8 @@ import {
   tempDir,
   writeCredentials,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

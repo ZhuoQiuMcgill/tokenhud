@@ -3,6 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { version } from "../package.json";
+import { guard } from "./guard.ts";
+
+guard();
 
 const ROOT = join(import.meta.dir, "..");
 const PLUGIN = join(ROOT, "plugin");

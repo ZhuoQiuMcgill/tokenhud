@@ -11,7 +11,10 @@ import { readLimitEvents } from "../../src/limits/events.ts";
 import { Limits } from "../../src/limits/index.ts";
 import { discoverClaudeRoots, discoverCodexRoots } from "../../src/sources/roots.ts";
 import { openStoreReader } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { capture, cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

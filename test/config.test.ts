@@ -14,7 +14,10 @@ import {
 } from "../src/config.ts";
 import ccUsage from "./fixtures/config/cc-usage-config.json";
 import ccUsageInvalid from "./fixtures/config/cc-usage-config-invalid.json";
+import { guard } from "./guard.ts";
 import { cleanup, tempDir } from "./ingest/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -7,6 +7,7 @@ import type { EngineOptions } from "../../src/ingest/engine.ts";
 import type { ChangedEvent } from "../../src/ingest/pass.ts";
 import { ledgerKey } from "../../src/store/key.ts";
 import { openStore } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import {
   claudeLine,
   cleanup,
@@ -17,6 +18,8 @@ import {
   tempDir,
   watcherReady,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -8,7 +8,7 @@ import {
   normalizeCodexLimits,
   SignedOut,
 } from "./capture.ts";
-import { findOnPath, refuseRealClient } from "./clients.ts";
+import { findOnPath, RefusedClient, refuseRealClient } from "./clients.ts";
 
 /**
  * Codex's current limits over the app-server JSON-RPC, ported from cc-usage's
@@ -199,6 +199,7 @@ export async function runCodexRpc(options: CodexFetchOptions): Promise<Record<st
   try {
     proc = (options.spawn ?? defaultSpawn)([executable, "app-server"], env);
   } catch (error) {
+    if (error instanceof RefusedClient) throw error; // a test's, and says why
     // Only a vanished executable is permanent. ENOMEM/EAGAIN (fork under memory pressure)
     // and ETXTBSY (the CLI being upgraded) are transient.
     const code = (error as NodeJS.ErrnoException).code ?? "error";

@@ -17,6 +17,9 @@ import bundledJson from "../../src/pricing/pricing.json";
 import { isDated, type ModelPricing, parseModelPricing } from "../../src/pricing/schema.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
 import { Zone } from "../../src/query/tz.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const zone = Zone.of("UTC");
 const now = Date.parse("2026-09-30T12:00:00Z");

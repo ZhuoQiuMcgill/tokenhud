@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { CC_USAGE_KEY_SCHEME } from "../../src/store/import-cc-usage.ts";
 import { ledgerKey } from "../../src/store/key.ts";
 import vectors from "../fixtures/store/key-vectors.json";
+import { guard } from "../guard.ts";
+
+guard();
 
 // Every expected key comes from cc-usage's own parser.ledger_key (gen_key_vectors.py).
 describe("ledgerKey matches cc-usage", () => {

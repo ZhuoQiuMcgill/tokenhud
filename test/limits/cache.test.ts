@@ -11,7 +11,10 @@ import {
   updateLimitsCache,
 } from "../../src/limits/cache.ts";
 import { normalizeClaudeLimits, normalizeCodexLimits } from "../../src/limits/capture.ts";
+import { guard } from "../guard.ts";
 import { CLAUDE_RESPONSE, CODEX_RESPONSE, capture, cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -11,7 +11,10 @@ import {
   UNATTRIBUTED,
 } from "../../src/store/store.ts";
 import vectors from "../fixtures/store/key-vectors.json";
+import { guard } from "../guard.ts";
 import { cleanup, HOUR, row, T0, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

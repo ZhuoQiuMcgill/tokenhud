@@ -26,9 +26,12 @@ import type { ChangedEvent } from "../../src/ingest/pass.ts";
 import { BACKUP_INTERVAL_MS, backup, backupPaths, moveAside } from "../../src/store/durability.ts";
 import { ledgerKey } from "../../src/store/key.ts";
 import { openStore, type Store, type UsageRow } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { corruptUsageLeaf } from "../store/damage.ts";
 import { row } from "../store/helpers.ts";
 import { claudeLine, cleanup, makeRoot, openEngine, storedRows, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

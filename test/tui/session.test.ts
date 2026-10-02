@@ -16,7 +16,10 @@ import {
   VmSession,
 } from "../../src/tui/vm/session.ts";
 import type { AccountsVM, OverviewVM, VmMessage, VmStart } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { bundledTable, type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
+
+guard();
 
 /** Timers that move only when told to. */
 class FakeTimers implements Timers {

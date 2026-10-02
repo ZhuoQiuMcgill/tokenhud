@@ -12,7 +12,10 @@ import { type Column, layoutColumns, scrollTop } from "../../src/tui/components/
 import { chartCell, chartColumns } from "../../src/tui/components/vchart.ts";
 import { Table } from "../../src/tui/elements.tsx";
 import { theme } from "../../src/tui/theme.ts";
+import { guard } from "../guard.ts";
 import { chars, cleanupRenderers, render, roles } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 const dark = theme("dark");

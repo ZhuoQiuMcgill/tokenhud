@@ -22,6 +22,7 @@ import {
 } from "../../src/tui/vm/accounts.ts";
 import { type Timers, VmSession } from "../../src/tui/vm/session.ts";
 import type { AccountInfo, RootInfo, ViewModels, VmMessage } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { fixtureConfig, NOW, TZ } from "./fixture.ts";
 import {
   HOME,
@@ -33,6 +34,8 @@ import {
   WEEKLY_RESET,
 } from "./fixture-t13.ts";
 import { chars, cleanupRenderers, render, settle } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 

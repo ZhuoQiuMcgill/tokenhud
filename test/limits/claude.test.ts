@@ -9,6 +9,7 @@ import {
   type HttpFetch,
   type RefreshRun,
 } from "../../src/limits/claude.ts";
+import { guard } from "../guard.ts";
 import {
   CLAUDE_RESPONSE,
   cleanup,
@@ -17,6 +18,8 @@ import {
   tempDir,
   writeCredentials,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

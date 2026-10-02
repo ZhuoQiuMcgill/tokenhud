@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { timestampMs } from "../../src/sources/timestamp.ts";
 import vectors from "../fixtures/sources/timestamp-vectors.json";
+import { guard } from "../guard.ts";
+
+guard();
 
 // Every expected value is cc-usage's own `round(parse_timestamp(s) * 1000)`
 // (test/fixtures/sources/gen_timestamp_vectors.py).

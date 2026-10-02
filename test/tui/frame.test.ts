@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { Line } from "../../src/tui/components/base.ts";
 import { segsWidth } from "../../src/tui/components/base.ts";
 import { footerLine, headerLine, mcpSegs, sectionLine } from "../../src/tui/frame.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const text = (line: Line) => ({
   left: line.left.map((s) => s.text).join(""),

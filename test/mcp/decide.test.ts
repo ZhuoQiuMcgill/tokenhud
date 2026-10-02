@@ -12,7 +12,10 @@ import {
 import { ToolError } from "../../src/mcp/errors.ts";
 import { Zone } from "../../src/query/tz.ts";
 import type { Root } from "../../src/sources/roots.ts";
+import { guard } from "../guard.ts";
 import { HOUR, MIN, NOW } from "./helpers.ts";
+
+guard();
 
 const UTC = Zone.of("UTC");
 const DAY = 24 * HOUR;

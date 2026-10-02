@@ -8,7 +8,10 @@ import {
   updateLimitsCache,
 } from "../../src/limits/cache.ts";
 import { isContention, LeaseTimeoutError, tryLease, withLock } from "../../src/limits/lease.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

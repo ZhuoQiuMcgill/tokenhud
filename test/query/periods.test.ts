@@ -4,6 +4,9 @@
 import { describe, expect, test } from "bun:test";
 import { calendarSlices, equalBuckets, resolvePeriod } from "../../src/query/periods.ts";
 import { isTimeZone, utc, Zone } from "../../src/query/tz.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const at = (iso: string) => Date.parse(iso);
 const toronto = Zone.of("America/Toronto");

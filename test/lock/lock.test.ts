@@ -12,7 +12,10 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCK_FILE_NAME, lockFailure, lockHolder, lockPath, WriterLock } from "../../src/lock.ts";
+import { childEnv, guard } from "../guard.ts";
 import { round } from "./stress.ts";
+
+guard();
 
 const dirs: string[] = [];
 const held: WriterLock[] = [];
@@ -48,7 +51,7 @@ await Bun.sleep(60_000);
   const home = join(path, "..", "..", "home");
   const proc = Bun.spawn([process.execPath, "-e", script], {
     stdout: "pipe",
-    env: { PATH: process.env.PATH ?? "", HOME: home, XDG_CONFIG_HOME: join(home, "config") },
+    env: childEnv({ PATH: process.env.PATH, HOME: home, XDG_CONFIG_HOME: join(home, "config") }),
   });
   const reader = proc.stdout.getReader();
   const { value } = await reader.read();

@@ -12,7 +12,10 @@ import {
   rootIdentity,
 } from "../../src/sources/roots.ts";
 import vectors from "../fixtures/sources/identity-vectors.json";
+import { guard } from "../guard.ts";
 import { cleanup, makeRoot, tempDir } from "../ingest/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

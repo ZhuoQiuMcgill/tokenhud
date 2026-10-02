@@ -7,6 +7,9 @@ import {
   pyStr,
   pyTruthy,
 } from "../../src/sources/pyjson.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 describe("parsePyJson keeps Python's number kinds", () => {
   test("floats, integers and big integers", () => {

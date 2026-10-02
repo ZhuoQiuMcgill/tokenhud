@@ -3,6 +3,9 @@
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { guard } from "../guard.ts";
+
+guard();
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const FAKE_UUID = /^00000000-0000-4000-8000-0000000000\d\d$/;

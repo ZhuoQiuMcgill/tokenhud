@@ -5,7 +5,10 @@ import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import { openStore, UNATTRIBUTED, type UsageRow } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { cleanup, HOUR, T0, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

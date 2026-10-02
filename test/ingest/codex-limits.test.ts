@@ -5,8 +5,11 @@ import { afterEach, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CursorCache } from "../../src/ingest/cursors.ts";
+import { guard } from "../guard.ts";
 import { codexRoot, openCodexEngine } from "../sources/codex-helpers.ts";
 import { cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

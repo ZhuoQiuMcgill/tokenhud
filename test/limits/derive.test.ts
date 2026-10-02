@@ -14,7 +14,10 @@ import { Limits } from "../../src/limits/index.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
 import { UsageQueries } from "../../src/query/engine.ts";
 import { openStore, openStoreReader, type UsageRow } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { capture, cleanup, fakeRoot, tempDir } from "./helpers.ts";
+
+guard();
 
 const open: Database[] = [];
 afterEach(() => {

@@ -4,7 +4,10 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { guard } from "../guard.ts";
 import { CLI, makeHome, type PtyRun, ptyAvailable, runInPty } from "./pty/driver.ts";
+
+guard();
 
 const BUN = process.execPath;
 // After tokenhud exits, the same pty reports the exit code and the line discipline's modes.

@@ -11,11 +11,14 @@ import { theme } from "../../src/tui/theme.ts";
 import type { AccountsState } from "../../src/tui/views/accounts.tsx";
 import { fitLabels, listedEvents, type OverviewState } from "../../src/tui/views/overview.tsx";
 import type { AccountInfo, OverviewVM, ViewModels } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { fixtureConfig, NOW, TZ } from "./fixture.ts";
 import { MCP, makeOverviewFixture, type OverviewFixture } from "./overview-fixture.ts";
 import { expectOverviewWhole } from "./overview-numbers.ts";
 import { chars, cleanupRenderers, render, roles, settle } from "./render.ts";
 import { appearsWhole, expectWhole } from "./whole.ts";
+
+guard();
 
 cleanupRenderers();
 

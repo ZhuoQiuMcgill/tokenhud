@@ -25,8 +25,11 @@ import {
   readStoreAccounts,
   rootInfos,
 } from "../../src/tui/vm/session.ts";
+import { guard } from "../guard.ts";
 import { claudeLine } from "../ingest/helpers.ts";
 import { removeTempDir } from "../temp.ts";
+
+guard();
 
 const dirs: string[] = [];
 const engines: IngestEngine[] = [];

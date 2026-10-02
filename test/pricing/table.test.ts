@@ -6,7 +6,10 @@ import { normalizeModel } from "../../src/pricing/normalize.ts";
 import bundledJson from "../../src/pricing/pricing.json";
 import { isDated, parsePriceTableFile, type Tier } from "../../src/pricing/schema.ts";
 import { bundledPricing, PriceTable, type UsageRecord } from "../../src/pricing/table.ts";
+import { guard } from "../guard.ts";
 import { at, bundledTable, CC_USAGE_MODELS, isClose, NO_CACHE } from "./helpers.ts";
+
+guard();
 
 const table = bundledTable();
 

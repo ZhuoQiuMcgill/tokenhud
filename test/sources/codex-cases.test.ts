@@ -16,8 +16,11 @@ import { comparePyPaths } from "../../src/sources/pypath.ts";
 import { ledgerKey } from "../../src/store/key.ts";
 import { UNATTRIBUTED } from "../../src/store/store.ts";
 import cases from "../fixtures/sources/codex-cases.json";
+import { guard } from "../guard.ts";
 import { cleanup, storedRows, tempDir } from "../ingest/helpers.ts";
 import { codexRoot, materialize, openCodexEngine } from "./codex-helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

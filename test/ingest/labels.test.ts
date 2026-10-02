@@ -4,7 +4,10 @@ import { join } from "node:path";
 import type { ChangedEvent } from "../../src/ingest/pass.ts";
 import { rootIdentity } from "../../src/sources/roots.ts";
 import { ledgerKey } from "../../src/store/key.ts";
+import { guard } from "../guard.ts";
 import { claudeLine, cleanup, makeRoot, openEngine, tempDir, watcherReady } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

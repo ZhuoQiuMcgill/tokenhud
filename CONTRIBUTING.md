@@ -74,6 +74,10 @@ commits only and will not retroactively fail that history.
   abstractions.
 - **New behaviour needs a test.** Add or update tests alongside your change.
 - **Tests must pass** (`bun test`) before you open a PR.
+- **Tests never run the real `claude` or `codex`.** Every test file imports `test/guard.ts`
+  and calls `guard()` at its top (a test enforces this). The guard puts stub clients first
+  on `PATH` and sets `TOKENHUD_TEST`, under which tokenhud refuses to run any other client.
+  `TOKENHUD_TEST` is test-only: never set it outside tests, or limits stop refreshing.
 
 ## License
 

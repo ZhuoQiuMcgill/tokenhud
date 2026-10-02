@@ -15,6 +15,9 @@ import {
   toggleHistoryOnly,
 } from "../../src/tui/settings.ts";
 import type { RootInfo } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const root = (over: Partial<RootInfo>): RootInfo => ({
   provider: "claude",

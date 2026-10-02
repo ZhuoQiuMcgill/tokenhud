@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { childEnv, guard } from "../guard.ts";
 import { claudeLine, cleanup, makeRoot, tempDir } from "../ingest/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 
@@ -17,7 +20,7 @@ function envFor(dir: string): Record<string, string> {
     TOKENHUD_WSL_USERS: "",
   };
   if (process.env.SYSTEMROOT) env.SYSTEMROOT = process.env.SYSTEMROOT;
-  return env;
+  return childEnv(env);
 }
 
 /** Runs the CLI in `envFor(dir)`. */

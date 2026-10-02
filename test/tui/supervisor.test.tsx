@@ -15,8 +15,11 @@ import {
   type VmWorker,
 } from "../../src/tui/vm/client.ts";
 import type { VmMessage, VmStart } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
 import { chars, cleanupRenderers, render, settle } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 

@@ -3,7 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { detectInstall } from "../../src/mcp/install.ts";
+import { guard } from "../guard.ts";
 import { cleanup, machine } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 
