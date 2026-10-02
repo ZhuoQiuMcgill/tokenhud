@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { LOCK_FILE_NAME, lockHolder, lockPath, WriterLock } from "../../src/lock.ts";
+import { LOCK_FILE_NAME, lockFailure, lockHolder, lockPath, WriterLock } from "../../src/lock.ts";
 import { round } from "./stress.ts";
 
 const dirs: string[] = [];
@@ -118,6 +118,11 @@ describe("a damaged lock file", () => {
   const posix = process.platform !== "win32";
   const asRoot = process.getuid?.() === 0;
 
+  function writeAt(file: string): string {
+    writeFileSync(file, "");
+    return file;
+  }
+
   function damaged(content: string | Uint8Array): string {
     const path = lockFile();
     mkdirSync(join(path, ".."), { recursive: true });
@@ -173,10 +178,66 @@ describe("a damaged lock file", () => {
     expect(existsSync(`${path}.damaged`)).toBe(true);
     expect(take(path, "mcp")).toBeNull();
     expect(logs).toEqual([
-      "the ingest lock file could not be written (SQLITE_CANTOPEN); moved it to ingest.lock.db.damaged and made a new one",
+      "the ingest lock's ingest.lock.db could not be used (SQLITE_CANTOPEN); moved aside to *.damaged",
     ]);
     chmodSync(`${path}.damaged`, 0o600);
   });
+
+  // Critique m2: a journal SQLite can't open blocked every try, for good.
+  test.skipIf(!posix || asRoot)(
+    "a journal that can't be read, or a directory in a sidecar's or the file's place, is moved aside",
+    () => {
+      for (const [what, damage, moved] of [
+        [
+          "an unreadable journal",
+          (p: string) => chmodSync(writeAt(`${p}-journal`), 0o000),
+          "-journal",
+        ],
+        ["a journal that is a directory", (p: string) => mkdirSync(`${p}-journal`), "-journal"],
+        ["a lock file that is a directory", (p: string) => mkdirSync(p), ""],
+      ] as const) {
+        const path = lockFile();
+        mkdirSync(join(path, ".."), { recursive: true });
+        if (moved !== "") writeFileSync(path, "");
+        damage(path);
+        const logs: string[] = [];
+        const lock = WriterLock.tryAcquire({ path, owner: "tui", log: (m) => logs.push(m) });
+        expect({ what, held: lock?.held }).toEqual({ what, held: true });
+        if (lock !== null) held.push(lock);
+        expect(existsSync(`${path}${moved}.damaged`)).toBe(true);
+        expect(take(path, "mcp")).toBeNull();
+        expect(logs).toHaveLength(1);
+        expect(logs[0]).toContain(`ingest.lock.db${moved} could not be used`);
+        if (moved === "-journal" && statSync(`${path}-journal.damaged`).isFile()) {
+          chmodSync(`${path}-journal.damaged`, 0o600);
+        }
+      }
+    },
+  );
+
+  test.skipIf(!posix || asRoot)(
+    "a broken journal in a directory that can't be written is an error naming its code",
+    () => {
+      const path = lockFile();
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, "");
+      mkdirSync(`${path}-journal`);
+      chmodSync(join(path, ".."), 0o500);
+      try {
+        let caught: unknown = null;
+        try {
+          WriterLock.tryAcquire({ path, owner: "tui" });
+        } catch (error) {
+          caught = error;
+        }
+        expect(lockFailure(caught)).toMatch(/^cannot take the ingest lock \(SQLITE_[A-Z_]+\)$/);
+      } finally {
+        chmodSync(join(path, ".."), 0o700);
+      }
+      // Once it can be fixed, it is: the next try takes the lock.
+      expect(take(path)?.held).toBe(true);
+    },
+  );
 
   test.skipIf(!posix || asRoot)("one that can't be fixed is still an error", () => {
     const path = damaged("");

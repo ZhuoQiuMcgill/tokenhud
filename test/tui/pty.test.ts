@@ -2,6 +2,7 @@
 // `script`), driven by keystrokes, its screen read back through a small VT emulator.
 // Linux only; skipped where `script` isn't available.
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI, makeHome, type PtyRun, ptyAvailable, runInPty } from "./pty/driver.ts";
 
@@ -61,6 +62,44 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       home.remove();
     }
   }, 60_000);
+
+  // Critique m2: a lock journal that can't be used kept the TUI read-only for good. Here it
+  // can't be moved aside either (the config dir is read-only): read-only with the reason,
+  // logged once, retried, and live as soon as it can be fixed.
+  test.skipIf(process.getuid?.() === 0)(
+    "a lock journal that can't be fixed: read-only with the reason, then live once it can be",
+    async () => {
+      const home = makeHome();
+      const lock = join(home.configDir, "ingest.lock.db");
+      writeFileSync(lock, "");
+      mkdirSync(`${lock}-journal`);
+      mkdirSync(join(home.configDir, "logs"));
+      chmodSync(home.configDir, 0o555);
+      const run = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env, 140, 30);
+      try {
+        await run.waitFor(
+          (s) =>
+            s.includes("read-only: cannot take the ingest lock (SQLITE_") && s.includes("● stale"),
+          "the read-only notice",
+        );
+        // Ticks every 2 s keep trying; once the journal can be moved aside, the lock is taken.
+        await Bun.sleep(4500);
+        chmodSync(home.configDir, 0o755);
+        await run.waitFor((s) => LIVE(s) && !s.includes("read-only"), "the lock taken");
+        run.send("q");
+        await run.exited;
+        expect(exitCode(run)).toBe(0);
+        const log = readFileSync(join(home.configDir, "logs", "tokenhud.log"), "utf8");
+        expect(log.split("cannot take the ingest lock").length - 1).toBe(1);
+        expect(log).toContain("ingest.lock.db-journal could not be used");
+      } finally {
+        chmodSync(home.configDir, 0o755);
+        run.kill();
+        home.remove();
+      }
+    },
+    60_000,
+  );
 
   test("the default account renamed in settings keeps its new label after a restart", async () => {
     const home = makeHome();

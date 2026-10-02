@@ -6,7 +6,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { type Config, saveConfig } from "../config.ts";
 import { type IngestMessage, type IngestWorker, startIngestWorker } from "../ingest/client.ts";
-import { HEARTBEAT_MS, WriterLock } from "../lock.ts";
+import { HEARTBEAT_MS, lockFailure, WriterLock } from "../lock.ts";
 import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
 import { errorLine, fileLog } from "./log.ts";
@@ -94,7 +94,16 @@ export async function runApp(boot: Boot): Promise<number> {
     },
     quit: () => void shutdown(0),
   });
-  if (boot.lockError !== null) controller.setReadOnlyReason(`read-only: ${boot.lockError}`);
+  // Why the lock can't be taken (an unwritable config dir, a lock file or journal that can't
+  // be repaired): shown while read-only, logged once per reason, retried on every tick.
+  let lockProblem: string | null = null;
+  const lockFailed = (problem: string | null) => {
+    if (problem === lockProblem) return;
+    lockProblem = problem;
+    if (problem !== null) log.write("warn", `${problem}; read-only, retrying`);
+    controller.setReadOnlyReason(problem === null ? null : `read-only: ${problem}; retrying`);
+  };
+  if (boot.lockError !== null) lockFailed(boot.lockError);
 
   function onIngest(own: number, message: IngestMessage): void {
     // A replaced Worker's changes still count; its status no longer does.
@@ -187,9 +196,11 @@ export async function runApp(boot: Boot): Promise<number> {
           owner: "tui",
           log: (message) => log.write("warn", message),
         });
+        // Taken, or held by another process: either way the problem is gone.
+        lockFailed(null);
         if (taken !== null) promote(taken);
-      } catch {
-        // still not writable; stay read-only
+      } catch (error) {
+        lockFailed(lockFailure(error));
       }
     }
     vm.send({ type: "tick" });
