@@ -28,7 +28,9 @@ import {
   type ManualLinks,
   mergeGroups,
   NO_LINKS,
+  newInstance,
   pairKey,
+  provenDifferent,
   resolveGroups,
 } from "./groups.ts";
 import { type Lease, tryLease } from "./lease.ts";
@@ -522,11 +524,12 @@ export class LimitsService {
 
   /**
    * The members to ask, in order, when the unit is due; none when it isn't. The first
-   * signed-in member decides whether the unit is due, against the unit's freshest capture;
-   * a group is due at once, too, when a member's credential file changed. The others stand
-   * in when it fails for a reason of its own, unless their back-off or Claude's 30 s gap
-   * holds them back. A unit with no member signed in re-checks the first one due for it
-   * (daily, or when its credential file changes).
+   * signed-in member decides whether the unit is due, against the unit's freshest capture.
+   * A group is due at once, too, when a member's credential file changed and that member
+   * can be asked now (`#askable`): its one immediate verification. The others stand in
+   * when the first fails for a reason of its own, unless their back-off or Claude's 30 s
+   * gap holds them back. A unit with no member signed in re-checks the first one due for
+   * it (daily, or when its credential file changes).
    */
   #plan(unit: Unit, reads: ReadonlyMap<string, Read>, mode: Mode): Root[] {
     const read = (root: Root) => reads.get(root.identity) as Read;
@@ -542,12 +545,28 @@ export class LimitsService {
     if (this.#heldUntil(unit, status) !== null) return [];
     const changed =
       unit.members.length > 1 &&
-      unit.members.some((root) => this.#credentialsChanged(root, read(root).status));
-    const due = changed
-      ? this.#mayStandIn(first, read(first).status)
-      : this.#due(first, read(first).status, current, mode);
+      unit.members.some(
+        (root) =>
+          this.#credentialsChanged(root, read(root).status) &&
+          this.#askable(root, read(root).status),
+      );
+    const due =
+      (changed && this.#mayStandIn(first, read(first).status)) ||
+      this.#due(first, read(first).status, current, mode);
     if (!due) return [];
     return [first, ...others.filter((root) => this.#mayStandIn(root, read(root).status))];
+  }
+
+  /**
+   * Whether a member may be asked now, out of schedule: signed in, outside its back-off
+   * and Claude's 30 s gap; or not signed in here, with its re-check due.
+   */
+  #askable(root: Root, status: AccountStatus): boolean {
+    if (root.historyOnly) return false;
+    if (status.history_only === "detected") {
+      return this.#due(root, status, null, { kind: "scheduled" });
+    }
+    return this.#fetchable(root, status) && this.#mayStandIn(root, status);
   }
 
   /** Whether a member may be asked now, out of schedule: its back-off and Claude's 30 s gap. */
@@ -563,21 +582,27 @@ export class LimitsService {
 
   /**
    * The group's other members to fetch right after `by` fetched it, under the group's
-   * lease, so that each pair compared is seconds apart: each one every 30 minutes, every
-   * one when a member's credential file changed, and a member not signed in here when its
-   * own re-check is due (daily, or on a credential change).
+   * lease, so that each pair compared is seconds apart, each when it can be asked now
+   * (`#askable`): every 30 minutes; at once when its credential file changed (or `by`'s,
+   * which puts every pair in question); next round after an inconclusive pair; and, when
+   * not signed in here, when its re-check is due (daily, or on a credential change).
+   * `changed`: the members whose credential file changed before this run.
    */
-  #verifiers(unit: Unit, by: Root, reads: ReadonlyMap<string, Read>, changed: boolean): Root[] {
+  #verifiers(
+    unit: Unit,
+    by: Root,
+    reads: ReadonlyMap<string, Read>,
+    changed: ReadonlySet<string>,
+  ): Root[] {
     const now = this.#now();
+    const pairs = loadLimitsCache(this.#o.limitsPath).pairs ?? {};
     return unit.members.filter((root) => {
-      if (root === by || root.historyOnly) return false;
       const { status } = reads.get(root.identity) as Read;
-      if (status.history_only === "detected") {
-        return this.#due(root, status, null, { kind: "scheduled" });
-      }
-      if (!this.#fetchable(root, status) || !this.#mayStandIn(root, status)) return false;
-      const last = status.last_attempt_at ?? Number.NEGATIVE_INFINITY;
-      return changed || now - last >= this.#timing.verifyMs;
+      if (root === by || !this.#askable(root, status)) return false;
+      if (status.history_only === "detected") return true;
+      if (changed.has(by.identity) || changed.has(root.identity)) return true;
+      if ((pairs[pairKey(by.identity, root.identity)]?.inconclusive ?? 0) > 0) return true;
+      return now - (status.last_attempt_at ?? Number.NEGATIVE_INFINITY) >= this.#timing.verifyMs;
     });
   }
 
@@ -603,14 +628,18 @@ export class LimitsService {
   async #run(unit: Unit, mode: Mode, round: Round): Promise<RefreshOutcome[]> {
     let reads = this.#readUnit(unit);
     let fetched = false;
-    let by: { root: Root; capture: Capture } | null = null;
+    let by: { root: Root; capture: Capture; changed: boolean } | null = null;
     if (!this.#stopped && this.#plan(unit, reads, mode).length > 0) {
       const lease = this.#lease(unit.key);
       if (lease !== null) {
         try {
           reads = this.#readUnit(unit);
-          const credsChanged = unit.members.some((root) =>
-            this.#credentialsChanged(root, (reads.get(root.identity) as Read).status),
+          const changed = new Set(
+            unit.members
+              .filter((root) =>
+                this.#credentialsChanged(root, (reads.get(root.identity) as Read).status),
+              )
+              .map((root) => root.identity),
           );
           for (const root of this.#plan(unit, reads, mode)) {
             fetched = true;
@@ -620,14 +649,14 @@ export class LimitsService {
               return unit.members.map((m) => ({ account: m.identity, fetched, error: null }));
             }
             if (attempt.capture !== null) {
-              by = { root, capture: attempt.capture };
+              by = { root, capture: attempt.capture, changed: changed.has(root.identity) };
               break;
             }
             // Another member would fail the same way (a 429, the network): stop here.
             if (failover(attempt.error) === "hold") break;
           }
           if (by !== null) {
-            for (const root of this.#verifiers(unit, by.root, reads, credsChanged)) {
+            for (const root of this.#verifiers(unit, by.root, reads, changed)) {
               if (this.#stopped) break;
               await this.#ask(root, reads.get(root.identity) as Read);
             }
@@ -663,34 +692,48 @@ export class LimitsService {
         unit.members.filter((root) => root !== owner),
       );
     }
-    if (by !== null && !this.#stopped) await this.#partners(by.root, by.capture, unit, round);
+    if (by !== null && !this.#stopped) await this.#partners(by, unit, round);
     const error = groupError(unit.members, (id) => reads.get(id)?.status, capture);
     return unit.members.map((root) => ({ account: root.identity, fetched, error }));
   }
 
   /**
-   * Fetches, right after `by` gave `capture`, each root that may be on its account and
-   * whose own capture is too far from it to compare utilisation: a root of the same
-   * provider on its own (in no group), not kept apart from `by` in config, signed in, whose
-   * last capture's resets agree with `capture`. Each is fetched under its own lease, within
-   * its back-off and Claude's 30 s gap; a successful fetch also moves its schedule to this
-   * one's, so the next round's pair is seconds apart without help.
+   * Fetches, right after `by.root` gave `by.capture`, each root that may be on its account
+   * and whose own capture is too far from it to compare utilisation: a root of the same
+   * provider on its own (in no group), not kept apart in config, signed in, whose last
+   * capture's resets agree with `by.capture`. A root proven different (two disagreeing
+   * pairs) is left alone until either root shows a new window instance or either's
+   * credential file changed (`by.changed`: before its fetch). Each is fetched under its own
+   * lease, within its back-off and Claude's 30 s gap; a successful fetch also moves its
+   * schedule to this one's, so the next round's pair is seconds apart without help.
    */
-  async #partners(by: Root, capture: Capture, unit: Unit, round: Round): Promise<void> {
+  async #partners(
+    by: { root: Root; capture: Capture; changed: boolean },
+    unit: Unit,
+    round: Round,
+  ): Promise<void> {
+    const { capture } = by;
+    const pairs = loadLimitsCache(this.#o.limitsPath).pairs ?? {};
     for (const other of round.units) {
       const root = other.members[0] as Root;
       if (other.members.length !== 1 || other.key === unit.key) continue;
-      if (
-        root.provider !== by.provider ||
-        round.separate.has(pairKey(by.identity, root.identity))
-      ) {
-        continue;
-      }
+      const key = pairKey(by.root.identity, root.identity);
+      if (root.provider !== by.root.provider || round.separate.has(key)) continue;
       const read = this.#read(root);
       if (read.current === null || !this.#fetchable(root, read.status)) continue;
       const c = compareCaptures(capture, read.current);
       if (c.shared === 0 || !c.resetsAgree || c.close || !this.#mayStandIn(root, read.status)) {
         continue;
+      }
+      const state = pairs[key];
+      if (provenDifferent(state)) {
+        const [mine, theirs] = by.root.identity < root.identity ? [0, 1] : [1, 0];
+        const fresh =
+          newInstance(state?.resets[mine] ?? {}, capture) ||
+          newInstance(state?.resets[theirs] ?? {}, read.current) ||
+          by.changed ||
+          this.#credentialsChanged(root, read.status);
+        if (!fresh) continue;
       }
       const lease = this.#lease(other.key);
       if (lease === null) continue;

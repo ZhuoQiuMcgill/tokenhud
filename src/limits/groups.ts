@@ -20,15 +20,21 @@ import { SAME_INSTANCE_MS } from "./events.ts";
  * - **Utilisation** is compared only on captures at most 60 s apart: an account in use
  *   moves in between. Further apart, the resets can only veto.
  * - **Agree:** the resets agree and, close enough to judge, the utilisations are equal.
- *   **Disagree:** a reset differs, or close captures differ in utilisation.
- * - **Link:** two agreeing pairs in a row, with a shared window's utilisation changed
- *   between them (equally on both, since both agree) and one window above 0 %. Idle
- *   accounts prove nothing: two different idle accounts can report the same whole-hour
- *   resets at 0 %.
+ *   **Disagree:** a reset differs (at any distance).
+ * - **Inconclusive:** close captures whose resets agree but whose utilisations differ: use
+ *   can tick between two requests seconds apart. Alone it decides nothing (a link stays
+ *   whole, and the member is checked again next round); two in a row count as one
+ *   disagreeing pair.
+ * - **Link:** two agreeing pairs in a row, at most two fetch rounds apart (11 minutes), with
+ *   a shared window's utilisation changed between them (equally on both, since both
+ *   agree) and one window above 0 %. Idle accounts prove nothing: two different idle
+ *   accounts can report the same whole-hour resets at 0 %. Nor does the same change seen
+ *   hours apart: two accounts can each move by 1 % in a day.
  * - **Unlink:** a disagreeing pair suspends a link (the roots show apart at once); a second
- *   one in a row unlinks, an agreeing one restores it. The limits service keeps pairs
- *   fresh: it fetches a candidate partner back to back, and re-checks every other member
- *   of a group every 30 minutes (src/limits/service.ts).
+ *   one in a row unlinks, an agreeing one restores it. Two roots that disagreed twice in a
+ *   row are proven different. The limits service keeps pairs fresh: it fetches a candidate
+ *   partner back to back (not one proven different, until a window or credential changes),
+ *   and re-checks every other member of a group every 30 minutes (src/limits/service.ts).
  *
  * **Manual links** come from config: `same_account` links roots, `separate_accounts` keeps
  * two roots apart. Manual entries win over auto-detection, and a separate pair wins over a
@@ -50,6 +56,11 @@ export const CLOSE_S = 60;
 export const RESET_TOLERANCE_MS = 2000;
 /** Consecutive pairs that agree (or disagree) before two roots are linked (or unlinked). */
 export const CONFIRM_PAIRS = 2;
+/**
+ * The longest a link's confirming pair may follow the pair before it (seconds): two fetch
+ * rounds of 5 minutes, with a minute to spare. Later, the streak starts over.
+ */
+export const CONFIRM_SPAN_S = 11 * 60;
 
 export type GroupSource = "auto" | "manual";
 
@@ -84,12 +95,27 @@ export interface PairState {
   agree: number;
   /** Consecutive pairs that disagreed; 0 after one that agreed. */
   disagree: number;
+  /**
+   * Consecutive inconclusive pairs (resets agree, use differs): 0 or 1, as a second one
+   * counts as a disagreeing pair.
+   */
+  inconclusive: number;
   /** Linked; suspended while `disagree` is 1. */
   linked: boolean;
   /** When the link was confirmed (epoch ms); null while not linked. */
   detected_at: number | null;
   /** `captured_at` (epoch s) of the two captures compared last, in key order. */
   last: [number, number];
+  /**
+   * `captured_at` (epoch s, the first root's) of the last agreeing pair; null after a
+   * disagreeing one.
+   */
+  agreed_at: number | null;
+  /**
+   * Each root's window resets (epoch ms, by kind) in the pair decided last, in key order:
+   * a later capture with a reset elsewhere has started a new window instance.
+   */
+  resets: [Record<string, number>, Record<string, number>];
   /**
    * The windows of the last agreeing pair, by kind, to see whether the next one moved;
    * null after a disagreeing pair (and in a file from before co-movement, which therefore
@@ -208,38 +234,77 @@ export function decidePair(
   const c = compareCaptures(a, b);
   if (c.shared === 0 || (c.resetsAgree && !c.close)) return prior;
   const last: [number, number] = [a.captured_at, b.captured_at];
-  const was = prior ?? {
+  const resets: [Record<string, number>, Record<string, number>] = [resetsOf(a), resetsOf(b)];
+  const was: PairState = prior ?? {
     agree: 0,
     disagree: 0,
+    inconclusive: 0,
     linked: false,
     detected_at: null,
     last,
+    agreed_at: null,
+    resets,
     windows: null,
   };
   if (c.resetsAgree && c.sameUse) {
+    // The streak counts only when its last pair was recent: the same change seen hours
+    // apart is no evidence.
+    const recent = was.agreed_at !== null && a.captured_at - was.agreed_at <= CONFIRM_SPAN_S;
+    const streak = recent ? was.agree : 0;
     const used = Object.values(c.windows).some((w) => w.u > 0);
     const confirmed =
-      was.agree >= CONFIRM_PAIRS - 1 && was.windows !== null && moved(was.windows, c.windows);
-    const linked = was.linked || (confirmed && used);
+      streak >= CONFIRM_PAIRS - 1 && was.windows !== null && moved(was.windows, c.windows) && used;
+    const linked = was.linked || confirmed;
     return {
-      agree: was.agree + 1,
+      agree: streak + 1,
       disagree: 0,
+      inconclusive: 0,
       linked,
       detected_at: linked ? (was.detected_at ?? now) : null,
       last,
+      agreed_at: a.captured_at,
+      resets,
       windows: c.windows,
     };
+  }
+  if (c.resetsAgree && was.inconclusive === 0) {
+    // Use differs while every reset agrees: maybe a tick between the two requests.
+    return { ...was, inconclusive: 1, last, resets };
   }
   const disagree = was.disagree + 1;
   const linked = was.linked && disagree < CONFIRM_PAIRS;
   return {
     agree: 0,
     disagree,
+    inconclusive: 0,
     linked,
     detected_at: linked ? was.detected_at : null,
     last,
+    agreed_at: null,
+    resets,
     windows: null,
   };
+}
+
+/** A capture's window resets (epoch ms), by kind. */
+function resetsOf(capture: Capture): Record<string, number> {
+  return Object.fromEntries(orderedBuckets(capture).map(([kind, b]) => [kind, ms(b.resets_at)]));
+}
+
+/** Two roots disagreed twice in a row, and are not linked: two accounts. */
+export function provenDifferent(state: PairState | undefined): boolean {
+  return state !== undefined && !state.linked && state.disagree >= CONFIRM_PAIRS;
+}
+
+/**
+ * Whether `capture` shows a window instance that `before` (the root's resets in a pair
+ * decided earlier) didn't: a window it lacked, or a reset more than 2 s from the one seen.
+ */
+export function newInstance(before: Readonly<Record<string, number>>, capture: Capture): boolean {
+  return Object.entries(resetsOf(capture)).some(([kind, r]) => {
+    const was = before[kind];
+    return was === undefined || Math.abs(was - r) > RESET_TOLERANCE_MS;
+  });
 }
 
 /** Whether a pair's state links its roots now: linked, and not suspended by a mismatch. */

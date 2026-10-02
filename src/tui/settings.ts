@@ -295,22 +295,35 @@ export function linkCandidates(root: RootInfo, roots: readonly RootInfo[]): Root
 const pairOf = (entry: readonly string[], a: string, b: string) =>
   entry.includes(a) && entry.includes(b);
 
+/** A root and the roots already on its account. */
+const accountOf = (root: RootInfo) => [root.identity, ...(root.group?.others ?? [])];
+
+/**
+ * The `separate_accounts` pairs that keep `a`'s account and `b`'s apart: one root of each.
+ * Linking the two drops them, since the two accounts are then one, roots and all.
+ */
+export function keptApart(config: Config, a: RootInfo, b: RootInfo): string[][] {
+  const mine = accountOf(a);
+  const theirs = accountOf(b);
+  return config.separate_accounts.filter((p) =>
+    mine.some((x) => theirs.some((y) => pairOf(p, x, y))),
+  );
+}
+
 /**
  * `a` on the same subscription account as `b`: a `same_account` link (joining the entries
- * that already hold either), and no `separate_accounts` pair left between `a` and `b` or
- * any root already on `b`'s account, which would keep `a` out of it.
+ * that already hold either), and no `separate_accounts` pair left between a root of `a`'s
+ * account and one of `b`'s, which would keep them apart whichever way they are linked.
  */
 export function linkRoots(config: Config, a: RootInfo, b: RootInfo): Config {
   const ids = [a.identity, b.identity];
   const holding = config.same_account.filter((e) => ids.some((id) => e.includes(id)));
   const merged = [...new Set([...holding.flat(), ...ids])];
-  const target = [b.identity, ...(b.group?.others ?? [])];
+  const apart = keptApart(config, a, b);
   return {
     ...config,
     same_account: [...config.same_account.filter((e) => !holding.includes(e)), merged],
-    separate_accounts: config.separate_accounts.filter(
-      (p) => !target.some((id) => pairOf(p, a.identity, id)),
-    ),
+    separate_accounts: config.separate_accounts.filter((p) => !apart.includes(p)),
   };
 }
 
@@ -502,7 +515,19 @@ export function settingsKey(
       if (key.name !== "return" && key.name !== "enter") return { state };
       const other = candidates[state.choice];
       if (other === undefined) return { state: toList };
-      return { state: toList, config: linkRoots(config, root, other), accountsChanged: true };
+      // Say which pairs kept apart in config the link undoes: it is never a silent change.
+      const labelOf = new Map(roots.map((r) => [r.identity, r.label]));
+      const undone = keptApart(config, root, other).map((p) =>
+        p.map((id) => labelOf.get(id) ?? "a root not found here").join(" | "),
+      );
+      return {
+        state: {
+          ...toList,
+          message: undone.length === 0 ? null : `no longer kept apart: ${undone.join(", ")}`,
+        },
+        config: linkRoots(config, root, other),
+        accountsChanged: true,
+      };
     }
     case "rename": {
       const root = roots[state.pick];

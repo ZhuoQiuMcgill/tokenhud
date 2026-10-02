@@ -17,6 +17,7 @@ import {
   manualLinks,
   NO_LINKS,
   pairKey,
+  provenDifferent,
 } from "../../src/limits/groups.ts";
 import { Limits } from "../../src/limits/index.ts";
 import { tryLease } from "../../src/limits/lease.ts";
@@ -172,7 +173,7 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     expect(own?.windows.map((x) => x.utilization)).toEqual([0.03, 0.11]);
     // Next round both are fetched on their own: the second mismatch unlinks.
     await h.rounds(40);
-    expect(h.file().pairs?.[key]).toMatchObject({ linked: false, disagree: 2 });
+    expect(provenDifferent(h.file().pairs?.[key])).toBe(true);
     expect(h.file().groups?.[w.identity]).toBeUndefined();
     expect(h.calls.slice(-4)).toEqual([p_, w_, p_, w_]);
   });
@@ -404,6 +405,114 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
       "codex-win-like",
       "codex-like",
     ]);
+  });
+});
+
+describe("requests per hour stay bounded", () => {
+  /** An hour of scheduled rounds every 5 minutes and an MCP refresh of `asked` every 10 s. */
+  async function hour(h: ReturnType<typeof harness>, asked: string, each?: (t: number) => void) {
+    for (let t = 0; t < 3600; t += 10) {
+      h.clock.now = T0 + t * S;
+      each?.(t);
+      if (t % 300 === 0) await h.service.refreshDue();
+      await h.service.refresh(asked, 60);
+    }
+  }
+  const count = (calls: readonly string[], label: string) =>
+    calls.filter((c) => c === label).length;
+
+  test("a use tick between the two verify fetches doesn't split the card; it is checked next round", async () => {
+    const [p, w] = pair() as [Root, Root];
+    const h = harness([p, w]);
+    await h.rounds(0, 5, 10, 15, 20, 25, 30);
+    // At 35 win-like is verified, and its use has ticked 1 % past personal-like's.
+    h.state.fetch = async (root) => {
+      const c = account(h.clock.now, 0);
+      if (root === w) (c.rate_limits.session as { used_percentage: number }).used_percentage += 1;
+      return c;
+    };
+    await h.rounds(35);
+    const key = pairKey(p.identity, w.identity);
+    expect(h.file().pairs?.[key]).toMatchObject({ inconclusive: 1, disagree: 0, linked: true });
+    expect(h.limits().getLimits(w.identity)?.group).not.toBeNull();
+    // Next round it is asked again, not in 30 minutes; now they agree.
+    h.state.fetch = async () => account(h.clock.now, 0);
+    await h.rounds(40);
+    expect(h.calls.slice(-4)).toEqual([p_, w_, p_, w_]);
+    expect(h.file().pairs?.[key]).toMatchObject({ inconclusive: 0, disagree: 0, linked: true });
+  });
+
+  test("a pair proven different gets no partner fetches, until a window instance changes", async () => {
+    // The critic's case: two accounts sharing only a weekly reset hour, at different use,
+    // with personal-like asked by an MCP server every 10 s.
+    const [p, w] = pair() as [Root, Root];
+    const h = harness([p, w]);
+    let fiveHour = FIVE_HOUR;
+    let start = T0;
+    /** win-like's fetches out of the 5-minute rounds: the partner fetches (s into the hour). */
+    let partnered: number[] = [];
+    h.state.fetch = async (root) => {
+      if (root === p) {
+        return capture("claude", h.clock.now / 1000, {
+          session: { pct: 30, resets: fiveHour, label: "5-HOUR" },
+          weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
+        });
+      }
+      const t = (h.clock.now - start) / S;
+      if (t % 300 !== 0) partnered.push(t);
+      return capture("claude", h.clock.now / 1000, {
+        weekly_all: { pct: 12, resets: WEEK + 0.3, label: "WEEKLY" },
+      });
+    };
+    const hour = async (newWindowAt = -1) => {
+      start = h.clock.now;
+      partnered = [];
+      for (let t = 0; t < 3600; t += 10) {
+        h.clock.now = start + t * S;
+        if (t === newWindowAt) fiveHour += 5 * 3600;
+        if (t % 300 === 0) await h.service.refreshDue();
+        await h.service.refresh(p_, 60);
+      }
+      h.clock.now = start + 3600 * S;
+    };
+    await hour();
+    expect(provenDifferent(h.file().pairs?.[pairKey(p.identity, w.identity)])).toBe(true);
+    // A few partner fetches in the first minutes proved the pair (two inconclusive pairs
+    // count as one mismatch); none after. Before, every MCP fetch was mirrored: 52 an hour.
+    expect(count(h.calls, p_)).toBe(52);
+    expect(partnered.length).toBeLessThanOrEqual(3);
+    expect(Math.max(...partnered)).toBeLessThan(600);
+    // A new 5-hour instance for personal-like between two rounds: one partner fetch, with
+    // the first fetch that saw it (personal-like's next on-demand one), then none.
+    await hour(120);
+    expect(partnered).toHaveLength(1);
+    expect(partnered[0]).toBeGreaterThan(120);
+    expect(partnered[0]).toBeLessThan(300);
+  });
+
+  test("a credential change triggers one verify, then the member's back-off holds", async () => {
+    // The critic's case: win-like fails (401) while its credential file changes every
+    // 3 minutes, and an MCP server asks personal-like every 10 s.
+    const run = async (changing: boolean) => {
+      const [p, w] = pair() as [Root, Root];
+      const h = harness([p, w]);
+      h.state.links = { same: [[p.identity, w.identity]], separate: [] };
+      h.state.fetch = async (root) => {
+        if (root === w) throw new LimitFetchError("Claude usage fetch failed: HTTP 401");
+        return account(h.clock.now, 0);
+      };
+      await hour(h, p_, (t) => {
+        if (changing && t % 180 === 0) h.state.mtimes.set(w_, t + 1);
+      });
+      return { p: count(h.calls, p_), w: count(h.calls, w_) };
+    };
+    const steady = await run(false);
+    const changing = await run(true);
+    // win-like's back-off (30 s, 1, 2, 4 … 30 min) bounds its attempts either way; each
+    // change makes the group due at most once more. Before, personal-like went to 107.
+    expect(steady.p).toBe(52);
+    expect(changing.w).toBeLessThanOrEqual(10);
+    expect(changing.p).toBeLessThanOrEqual(steady.p + changing.w);
   });
 });
 

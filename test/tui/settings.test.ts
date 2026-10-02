@@ -366,6 +366,64 @@ describe("shared accounts (T16): same account as…, unlink", () => {
     expect(after.separate_accounts).toEqual([["id-env", "z"]]);
   });
 
+  test("linking two accounts works both ways, and says which separate pairs it undid", () => {
+    // The critic's case: work unlinked from {personal, work, company}; then personal (still
+    // on company's account) picks work. Before, only work picking personal worked.
+    const config: Config = {
+      ...defaultConfig(),
+      same_account: [["id-personal", "id-env"]],
+      separate_accounts: [
+        ["id-work", "id-personal"],
+        ["id-work", "id-env"],
+      ],
+    };
+    const onAccount = (r: RootInfo, others: string[]): RootInfo => ({
+      ...r,
+      group: { others, source: "manual" },
+    });
+    const roots = ROOTS.map((r) =>
+      r.identity === "id-personal"
+        ? onAccount(r, ["id-env"])
+        : r.identity === "id-env"
+          ? onAccount(r, ["id-personal"])
+          : r,
+    );
+    const [personal, work] = roots as [RootInfo, RootInfo];
+    for (const [a, b] of [
+      [personal, work],
+      [work, personal],
+    ] as const) {
+      const after = linkRoots(config, a, b);
+      expect(after.separate_accounts).toEqual([]);
+      expect(after.same_account).toHaveLength(1);
+      expect([...(after.same_account[0] as string[])].sort()).toEqual([
+        "id-env",
+        "id-personal",
+        "id-work",
+      ]);
+    }
+    // Through the keys: personal (first) picks work (its only candidate), with a message.
+    let state: SettingsState | null = initialSettings();
+    let cfg = config;
+    for (const name of ["end", "return", "a", "return"]) {
+      const r = settingsKey(
+        state as SettingsState,
+        { name, sequence: name.length === 1 ? name : "" },
+        {
+          ...input(cfg),
+          roots,
+        },
+      );
+      state = r.state;
+      if (r.config) cfg = r.config;
+    }
+    expect(cfg.separate_accounts).toEqual([]);
+    expect(state).toMatchObject({
+      screen: "accounts",
+      message: "no longer kept apart: work | personal, work | company",
+    });
+  });
+
   test("u unlinks: out of same_account, and kept apart from every root it shared with", () => {
     const config: Config = {
       ...defaultConfig(),

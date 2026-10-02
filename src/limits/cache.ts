@@ -118,8 +118,33 @@ function parsePair(value: unknown): PairState | null {
     const n = numberOrNull(x);
     return n !== null && n >= 0 ? Math.trunc(n) : 0;
   };
+  const numbers = (x: unknown): Record<string, number> => {
+    const out: Record<string, number> = {};
+    if (isRecord(x)) {
+      for (const [kind, raw] of Object.entries(x)) {
+        const n = numberOrNull(raw);
+        if (n !== null) out[kind] = n;
+      }
+    }
+    return out;
+  };
+  const sides = Array.isArray(value.resets) ? value.resets : [];
+  const resets: [Record<string, number>, Record<string, number>] = [
+    numbers(sides[0]),
+    numbers(sides[1]),
+  ];
   if (value.windows === undefined) {
-    return { agree: 0, disagree: 0, linked: false, detected_at: null, last: [a, b], windows: null };
+    return {
+      agree: 0,
+      disagree: 0,
+      inconclusive: 0,
+      linked: false,
+      detected_at: null,
+      last: [a, b],
+      agreed_at: null,
+      resets,
+      windows: null,
+    };
   }
   let windows: Record<string, PairWindow> | null = null;
   if (isRecord(value.windows)) {
@@ -133,9 +158,12 @@ function parsePair(value: unknown): PairState | null {
   return {
     agree: count(value.agree),
     disagree: count(value.disagree),
+    inconclusive: Math.min(1, count(value.inconclusive)),
     linked: value.linked,
     detected_at: value.linked ? numberOrNull(value.detected_at) : null,
     last: [a, b],
+    agreed_at: numberOrNull(value.agreed_at),
+    resets,
     windows,
   };
 }

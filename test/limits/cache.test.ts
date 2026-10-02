@@ -121,7 +121,17 @@ describe("limits.json: shared accounts (T16)", () => {
     );
     const file = loadLimitsCache(path);
     expect(file.pairs).toEqual({
-      "a|b": { agree: 2, disagree: 0, linked: true, detected_at: 5, last: [1, 2], windows },
+      "a|b": {
+        agree: 2,
+        disagree: 0,
+        inconclusive: 0,
+        linked: true,
+        detected_at: 5,
+        last: [1, 2],
+        agreed_at: null,
+        resets: [{}, {}],
+        windows,
+      },
     });
     expect(file.groups).toEqual({ [ID_A]: { id: "1".repeat(32), detected_at: 7, source: "auto" } });
   });
@@ -132,9 +142,12 @@ describe("limits.json: shared accounts (T16)", () => {
     expect(loadLimitsCache(path).pairs?.["a|b"]).toEqual({
       agree: 0,
       disagree: 0,
+      inconclusive: 0,
       linked: false,
       detected_at: null,
       last: [1, 2],
+      agreed_at: null,
+      resets: [{}, {}],
       windows: null,
     });
   });

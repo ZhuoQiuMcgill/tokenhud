@@ -309,11 +309,12 @@ Accounts view stay per directory; there, each says which directories it shares i
 with, and the account's 30-day total.
 
 tokenhud links them by itself when their limits reset at the same times (within 2 s) and
-their use moves together: equal on two pairs of fetches seconds apart, and changed in
-between. An account nobody is using proves nothing, so two directories on an idle account
-show apart until it is used. Once they are linked, the other directory is still fetched
-every 30 minutes, and at once when its credential file changes: if its limits differ, the
-two show apart straight away, and a second difference in a row unlinks them.
+their use moves together: equal on two pairs of fetches seconds apart, at most ten minutes
+apart, and changed in between. An account nobody is using proves nothing, so two
+directories on an idle account show apart until it is used. Once they are linked, the
+other directory is still fetched every 30 minutes, and once more right away when its
+credential file changes. If a reset differs, the two show apart straight away, and a second
+difference in a row unlinks them; a difference in use alone is checked again next round.
 
 In settings under Accounts, `a` links an account to another by hand and `u` unlinks it;
 they are saved as `same_account` and `separate_accounts` in `config.json`, and win over

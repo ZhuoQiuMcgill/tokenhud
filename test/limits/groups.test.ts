@@ -129,6 +129,39 @@ describe("decidePair: resets within 2 s, moving together, twice in a row", () =>
     expect(run(oneAccount(2))).toMatchObject({ agree: 2, linked: true, detected_at: NOW_MS });
   });
 
+  test("the same change seen hours apart doesn't link: the confirming pair must follow within two rounds", () => {
+    // The critic's case: two different accounts on the same weekly reset hour, both at 0 %
+    // at 08:00, both at 1 % at 20:00 (tokenhud not running in between). One also has a
+    // 5-hour window open then, which the other lacks, so it isn't compared.
+    const weekly = (at: number, pct: number, jitter: number, fiveHour: boolean) =>
+      capture("claude", at, {
+        weekly_all: { pct, resets: WEEK + jitter, label: "WEEKLY" },
+        ...(fiveHour ? { session: { pct: 40, resets: at + 3600, label: "5-HOUR" } } : {}),
+      });
+    const later = T + 12 * 3600;
+    const pairs: [Capture, Capture][] = [
+      [weekly(T, 0, 0, false), weekly(T + 2, 0, 0, false)],
+      [weekly(later, 1, 0.4, true), weekly(later + 2, 1, -0.4, false)],
+    ];
+    expect(run(pairs)).toMatchObject({ agree: 1, linked: false, agreed_at: later });
+    // Two rounds and a minute later is too late as well; within two rounds confirms.
+    const [first, second] = oneAccount(2) as [[Capture, Capture], [Capture, Capture]];
+    const delayed = (c: Capture, by: number): Capture => ({
+      ...c,
+      captured_at: c.captured_at + by,
+    });
+    const late = 11 * MIN + 1 - 5 * MIN;
+    expect(run([first, [delayed(second[0], late), delayed(second[1], late)]])).toMatchObject({
+      agree: 1,
+      linked: false,
+    });
+    const inTime = 10 * MIN - 5 * MIN;
+    expect(run([first, [delayed(second[0], inTime), delayed(second[1], inTime)]])).toMatchObject({
+      agree: 2,
+      linked: true,
+    });
+  });
+
   test("one pair only: not yet", () => {
     expect(run(oneAccount(1))).toMatchObject({ agree: 1, linked: false });
   });
@@ -197,6 +230,36 @@ describe("decidePair: resets within 2 s, moving together, twice in a row", () =>
     expect(run([[claude(T, 26, 40), old]])).toBeUndefined();
   });
 
+  test("a use-only difference while resets agree is inconclusive; two in a row are one mismatch", () => {
+    const linked = run(oneAccount(2)) as PairState;
+    // Use ticked between the two requests: resets agree, use differs by 1 %.
+    const tick = (k: number): [Capture, Capture] => [
+      claude(T + k * 5 * MIN, 30, 40),
+      claude(T + k * 5 * MIN + 2, 31, 40),
+    ];
+    const once = run([tick(2)], linked) as PairState;
+    expect(once).toMatchObject({ inconclusive: 1, disagree: 0, linked: true });
+    // The link stays whole: the card doesn't split.
+    expect(linkedNow(once)).toBe(true);
+    // An agreeing pair clears it; a second inconclusive one counts as a mismatch.
+    expect(run(oneAccount(1, 3), once)).toMatchObject({ inconclusive: 0, disagree: 0 });
+    const twice = run([tick(3)], once) as PairState;
+    expect(twice).toMatchObject({ inconclusive: 0, disagree: 1, linked: true });
+    expect(linkedNow(twice)).toBe(false);
+    // A reset beyond 2 s still splits at once.
+    const moved = run(
+      [
+        [
+          claude(T + 10 * MIN, 30, 40),
+          withFiveHour(claude(T + 10 * MIN + 2, 30, 40), FIVE_HOUR + 3),
+        ],
+      ],
+      linked,
+    );
+    expect(moved).toMatchObject({ disagree: 1 });
+    expect(linkedNow(moved)).toBe(false);
+  });
+
   test("one mismatch suspends a link, a match restores it, two in a row unlink", () => {
     const linked = run(oneAccount(2)) as PairState;
     expect(linkedNow(linked)).toBe(true);
@@ -249,9 +312,12 @@ describe("detectPairs", () => {
     const kept: PairState = {
       agree: 2,
       disagree: 0,
+      inconclusive: 0,
       linked: true,
       detected_at: 1,
       last: [1, 2],
+      agreed_at: 1,
+      resets: [{}, {}],
       windows: {},
     };
     const before = { [pairKey(a.identity, "f".repeat(32))]: kept };
@@ -270,9 +336,12 @@ describe("resolveGroups: manual links win over auto-detection", () => {
     [pairKey(a.identity, b.identity)]: {
       agree: 2,
       disagree: 0,
+      inconclusive: 0,
       linked: true,
       detected_at: 5,
       last: [1, 2] as [number, number],
+      agreed_at: 1,
+      resets: [{}, {}] as PairState["resets"],
       windows: {},
       ...over,
     },
