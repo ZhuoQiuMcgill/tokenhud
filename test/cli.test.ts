@@ -53,14 +53,6 @@ const ARCHITECTURE_COMMANDS = [
   "tokenhud doctor",
   "tokenhud update",
 ];
-const AVAILABLE = new Set([
-  "tokenhud",
-  "tokenhud --once",
-  "tokenhud json <query>",
-  "tokenhud mcp",
-  "tokenhud import-cc-usage",
-  "tokenhud doctor",
-]);
 
 describe("--version", () => {
   test("prints the package version and exits 0", () => {
@@ -83,14 +75,11 @@ describe("--help", () => {
     expect(lines[0]).toBe(`tokenhud ${version}`);
   });
 
-  test.each(ARCHITECTURE_COMMANDS)("lists '%s' with a summary, marked if not available", (cmd) => {
+  test.each(ARCHITECTURE_COMMANDS)("lists '%s' with a summary", (cmd) => {
     // Two spaces end the invocation column, so "tokenhud" doesn't match "tokenhud mcp".
     const line = lines.find((l) => l.trimStart().startsWith(`${cmd}  `));
     expect(line).toBeDefined();
-    const summary = line?.trimStart().slice(cmd.length).replace("(not yet available)", "").trim();
-    expect(summary).not.toBe("");
-    if (AVAILABLE.has(cmd)) expect(line).not.toContain("(not yet available)");
-    else expect(line).toEndWith("(not yet available)");
+    expect(line?.trimStart().slice(cmd.length).trim()).not.toBe("");
   });
 
   test.each(["--width N", "-h, --help", "-v, --version"])(
@@ -110,11 +99,7 @@ describe("--help", () => {
     expect(run("-h")).toEqual(help);
   });
 
-  test("wins after a command that is not available yet", () => {
-    expect(run("update", "--help")).toEqual(help);
-  });
-
-  test.each(["json", "mcp", "import-cc-usage", "doctor"])(
+  test.each(["json", "mcp", "import-cc-usage", "doctor", "update"])(
     "'%s --help' is that command's own help",
     (cmd) => {
       const own = run(cmd, "--help");
@@ -126,16 +111,22 @@ describe("--help", () => {
   );
 });
 
-describe("commands that are not available yet", () => {
-  test.each([
-    [["update"], "update"],
-    [["--once", "update"], "update"],
-  ])("%j exits 2 naming '%s'", (args, name) => {
-    expect(run(...args)).toEqual({
-      code: 2,
+describe("update", () => {
+  test("from source, points at git pull and exits 1 without touching the network", () => {
+    expect(run("update")).toEqual({
+      code: 1,
       stdout: "",
-      stderr: `tokenhud: '${name}' is not available yet\n`,
+      stderr:
+        "tokenhud update: this is tokenhud running from source; update the checkout with git pull\n",
     });
+  });
+
+  test("rejects an unknown option with exit 2", () => {
+    const out = run("update", "--bogus");
+    expect(out.code).toBe(2);
+    expect(out.stdout).toBe("");
+    expect(out.stderr).toStartWith("tokenhud update: ");
+    expect(out.stderr).toContain("--bogus");
   });
 });
 
@@ -175,7 +166,6 @@ describe("usage errors", () => {
     [["--width", "100"], "--width applies to --once"],
     [["--bogus"], "unknown option '--bogus'"],
     [["-x"], "unknown option '-x'"],
-    [["update", "--bogus"], "unknown option '--bogus'"],
     [["--bogus", "doctor"], "unknown option '--bogus'"],
     [["--bogus", "--help"], "unknown option '--bogus'"],
     [["frobnicate"], "unknown command 'frobnicate'"],
