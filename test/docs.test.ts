@@ -82,6 +82,14 @@ describe("the docs checker", () => {
     ]);
   });
 
+  test("reads a Windows checkout's CRLF line ends the same", () => {
+    const md = ["## Keys", "| `a` | x |", "### History", "| `q` | y |"].join("\r\n");
+    expect(documentedKeys(md)).toEqual([
+      { line: 2, key: "a", section: "" },
+      { line: 4, key: "q", section: "History" },
+    ]);
+  });
+
   test("knows the global keys and every view's own keys", () => {
     const sections = keySections();
     expect([...sections.keys()]).toEqual(["", "Overview", "History", "Models", "Accounts"]);

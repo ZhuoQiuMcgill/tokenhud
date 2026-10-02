@@ -247,7 +247,7 @@ export function keymap(): { bound: Set<string>; shown: Set<string> } {
 export function documentedKeys(
   text: string,
 ): Array<{ line: number; key: string; section: string }> {
-  const lines = text.split("\n");
+  const lines = text.split(/\r?\n/);
   const start = lines.findIndex((l) => /^## Keys\b/.test(l));
   if (start < 0) return [];
   const out: Array<{ line: number; key: string; section: string }> = [];
@@ -286,13 +286,18 @@ export function keySections(): Map<string, string[]> {
   return sections;
 }
 
+/** A doc's text with LF line ends: a Windows checkout has CRLF, and headings must match. */
+function readDoc(path: string): string {
+  return readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+}
+
 export function checkDocs(): string[] {
   const problems: string[] = [];
   const spec = cliSpec();
   const source = sourceText();
   const keys = keymap();
   for (const file of docFiles()) {
-    const text = readFileSync(file, "utf8");
+    const text = readDoc(file);
     const name = relative(root, file);
     for (const { line, words } of invocations(text)) {
       for (const p of checkInvocation(words, spec)) problems.push(`${name}:${line}: ${p}`);
@@ -303,7 +308,7 @@ export function checkDocs(): string[] {
       }
     });
   }
-  const readme = readFileSync(join(root, "README.md"), "utf8");
+  const readme = readDoc(join(root, "README.md"));
   const documented = documentedKeys(readme);
   if (documented.length === 0) problems.push("README.md: no keys documented under ## Keys");
   for (const { line, key } of [...documented, ...proseKeys(readme)]) {
