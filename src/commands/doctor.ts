@@ -1,9 +1,10 @@
 // `tokenhud doctor [--json]`: what the store holds, whether it is backed up and recovered,
-// how much of it is priced, what is still only in cc-usage, and which transcript roots
-// tokenhud follows. Read-only throughout: the store through a read-only connection, the
-// cursor cache likewise, cc-usage's ledger through a private snapshot copy. It prints
-// config paths (the store, its backup, the overrides file, the cache, cc-usage's
-// directory), never a transcript, prompt or credential path; roots go by their labels.
+// how much of it is priced, what is still only in cc-usage, which transcript roots tokenhud
+// follows, and which of them share one subscription account. Read-only throughout: the
+// store through a read-only connection, the cursor cache and limits.json likewise,
+// cc-usage's ledger through a private snapshot copy. It prints config paths (the store, its
+// backup, the overrides file, the cache, cc-usage's directory), never a transcript, prompt
+// or credential path; roots go by their labels.
 
 import type { Database } from "bun:sqlite";
 import {
@@ -21,6 +22,7 @@ import { parseArgs } from "node:util";
 import { type Config, configPath, loadConfig } from "../config.ts";
 import { cachePath, readCacheSummary } from "../ingest/cursors.ts";
 import { transcriptDirs } from "../ingest/engine.ts";
+import { type GroupSource, Limits, limitsPath, manualLinks } from "../limits/index.ts";
 import { detectInstall } from "../mcp/install.ts";
 import { ccUsageDir, pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable, readOverrides } from "../pricing/overrides.ts";
@@ -50,8 +52,8 @@ export const DOCTOR_HELP = `Usage:
 
 Reports on the store (rows, accounts, imports, rollup health, backup age, recovery),
 pricing (overrides, unpriced models, priced coverage), cc-usage (rows not imported yet),
-the transcript roots tokenhud follows and, per Claude account, whether the tokenhud plugin
-or MCP server is installed. Read-only.`;
+the transcript roots tokenhud follows, the roots that share one subscription account and,
+per Claude account, whether the tokenhud plugin or MCP server is installed. Read-only.`;
 
 export interface DoctorAccount {
   id: number;
@@ -149,6 +151,17 @@ export interface DoctorReport {
       last_ingest: string | null;
     }>;
   };
+  /**
+   * Enabled roots on one subscription account (T16), by label: one limits account each,
+   * linked in config (`manual`, `same_account`) or found by auto-detection (`auto`:
+   * identical limits on two consecutive fetches), and when that was first recorded.
+   */
+  shared_accounts: Array<{
+    provider: string;
+    roots: string[];
+    source: GroupSource;
+    since: string | null;
+  }>;
   claude_code: {
     /** `tokenhud` resolves on PATH: the plugin and `claude mcp add` start it from there. */
     tokenhud_on_path: boolean;
@@ -304,6 +317,31 @@ function sourcesSection(
       };
     }),
   };
+}
+
+/** The groups of roots on one account, from config and limits.json (read-only). */
+function sharedSection(
+  env: Env,
+  home: string,
+  config: Config,
+  zone: Zone,
+): DoctorReport["shared_accounts"] {
+  const discover = { home, env };
+  const claude = discoverClaudeRoots(config, discover);
+  const roots = [...claude, ...discoverCodexRoots(config, discover, claude)];
+  const groups = new Limits({
+    limitsPath: limitsPath(env, home),
+    roots: () => roots,
+    db: null,
+    spend: null,
+    links: () => manualLinks(config),
+  }).groups();
+  return [...new Map([...groups.values()].map((g) => [g.id, g])).values()].map((g) => ({
+    provider: g.provider,
+    roots: g.members.map((m) => m.label),
+    source: g.source,
+    since: g.detected_at === null ? null : zone.iso(g.detected_at),
+  }));
 }
 
 function fileSize(path: string): number {
@@ -511,6 +549,7 @@ export function doctorReport(
       },
       cc_usage: ccUsageSection(env, db, imports),
       sources: sourcesSection(env, home, config, zone),
+      shared_accounts: sharedSection(env, home, config, zone),
       claude_code: claudeCodeSection(env, home, config),
     };
   } finally {
@@ -684,6 +723,17 @@ export function renderDoctor(r: DoctorReport): string {
     line(root.label, parts.join(" · "));
   }
   line("cache", `${shortPath(src.cache.path)}${src.cache.exists ? "" : " (none yet)"}`);
+
+  out.push("", "Shared accounts (roots on one subscription account: one limits card each)");
+  if (r.shared_accounts.length === 0) line("groups", "none");
+  for (const g of r.shared_accounts) {
+    const how =
+      g.source === "manual"
+        ? "linked in config (same_account)"
+        : "found automatically: identical limits on two fetches in a row";
+    line(g.provider, `${g.roots.join(" + ")} · ${how}`);
+    if (g.since !== null) more(`since ${when(g.since)}`);
+  }
 
   out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");
   const cc = r.claude_code;

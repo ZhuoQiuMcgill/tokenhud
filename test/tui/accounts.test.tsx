@@ -229,6 +229,7 @@ const roots: RootInfo[] = [
     identity: "fixture-identity-personal",
     disabledBy: [],
     configIndex: null,
+    group: null,
   },
 ];
 

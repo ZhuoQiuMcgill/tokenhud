@@ -1,6 +1,8 @@
 // The Accounts view (T13): every account in the store with its root, its subscription
-// limits and their weekly history, its 30-day spend and models, and its last MCP call.
-// Computed in the view-model Worker; the view only formats it.
+// limits and their weekly history, its 30-day spend and models, and its last MCP call. A
+// root on a subscription account it shares with others (T16) shows the account's limits
+// and their total spend beside its own. Computed in the view-model Worker; the view only
+// formats it.
 
 import { sep } from "node:path";
 import type { AccountLimits, LimitEvent, Limits, LimitWindow } from "../../limits/index.ts";
@@ -93,8 +95,15 @@ export interface AccountRow extends AccountInfo, Priced {
   readonly last30: Priced;
   /** Models over the last 30 days, both tiers together, most cost first. */
   readonly topModels: readonly ModelSpend[];
-  /** Null when no limits are read for it (a disabled or missing root, or limits off). */
+  /**
+   * Null when no limits are read for it (a disabled or missing root, or limits off). For a
+   * root on a shared subscription account, the account's.
+   */
   readonly limits: AccountLimitsInfo | null;
+  /** The other roots on its subscription account (T16), by display label; empty when none. */
+  readonly sharedWith: readonly string[];
+  /** The same 30 days of every root on that account together; null when it shares none. */
+  readonly accountLast30: Priced | null;
   /** The weekly window's last weeks, oldest first; null without a weekly window. */
   readonly weekly: readonly WeekSlot[] | null;
   /** Its newest MCP tool call in the last 10 minutes. */
@@ -238,6 +247,14 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
     }
     const calls = recent.filter((c) => c.account === a.label);
     const call = calls[0];
+    // The other roots on its subscription account, as the store knows them.
+    const others = (l?.group?.members ?? [])
+      .filter((m) => m.id !== a.identity)
+      .map((m) => ({
+        label: m.label,
+        stored: ctx.accounts.find((x) => x.provider === a.provider && x.identity === m.id),
+      }));
+    const shared = [a.id, ...others.flatMap((o) => (o.stored === undefined ? [] : [o.stored.id]))];
     return {
       ...a,
       ...(u === undefined
@@ -260,6 +277,9 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
       last30: amount(q.totals({ range: last30, accounts: [a.id] }).usage),
       topModels: topModels(ctx, a.id, last30),
       limits: l === undefined ? null : limitsInfo(l),
+      sharedWith: others.map((o) => o.stored?.label ?? o.label),
+      accountLast30:
+        others.length === 0 ? null : amount(q.totals({ range: last30, accounts: shared }).usage),
       weekly,
       agent: call === undefined ? null : { at: call.at, tool: call.tool, calls: calls.length },
     };

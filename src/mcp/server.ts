@@ -16,7 +16,12 @@ import { configPath, loadConfig } from "../config.ts";
 import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
 import { ccUsageLimitsPath, limitsPath } from "../limits/cache.ts";
-import { codexSnapshotsFrom, LimitsService } from "../limits/index.ts";
+import {
+  codexSnapshotsFrom,
+  LimitsService,
+  type ManualLinks,
+  manualLinks,
+} from "../limits/index.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import { PERIOD_NAMES } from "../query/periods.ts";
@@ -297,6 +302,16 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     }
     return cached.roots;
   };
+  // Account links are read again as often as the roots: the TUI's settings change them
+  // while this server runs for the rest of a session.
+  let linked: { at: number; links: ManualLinks } = { at: Date.now(), links: manualLinks(config) };
+  const links = (): ManualLinks => {
+    const at = Date.now();
+    if (at - linked.at > ROOTS_TTL_MS) {
+      linked = { at, links: manualLinks(loadConfig(configPath(env, home))) };
+    }
+    return linked.links;
+  };
 
   const zone = options.zone ?? Zone.configured(config.time_zone);
   const { table, warnings } = loadPriceTable(pricingOverridesPath(env, home));
@@ -310,6 +325,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     ccUsageLimits: ccUsageLimitsPath(env, home),
     roots: () => roots().filter((r) => r.enabled),
     snapshots,
+    links,
     now,
     log: (level, message) => log(`${level}: ${message}`),
   });
@@ -351,6 +367,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     priceWarnings: warnings.length === 0 ? [] : [PRICE_WARNING],
     limitsPath: limitsPath(env, home),
     snapshots,
+    links,
     refresh: options.refresh ?? ((account, maxAgeS) => service.refresh(account, maxAgeS)),
     freshen: () => freshener.ensure(),
     hasTranscript: memoTranscripts(),

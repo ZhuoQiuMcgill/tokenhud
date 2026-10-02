@@ -197,10 +197,10 @@ function fitSegs(segs: readonly Seg[], width: number): Seg[] {
 /**
  * gen.py's `card()`: `╭─ title note ─╮`, three body lines between `│ ` and ` │`, and the
  * bottom border, each exactly `width` cells. The note (a stale age) is kept whole; the
- * title is cut first.
+ * title is the first of `titles` that fits, else the last one, cut.
  */
 function cardText(
-  title: string,
+  titles: readonly string[],
   role: Role,
   note: string | null,
   body: (width: number) => Line[],
@@ -209,7 +209,8 @@ function cardText(
   const inner = width - 4;
   const room = width - 6;
   const after = note === null || textWidth(note) + 2 > room ? "" : ` ${note}`;
-  const head = truncate(title, room - textWidth(after));
+  const fits = titles.find((t) => textWidth(t) <= room - textWidth(after));
+  const head = fits ?? truncate(titles[titles.length - 1] as string, room - textWidth(after));
   const fill = width - 5 - textWidth(head) - textWidth(after);
   const lines = body(inner);
   const out: Seg[][] = [
@@ -459,17 +460,25 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
   const compact = [title, ...compactLines(vm, cards, ctx, selected)];
   const grid = ctx.bp !== "narrow";
   const perRow = cardsPerRow(ctx.bp);
-  const boxes: { title: string; role: Role; note: string | null; body: (w: number) => Line[] }[] =
-    cards.map((c, i) => ({
-      title: `${i === selected ? "▸ " : ""}${c.label} · ${c.provider}`,
+  const boxes: {
+    titles: readonly string[];
+    role: Role;
+    note: string | null;
+    body: (w: number) => Line[];
+  }[] = cards.map((c, i) => {
+    const mark = i === selected ? "▸ " : "";
+    // Roots on one account are titled "a + b": the provider goes before their labels are cut.
+    return {
+      titles: [`${mark}${c.label} · ${c.provider}`, `${mark}${c.label}`],
       role: i === selected ? "live" : "head",
       note: staleNote(c, vm.asOf),
       body: (w) => cardBody(c, w, ctx, vm.asOf),
-    }));
+    };
+  });
   const agents = vm.agents;
   if (agents !== null) {
     boxes.push({
-      title: "agents · MCP",
+      titles: ["agents · MCP"],
       role: "live",
       note: null,
       body: (w) => agentLines(agents, w, vm.asOf),
@@ -494,7 +503,7 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
       for (let i = 0; i < boxes.length; i += perRow) {
         const row = boxes
           .slice(i, i + perRow)
-          .map((b, k) => cardText(b.title, b.role, b.note, b.body, widths[k] as number));
+          .map((b, k) => cardText(b.titles, b.role, b.note, b.body, widths[k] as number));
         for (let r = 0; r < CARD_HEIGHT; r++) {
           lines.push({
             left: [

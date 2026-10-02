@@ -1,0 +1,516 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`105×50 Overview: one card titled with both labels 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+ LIMITS                                     pace = spend rate over the last 30 min · times are estimates 
+ ╭─ personal-like + win-like · claude ─────────────╮  ╭─ work-like · claude ───────────────────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  64%  1h35m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  4h00m │ 
+ │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  31%  2d22h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  40%  2d22h │ 
+ │ pace $1.4/h → hits 100% at 12:10                │  │ pace $0/h   → idle                             │ 
+ ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
+                                                                                                         
+ SPEND                                                                                                   
+                today    this week   this month     all-time                                             
+  cost          $1.28        $1.60       $13.47       $13.79                                             
+  tokens         1.3M         1.6M        13.8M        14.1M                                             
+                                                                                                         
+ ACTIVITY · cost per 15 min · 24h                                                    peak $0.34 at 11:15 
+ $0.34                                                                                               ██  
+                                                                                                     ██  
+                                                                                            ▃   ▃    ██  
+ $0.17                                                                                      █   █    ██  
+                                                                                            █ ▅ █    ██  
+                                                                                            █ █ █    ██  
+     0                                                                            ▅         █ █ █    ██  
+       -24h                    -18h                    -12h                   -6h                   now  
+                                                                                                         
+ TOP MODELS · 24h                                                                                        
+ Opus 4.8                    $0.90  70% ━━━━━━                                                           
+ Sonnet 4.6                  $0.39  30% ━━━━━━                                                           
+                                                                                                         
+ LIMIT EVENTS · 7 days                                                                                   
+  no limit events in the last 7 days                                                                     
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ←/→ window   t cost/tokens   enter details   a account   s settings   ? help   q quit       
+"
+`;
+
+exports[`105×50 Accounts: win-like says what it shares, and the account's total 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+ ACCOUNTS                         │  win-like · claude                           limits fetched 11:38:00 
+                                  │                                                                      
+ ● personal-like      claude  64% │  root      /mnt/c/Users/fixture/.claude  (watched)                   
+ ● win-like           claude  64% │  history   17 records since Sep 1                                    
+ ● work-like          claude  40% │                                                                      
+ + add a root…                    │  shared with personal-like                                           
+                                  │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15    
+ enter scope to it                │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40
+ e enable/disable                 │                                                                      
+ l rename label                   │  weekly usage when it reset · last 8 weeks                           
+ h history only                   │                                                                      
+                                  │                                                                      
+                                  │                                                            ▁▁▁▁▁▁    
+                                  │                                                            ██████    
+                                  │    —       —       —       —       —       —       —       31%       
+                                  │    Aug 14  Aug 21  Aug 28  Sep 4   Sep 11  Sep 18  Sep 25  now       
+                                  │    no limit events recorded yet: only this week is known             
+                                  │                                                                      
+                                  │  spend 30d ▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁█  $2.45                     
+                                  │            account total (all linked roots): $12.59                  
+                                  │                                                                      
+                                  │  models    Sonnet 4.6 100%                                           
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   e enable   a account   s settings   ? help   q quit             
+"
+`;
+
+exports[`105×50 settings: the shared column, linking work-like, then unlinking win-like 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+     ╭─ Settings › Accounts ────────────────────────────────────────────────────────────────────────╮    
+     │   ● personal-like claude              same as win-like        /home/fixture/.claude          │    
+     │   ● win-like      claude              same as personal-like   /mnt/c/Users/fixture/.claude   │    
+     │ › ● work-like     claude                                      /home/fixture/.claude-work     │    
+     │                                                                                              │    
+     │ e enable/disable · l rename · h history only · esc back                                      │    
+     │ a same account as… · u unlink                                                                │    
+     ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑/↓ move   enter change   esc back                                                                      
+"
+`;
+
+exports[`105×50 settings: the shared column, linking work-like, then unlinking win-like 2`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+     ╭─ Settings › Accounts › Same account ─────────────────────────────────────────────────────────╮    
+     │ work-like is on the same subscription account as:                                            │    
+     │ › personal-like claude /home/fixture/.claude                                                 │    
+     │   win-like      claude /mnt/c/Users/fixture/.claude                                          │    
+     │                                                                                              │    
+     │ ↑/↓ move · enter link · esc cancel                                                           │    
+     ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑/↓ move   enter change   esc back                                                                      
+"
+`;
+
+exports[`105×50 settings: the shared column, linking work-like, then unlinking win-like 3`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                         
+     ╭─ Settings › Accounts ────────────────────────────────────────────────────────────────────────╮    
+     │   ● personal-like claude              /home/fixture/.claude                                  │    
+     │ › ● win-like      claude              /mnt/c/Users/fixture/.claude                           │    
+     │   ● work-like     claude              /home/fixture/.claude-work                             │    
+     │                                                                                              │    
+     │ e enable/disable · l rename · h history only · esc back                                      │    
+     │ a same account as… · u unlink                                                                │    
+     ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+                                                                                                         
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑/↓ move   enter change   esc back                                                                      
+"
+`;
+
+exports[`120×45 Overview: one card titled with both labels 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+ LIMITS                                                    pace = spend rate over the last 30 min · times are estimates 
+ ╭─ personal-like + win-like ─────────╮  ╭─ work-like · claude ───────────────╮                                         
+ │ 5h   ━━━━━━━━━━━━━━━━━  64%  1h35m │  │ 5h   ━━━━━━━━━━━━━━━━━  12%  4h00m │                                         
+ │ week ━━━━━━━━━━━━━━━━━  31%  2d22h │  │ week ━━━━━━━━━━━━━━━━━  40%  2d22h │                                         
+ │ pace $1.4/h → hits 100% at 12:10   │  │ pace $0/h   → idle                 │                                         
+ ╰────────────────────────────────────╯  ╰────────────────────────────────────╯                                         
+                                                                                                                        
+ SPEND                                                                                                                  
+                   1h           5h        today    this week   this month     all-time                                  
+  cost          $0.69        $1.28        $1.28        $1.60       $13.47       $13.79                                  
+  tokens         730K         1.3M         1.3M         1.6M        13.8M        14.1M                                  
+                                                                                                                        
+ ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h                     
+ $0.34                                                                       ██    Opus 4.8            $0.90  70% ━━━━━━
+                                                                             ██    Sonnet 4.6          $0.39  30% ━━━━━━
+                                                                       ▃  ▃  ██                                         
+ $0.17                                                                 █  █  ██    peak $0.34 at 11:05                  
+                                                                       █▅ █  ██                                         
+                                                                       ██ █  ██                                         
+     0                                                         ▅       ██ █  ██                                         
+       -24h              -18h              -12h             -6h             now                                         
+                                                                                                                        
+ LIMIT EVENTS · 7 days                                                                                                  
+  no limit events in the last 7 days                                                                                    
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ←/→ window   t cost/tokens   enter details   tab card   a account   s settings   ? help   q quit           
+"
+`;
+
+exports[`120×45 Accounts: win-like says what it shares, and the account's total 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+ ACCOUNTS                          │  win-like · claude                                         limits fetched 11:38:00 
+                                   │                                                                                    
+ ● personal-like       claude  64% │  root      /mnt/c/Users/fixture/.claude  (watched)                                 
+ ● win-like            claude  64% │  history   17 records since Sep 1                                                  
+ ● work-like           claude  40% │                                                                                    
+ + add a root…                     │  shared with personal-like                                                         
+                                   │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15         
+ enter scope to it                 │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40     
+ e enable/disable                  │                                                                                    
+ l rename label                    │  weekly usage when it reset · last 8 weeks                                         
+ h history only                    │                                                                                    
+                                   │                                                                                    
+                                   │                                                            ▁▁▁▁▁▁                  
+                                   │                                                            ██████                  
+                                   │    —       —       —       —       —       —       —       31%                     
+                                   │    Aug 14  Aug 21  Aug 28  Sep 4   Sep 11  Sep 18  Sep 25  now                     
+                                   │    no limit events recorded yet: only this week is known                           
+                                   │                                                                                    
+                                   │  spend 30d ▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁▄▁█  $2.45                                   
+                                   │            account total (all linked roots): $12.59                                
+                                   │                                                                                    
+                                   │  models    Sonnet 4.6 100%                                                         
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ 1-4 views   ↑/↓ account   enter scope   e enable   l label   a account   s settings   ? help   q quit                  
+"
+`;
+
+exports[`120×45 settings: the shared column, linking work-like, then unlinking win-like 1`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+            ╭─ Settings › Accounts ────────────────────────────────────────────────────────────────────────╮            
+            │   ● personal-like claude              same as win-like        /home/fixture/.claude          │            
+            │   ● win-like      claude              same as personal-like   /mnt/c/Users/fixture/.claude   │            
+            │ › ● work-like     claude                                      /home/fixture/.claude-work     │            
+            │                                                                                              │            
+            │ e enable/disable · l rename · h history only · esc back                                      │            
+            │ a same account as… · u unlink                                                                │            
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯            
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑/↓ move   enter change   esc back                                                                                     
+"
+`;
+
+exports[`120×45 settings: the shared column, linking work-like, then unlinking win-like 2`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+            ╭─ Settings › Accounts › Same account ─────────────────────────────────────────────────────────╮            
+            │ work-like is on the same subscription account as:                                            │            
+            │ › personal-like claude /home/fixture/.claude                                                 │            
+            │   win-like      claude /mnt/c/Users/fixture/.claude                                          │            
+            │                                                                                              │            
+            │ ↑/↓ move · enter link · esc cancel                                                           │            
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯            
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑/↓ move   enter change   esc back                                                                                     
+"
+`;
+
+exports[`120×45 settings: the shared column, linking work-like, then unlinking win-like 3`] = `
+" tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+            ╭─ Settings › Accounts ────────────────────────────────────────────────────────────────────────╮            
+            │   ● personal-like claude              /home/fixture/.claude                                  │            
+            │ › ● win-like      claude              /mnt/c/Users/fixture/.claude                           │            
+            │   ● work-like     claude              /home/fixture/.claude-work                             │            
+            │                                                                                              │            
+            │ e enable/disable · l rename · h history only · esc back                                      │            
+            │ a same account as… · u unlink                                                                │            
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯            
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ↑/↓ move   enter change   esc back                                                                                     
+"
+`;

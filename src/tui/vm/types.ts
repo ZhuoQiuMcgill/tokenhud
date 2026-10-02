@@ -2,6 +2,7 @@
 // crosses postMessage: the UI thread renders it and never queries the store (T6 critic Q1).
 
 import type { Config, Window } from "../../config.ts";
+import type { GroupSource } from "../../limits/groups.ts";
 import type { McpActivity } from "../../mcp/heartbeat.ts";
 import type { PriceStatus } from "../../query/types.ts";
 import type { Provider, RootSource } from "../../sources/roots.ts";
@@ -68,13 +69,23 @@ export type Verdict =
   | { readonly kind: "idle" }
   | { readonly kind: "unknown" };
 
-/** One account's limits card: an enabled root, with its store account when it has usage. */
+/**
+ * One account's limits card: an enabled root, with its store account when it has usage; or
+ * every root on a subscription account they share (T16), with their limits and summed pace.
+ */
 export interface LimitCard {
-  /** The store's account id; null before the account has any usage stored. */
+  /**
+   * The store's account id (for roots on one account, the first with usage); null before
+   * any usage is stored.
+   */
   readonly account: number | null;
+  /** The root's label, or for roots on one account their labels joined by " + ". */
   readonly label: string;
   readonly provider: string;
-  /** False for a history-only account: "not signed in here" instead of meters. */
+  /**
+   * False for a history-only account: "not signed in here" instead of meters. Roots on one
+   * account are signed in when any of them is.
+   */
   readonly signedIn: boolean;
   /** The account-wide 5-hour and weekly windows; null when the limits have none. */
   readonly fiveHour: LimitMeter | null;
@@ -121,7 +132,10 @@ export interface ActivitySeries {
 export interface OverviewVM {
   /** When it was computed: countdowns and "ago" times count from here. */
   readonly asOf: number;
-  /** One card per enabled account in scope; null until the roots are known. */
+  /**
+   * One card per enabled account in scope, roots on one subscription account sharing one;
+   * null until the roots are known.
+   */
   readonly cards: readonly LimitCard[] | null;
   /** MCP agent sessions' latest calls, newest first; null with no MCP server about. */
   readonly agents: { readonly servers: number; readonly calls: readonly AgentCall[] } | null;
@@ -230,6 +244,11 @@ export interface RootInfo {
    * any. It may name the default or env root too: its label then relabels that root.
    */
   readonly configIndex: number | null;
+  /**
+   * The roots on its subscription account besides itself (T16), by identity, and how they
+   * were linked; null for a root on its own.
+   */
+  readonly group: { readonly others: readonly string[]; readonly source: GroupSource } | null;
 }
 
 /** What the view models depend on besides the store. */

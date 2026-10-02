@@ -43,6 +43,7 @@ const fable = (over: Partial<LimitWindow>) => win("weekly_scoped", "FABLE WEEKLY
 function account(windows: LimitWindow[], over: Partial<AccountLimits> = {}): AccountLimits {
   return {
     account: { id: "0".repeat(32), label: "personal", provider: "claude", signed_in: true },
+    group: null,
     windows,
     as_of: NOW - 30_000,
     source: "api",
@@ -400,6 +401,8 @@ describe("limitsView", () => {
         config_dir: "/home/u/.claude",
         signed_in: true,
         detected_via: "env",
+        group: null,
+        shared_with: [],
       },
       windows: [
         {

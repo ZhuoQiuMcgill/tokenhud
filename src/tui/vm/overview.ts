@@ -1,6 +1,7 @@
-// The Overview's view model ("limits first", T11): a limits card per enabled account, the MCP
-// agents, spend, activity over 5 h / 24 h / 7 d, the day's top models and the week's limit
-// events. Computed in the view-model Worker (and by `--once`), never on the UI thread.
+// The Overview's view model ("limits first", T11): a limits card per enabled account (one per
+// subscription account, for roots that share one: T16), the MCP agents, spend, activity over
+// 5 h / 24 h / 7 d, the day's top models and the week's limit events. Computed in the
+// view-model Worker (and by `--once`), never on the UI thread.
 
 import { projectAtReset, type SpendSource, spendFromQueries } from "../../limits/derive.ts";
 import type { AccountLimits, LimitWindow } from "../../limits/index.ts";
@@ -16,6 +17,7 @@ import {
 } from "./compute.ts";
 import { modelName } from "./models.ts";
 import type {
+  AccountInfo,
   ActivitySeries,
   ActivityWindow,
   Amount,
@@ -82,7 +84,7 @@ function series(ctx: ComputeContext, window: ActivityWindow): ActivitySeries {
 function verdict(
   windows: readonly LimitWindow[],
   limits: AccountLimits,
-  account: number | null,
+  accts: readonly number[],
   pace: number,
   spend: SpendSource,
   now: number,
@@ -96,7 +98,7 @@ function verdict(
   if (hits.length > 0) return { kind: "hits", at: Math.min(...hits) };
   if (!(pace > 0)) return { kind: "idle" };
   const week = windows.find((w) => w.window_s === WEEK_S);
-  if (week !== undefined && account !== null && limits.as_of !== null) {
+  if (week !== undefined && accts.length > 0 && limits.as_of !== null) {
     const end = projectAtReset({
       utilization: week.utilization,
       capturedAt: limits.as_of,
@@ -104,7 +106,7 @@ function verdict(
       windowMs: WEEK_S * 1000,
       costPerHour: pace,
       now,
-      spent: (from, to) => spend.cost(account, from, to),
+      spent: (from, to) => spend.cost(accts, from, to),
     });
     if (end !== null && end >= WEEK_WARNING) return { kind: "week", utilization: end };
   }
@@ -112,9 +114,13 @@ function verdict(
   return { kind: "unknown" };
 }
 
+/**
+ * A card for an account: a root's, or one for every root on a subscription account they
+ * share (`limits.group`), titled with their labels joined by " + ".
+ */
 function card(
   limits: AccountLimits,
-  account: { id: number; label: string } | null,
+  byIdentity: ReadonlyMap<string, AccountInfo>,
   spend: SpendSource,
   now: number,
 ): LimitCard {
@@ -127,16 +133,19 @@ function card(
     return w === undefined ? null : { utilization: w.utilization, resetsAt: w.resets_at };
   };
   const pace = { cost: limits.pace?.cost_per_h ?? 0, tokens: limits.pace?.tokens_per_h ?? 0 };
+  const members = limits.group?.members ?? [{ id: limits.account.id, label: limits.account.label }];
+  const stored = members.map((m) => byIdentity.get(m.id));
+  const accts = stored.flatMap((a) => (a === undefined ? [] : [a.id]));
   return {
-    account: account?.id ?? null,
-    // The label every other view shows (a configured one, else the store's).
-    label: account?.label ?? limits.account.label,
+    account: accts[0] ?? null,
+    // The labels every other view shows (a configured one, else the store's).
+    label: members.map((m, i) => stored[i]?.label ?? m.label).join(" + "),
     provider: limits.account.provider,
     signedIn: limits.account.signed_in,
     fiveHour: meter(FIVE_HOURS_S),
     week: meter(WEEK_S),
     pace,
-    verdict: verdict(windows, limits, account?.id ?? null, pace.cost, spend, now),
+    verdict: verdict(windows, limits, accts, pace.cost, spend, now),
     capturedAt: limits.as_of,
   };
 }
@@ -188,11 +197,25 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
   const scopeLabels = new Set(scope === null ? [] : [scope.label]);
   if (limits !== null) {
     const source = spendFromQueries(q);
-    const shown = limits
-      .getLimits()
-      .filter((l) => scope === null || l.account.id === scope.identity);
-    for (const l of shown) if (scope !== null) scopeLabels.add(l.account.label);
-    cards = shown.map((l) => card(l, byIdentity.get(l.account.id) ?? null, source, ctx.now));
+    // One card per subscription account: roots that share one show as its first member.
+    const groups = new Set<string>();
+    const shown = limits.getLimits().filter((l) => {
+      const members = l.group?.members.map((m) => m.id) ?? [l.account.id];
+      if (scope !== null && !members.includes(scope.identity)) return false;
+      if (l.group === null) return true;
+      if (groups.has(l.group.id)) return false;
+      groups.add(l.group.id);
+      return true;
+    });
+    if (scope !== null) {
+      for (const l of shown) {
+        for (const m of l.group?.members ?? [l.account]) {
+          scopeLabels.add(byIdentity.get(m.id)?.label ?? m.label);
+          scopeLabels.add(m.label);
+        }
+      }
+    }
+    cards = shown.map((l) => card(l, byIdentity, source, ctx.now));
   }
   // The store's limit events, read as History reads them (T12's), newest first.
   const events: OverviewEvent[] = (

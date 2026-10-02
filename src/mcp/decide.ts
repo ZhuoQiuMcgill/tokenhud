@@ -37,6 +37,10 @@ export interface LimitsView {
     config_dir: string;
     signed_in: boolean;
     detected_via: DetectedVia;
+    /** The id of the roots on its subscription account (T16), or null for a root alone. */
+    group: string | null;
+    /** The labels of the other roots on that account: the windows and pace are theirs too. */
+    shared_with: string[];
   };
   windows: WindowView[];
   as_of: string | null;
@@ -54,6 +58,10 @@ export function limitsView(resolved: Resolved, limits: AccountLimits, zone: Zone
       config_dir: resolved.root.path,
       signed_in: limits.account.signed_in,
       detected_via: resolved.detectedVia,
+      group: limits.group?.id ?? null,
+      shared_with: (limits.group?.members ?? [])
+        .filter((m) => m.id !== limits.account.id)
+        .map((m) => m.label),
     },
     windows: limits.windows.map((w) => ({
       kind: w.kind,

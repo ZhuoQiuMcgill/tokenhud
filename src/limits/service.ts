@@ -4,10 +4,10 @@ import type { Root } from "../sources/roots.ts";
 import {
   type AccountStatus,
   type CacheUpdate,
+  editLimitsCache,
   importCcUsageLimits,
   initialStatus,
   type KnownAccount,
-  type LimitsFile,
   leasePath,
   loadLimitsCache,
   saveLimitsCache,
@@ -22,6 +22,7 @@ import {
 } from "./capture.ts";
 import { credentialsMtime, fetchClaudeLimits } from "./claude.ts";
 import { codexAuthMtime, fetchCodexLimits } from "./codex.ts";
+import { detectPairs, type ManualLinks, NO_LINKS, recordGroups, resolveGroups } from "./groups.ts";
 import { type Lease, tryLease } from "./lease.ts";
 import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
 
@@ -97,6 +98,8 @@ export interface LimitsServiceOptions {
   fetchClaude?: (root: Root, signal: AbortSignal) => Promise<Capture>;
   fetchCodex?: (root: Root, signal: AbortSignal) => Promise<Capture>;
   credentialsMtime?: (root: Root) => number | null;
+  /** Manual account links (config `same_account`, `separate_accounts`), read every round. */
+  links?: () => ManualLinks;
   /** Whether a Codex root gets the app-server RPC; the default `~/.codex` when it exists. */
   usesRpc?: (root: Root) => boolean;
   /** Epoch ms. */
@@ -109,7 +112,7 @@ export interface LimitsServiceOptions {
 export interface RefreshOutcome {
   /** The account's identity. */
   account: string;
-  /** A provider was asked (a network request or the app-server). */
+  /** A provider was asked (a network request or the app-server), for it or its group. */
   fetched: boolean;
   /** The account's last fetch error, when its data is older than that failure. */
   error: string | null;
@@ -121,6 +124,23 @@ type Mode = { kind: "scheduled" } | { kind: "demand"; maxAgeMs: number };
 interface Attempt {
   capture: Capture | null;
   error: unknown;
+}
+
+/** Roots fetched as one: a group of roots on one account, or a root on its own. */
+interface Unit {
+  /** The group's id, or the root's identity: the key of its lease and its request. */
+  key: string;
+  /** In discovery order. */
+  members: Root[];
+}
+
+/** One root as `#read` found it in limits.json. */
+interface Read {
+  prior: Capture | null;
+  /** The stored status, as JSON, to tell whether this run changed it. */
+  before: string;
+  status: AccountStatus;
+  current: Capture | null;
 }
 
 function errorMessage(error: unknown): string {
@@ -144,13 +164,34 @@ export function shownError(
   return (status.last_attempt_at ?? 0) > capture.captured_at * 1000 ? status.last_error : null;
 }
 
+/**
+ * `shownError` for roots on one account, against the group's capture: the error of the
+ * member asked last (the first member's when none was asked yet).
+ */
+export function groupError(
+  members: readonly Root[],
+  status: (identity: string) => AccountStatus | undefined,
+  capture: Capture | null,
+): string | null {
+  let last = members[0];
+  let at = Number.NEGATIVE_INFINITY;
+  for (const member of members) {
+    const t = status(member.identity)?.last_attempt_at ?? null;
+    if (t !== null && t > at) {
+      at = t;
+      last = member;
+    }
+  }
+  return last === undefined ? null : shownError(last, status(last.identity), capture);
+}
+
 export class LimitsService {
   readonly #o: LimitsServiceOptions;
   readonly #timing: LimitsTiming;
   readonly #now: () => number;
   readonly #log: Log;
   readonly #snapshots: CodexSnapshots;
-  readonly #inflight = new Map<string, Promise<RefreshOutcome>>();
+  readonly #inflight = new Map<string, Promise<RefreshOutcome[]>>();
   /** Set once the app-server proved it can never work in this process. */
   #codexLatch: string | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
@@ -251,34 +292,72 @@ export class LimitsService {
   }
 
   /**
-   * One scheduled round: fetches every account that is due, folds in Codex snapshots and
-   * records events. Resolves with the delay (ms) until the next account is due.
+   * One scheduled round: fetches every account (or group of roots on one account) that is
+   * due, folds in Codex snapshots, records events and runs auto-detection. Resolves with
+   * the delay (ms) until the next one is due.
    */
   async refreshDue(): Promise<number> {
     const roots = this.#safeRoots();
-    await Promise.all(roots.map((root) => this.#process(root, { kind: "scheduled" })));
+    const units = this.#units(roots);
+    await Promise.all(units.map((unit) => this.#process(unit, { kind: "scheduled" })));
+    this.#detect(roots);
     const file = loadLimitsCache(this.#o.limitsPath);
     const now = this.#now();
     let next = now + this.#timing.intervalMs;
-    for (const root of roots) {
-      const at = file.status[root.identity]?.next_at;
-      if (at !== null && at !== undefined && this.#fetchable(root, file.status[root.identity])) {
-        next = Math.min(next, at);
-      }
+    for (const unit of units) {
+      // The member the unit's next fetch goes through.
+      const first = this.#signedIn(unit, (id) => file.status[id])[0];
+      const at = first === undefined ? null : file.status[first.identity]?.next_at;
+      if (at !== null && at !== undefined) next = Math.min(next, at);
     }
     return Math.max(MIN_ROUND_DELAY_MS, next - now);
   }
 
   /**
    * On demand: fetches each matching account (identity or label; all when null) whose data
-   * is older than `maxAgeS`, within the back-off and rate limits.
+   * is older than `maxAgeS`, within the back-off and rate limits. A root on an account with
+   * others is fetched as their group, and its data is the group's.
    */
   async refresh(account: string | null, maxAgeS: number): Promise<RefreshOutcome[]> {
-    const roots = this.#safeRoots().filter(
+    const roots = this.#safeRoots();
+    const wanted = roots.filter(
       (root) => account === null || root.identity === account || root.label === account,
     );
+    const ids = new Set(wanted.map((root) => root.identity));
+    const units = this.#units(roots).filter((unit) =>
+      unit.members.some((m) => ids.has(m.identity)),
+    );
     const mode: Mode = { kind: "demand", maxAgeMs: Math.max(0, maxAgeS) * 1000 };
-    return Promise.all(roots.map((root) => this.#process(root, mode)));
+    const outcomes = (await Promise.all(units.map((unit) => this.#process(unit, mode)))).flat();
+    if (units.length > 0) this.#detect(roots);
+    const byId = new Map(outcomes.map((o) => [o.account, o]));
+    return wanted.flatMap((root) => byId.get(root.identity) ?? []);
+  }
+
+  /** The roots as fetch units: each group of roots on one account, and every other root. */
+  #units(roots: readonly Root[]): Unit[] {
+    const file = loadLimitsCache(this.#o.limitsPath);
+    const groups = resolveGroups(roots, this.#links(), file.pairs, file.groups);
+    const units: Unit[] = [];
+    const seen = new Set<string>();
+    for (const root of roots) {
+      const group = groups.get(root.identity);
+      if (group === undefined) units.push({ key: root.identity, members: [root] });
+      else if (!seen.has(group.id)) {
+        seen.add(group.id);
+        units.push({ key: group.id, members: [...group.members] });
+      }
+    }
+    return units;
+  }
+
+  #links(): ManualLinks {
+    try {
+      return this.#o.links?.() ?? NO_LINKS;
+    } catch (error) {
+      this.#log("warn", `limits: cannot read the account links (${errorMessage(error)})`);
+      return NO_LINKS;
+    }
   }
 
   /** Whether the schedule fetches this root at all (as opposed to only folding snapshots). */
@@ -286,6 +365,18 @@ export class LimitsService {
     if (root.historyOnly) return false;
     if (status?.history_only === "detected") return false;
     return root.provider === "claude" || (this.#codexLatch === null && this.#usesRpc(root));
+  }
+
+  /**
+   * The unit's members a fetch may go through, in the order to try them: the fetchable
+   * ones, fewest consecutive errors first (a member that just failed goes after the one
+   * that took over from it), then discovery order.
+   */
+  #signedIn(unit: Unit, status: (identity: string) => AccountStatus | undefined): Root[] {
+    const errors = (root: Root) => status(root.identity)?.errors ?? 0;
+    return unit.members
+      .filter((root) => this.#fetchable(root, status(root.identity)))
+      .sort((a, b) => errors(a) - errors(b));
   }
 
   #usesRpc(root: Root): boolean {
@@ -299,31 +390,25 @@ export class LimitsService {
     return root.provider === "claude" ? credentialsMtime(root.path) : codexAuthMtime(root.path);
   }
 
-  /** Requests for an account already in flight join it. */
-  #process(root: Root, mode: Mode): Promise<RefreshOutcome> {
-    const running = this.#inflight.get(root.identity);
+  /** Requests for a unit already in flight join it. */
+  #process(unit: Unit, mode: Mode): Promise<RefreshOutcome[]> {
+    const running = this.#inflight.get(unit.key);
     if (running) return running;
-    const job = this.#run(root, mode)
-      .catch(
-        (error): RefreshOutcome => ({
+    const job = this.#run(unit, mode)
+      .catch((error): RefreshOutcome[] =>
+        unit.members.map((root) => ({
           account: root.identity,
           fetched: false,
           error: errorMessage(error),
-        }),
+        })),
       )
-      .finally(() => this.#inflight.delete(root.identity));
-    this.#inflight.set(root.identity, job);
+      .finally(() => this.#inflight.delete(unit.key));
+    this.#inflight.set(unit.key, job);
     return job;
   }
 
   /** The account's stored capture, its status, and its rollout snapshot, as they are now. */
-  #read(root: Root): {
-    prior: Capture | null;
-    /** The stored status, as JSON, to tell whether this run changed it. */
-    before: string;
-    status: AccountStatus;
-    current: Capture | null;
-  } {
+  #read(root: Root): Read {
     const file = loadLimitsCache(this.#o.limitsPath);
     const prior = file.providers[root.identity] ?? null;
     const snapshot =
@@ -339,32 +424,73 @@ export class LimitsService {
     return { prior, before, status, current: freshest([snapshot, prior]) };
   }
 
+  #readUnit(unit: Unit): Map<string, Read> {
+    return new Map(unit.members.map((root) => [root.identity, this.#read(root)]));
+  }
+
   /**
-   * Decides, fetches and records one account. A fetch happens only under the account's
-   * lease (`.limits-leases/<identity>.lease` beside limits.json), so one process at a time
-   * fetches an account; the holder decides again on the file as it is then and records the
-   * attempt before fetching, so a process that comes after it within 30 s does not fetch.
-   * A process that cannot get the lease serves what limits.json holds.
+   * The members to ask, in order, when the unit is due; none when it isn't. The first
+   * signed-in member decides whether the unit is due, against the unit's freshest capture;
+   * the others stand in when it fails, unless their own back-off or Claude's 30 s gap
+   * holds them back. A unit with no member signed in re-checks the first one due for it
+   * (daily, or when its credential file changes).
    */
-  async #run(root: Root, mode: Mode): Promise<RefreshOutcome> {
-    const id = root.identity;
-    let { prior, before, status, current } = this.#read(root);
+  #plan(unit: Unit, reads: ReadonlyMap<string, Read>, mode: Mode): Root[] {
+    const read = (root: Root) => reads.get(root.identity) as Read;
+    const current = freshest(unit.members.map((root) => read(root).current));
+    const signedIn = this.#signedIn(unit, (id) => reads.get(id)?.status);
+    const [first, ...others] = signedIn;
+    if (first === undefined) {
+      const recheck = unit.members.find(
+        (root) => !root.historyOnly && this.#due(root, read(root).status, current, mode),
+      );
+      return recheck === undefined ? [] : [recheck];
+    }
+    if (!this.#due(first, read(first).status, current, mode)) return [];
+    return [first, ...others.filter((root) => this.#mayStandIn(root, read(root).status))];
+  }
+
+  /** Whether a member may be asked in place of one that just failed. */
+  #mayStandIn(root: Root, status: AccountStatus): boolean {
+    const now = this.#now();
+    if (status.errors > 0 && status.next_at !== null && now < status.next_at) return false;
+    return !(
+      root.provider === "claude" &&
+      status.last_attempt_at !== null &&
+      now - status.last_attempt_at < this.#timing.claudeMinGapMs
+    );
+  }
+
+  /**
+   * Decides, fetches and records one unit. A fetch happens only under the unit's lease
+   * (`.limits-leases/<key>.lease` beside limits.json), so one process at a time fetches an
+   * account; the holder decides again on the file as it is then and records the attempt
+   * before fetching, so a process that comes after it within 30 s does not fetch. A
+   * process that cannot get the lease serves what limits.json holds.
+   */
+  async #run(unit: Unit, mode: Mode): Promise<RefreshOutcome[]> {
+    let reads = this.#readUnit(unit);
     let fetched = false;
-    if (!root.historyOnly && !this.#stopped && this.#due(root, status, current, mode)) {
-      const lease = this.#lease(id);
+    if (!this.#stopped && this.#plan(unit, reads, mode).length > 0) {
+      const lease = this.#lease(unit.key);
       if (lease !== null) {
         try {
-          ({ prior, before, status, current } = this.#read(root));
-          if (this.#due(root, status, current, mode)) {
+          reads = this.#readUnit(unit);
+          for (const root of this.#plan(unit, reads, mode)) {
+            const read = reads.get(root.identity) as Read;
             fetched = true;
-            this.#save(id, null, { ...status, last_attempt_at: this.#now() });
+            this.#save(root.identity, null, { ...read.status, last_attempt_at: this.#now() });
             const attempt = await this.#fetch(root);
             if (this.#stopped && attempt.capture === null) {
               // Cancelled by stop(): not a failure of the account; leave its state alone.
-              return { account: id, fetched, error: null };
+              return unit.members.map((m) => ({ account: m.identity, fetched, error: null }));
             }
-            status = this.#after(root, status, attempt);
-            current = freshest([current, attempt.capture]);
+            read.status = this.#after(root, read.status, attempt);
+            read.current = freshest([read.current, attempt.capture]);
+            // A dead app-server is dead for every Codex home.
+            if (attempt.capture !== null || attempt.error instanceof CodexAppServerUnavailable) {
+              break;
+            }
           }
         } finally {
           lease.release();
@@ -372,20 +498,71 @@ export class LimitsService {
       }
     }
 
-    const newCapture = current !== null && JSON.stringify(current) !== JSON.stringify(prior);
-    const changed = newCapture || JSON.stringify(status) !== before;
-    if (changed) {
-      this.#save(id, newCapture ? current : null, status);
-      this.#o.onChanged?.([id]);
+    const updates = new Map<string, CacheUpdate>();
+    for (const root of unit.members) {
+      const { prior, before, status, current } = reads.get(root.identity) as Read;
+      const newCapture = current !== null && JSON.stringify(current) !== JSON.stringify(prior);
+      const changed = newCapture || JSON.stringify(status) !== before;
+      if (changed)
+        updates.set(root.identity, newCapture ? { capture: current, status } : { status });
+      if (current !== null && (changed || mode.kind === "scheduled")) this.#record(root, current);
     }
-    if (current !== null && (changed || mode.kind === "scheduled")) this.#record(root, current);
-    return { account: id, fetched, error: shownError(root, status, current) };
+    if (updates.size > 0) {
+      this.#saveAll(updates);
+      this.#o.onChanged?.([...updates.keys()]);
+    }
+    const capture = freshest(
+      unit.members.map((root) => (reads.get(root.identity) as Read).current),
+    );
+    const error = groupError(unit.members, (id) => reads.get(id)?.status, capture);
+    return unit.members.map((root) => ({ account: root.identity, fetched, error }));
   }
 
-  /** The account's fetch lease, or null while another process holds it. */
-  #lease(id: string): Lease | null {
+  /**
+   * Auto-detection over the roots' current captures (their rollout snapshots and
+   * limits.json), then the groups they and the manual links make, both saved in
+   * limits.json under its lock, when they changed.
+   */
+  #detect(roots: readonly Root[]): void {
+    const snapshots = roots.some((root) => root.provider === "codex")
+      ? this.#snapshots()
+      : new Map<string, Capture>();
+    const links = this.#links();
+    const now = this.#now();
+    let changed: string[] = [];
     try {
-      return tryLease(leasePath(this.#o.limitsPath, id), this.#timing.leaseTtlMs, this.#now);
+      editLimitsCache(this.#o.limitsPath, (file) => {
+        const captures = new Map(
+          roots.map((root) => [
+            root.identity,
+            freshest([snapshots.get(root.identity), file.providers[root.identity]]),
+          ]),
+        );
+        const pairs = detectPairs(roots, captures, file.pairs ?? {}, now);
+        const before = file.groups ?? {};
+        const groups = recordGroups(resolveGroups(roots, links, pairs, before), before, now);
+        changed = roots
+          .map((root) => root.identity)
+          .filter((id) => JSON.stringify(groups[id]) !== JSON.stringify(before[id]));
+        if (JSON.stringify(pairs) === JSON.stringify(file.pairs ?? {}) && changed.length === 0) {
+          return false;
+        }
+        file.pairs = pairs;
+        file.groups = groups;
+        return true;
+      });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "error";
+      this.#log("warn", `limits: cannot save which accounts are shared (${code})`);
+      return;
+    }
+    if (changed.length > 0) this.#o.onChanged?.(changed);
+  }
+
+  /** The unit's fetch lease, or null while another process holds it. */
+  #lease(key: string): Lease | null {
+    try {
+      return tryLease(leasePath(this.#o.limitsPath, key), this.#timing.leaseTtlMs, this.#now);
     } catch (error) {
       // No writable config dir: limits.json cannot be saved either; fetch unguarded.
       const code = (error as NodeJS.ErrnoException).code ?? "error";
@@ -482,16 +659,18 @@ export class LimitsService {
     };
   }
 
-  #save(id: string, capture: Capture | null, status: AccountStatus): LimitsFile | null {
-    const update: CacheUpdate = capture === null ? { status } : { capture, status };
+  #save(id: string, capture: Capture | null, status: AccountStatus): void {
+    this.#saveAll(new Map([[id, capture === null ? { status } : { capture, status }]]));
+  }
+
+  #saveAll(updates: ReadonlyMap<string, CacheUpdate>): void {
     try {
-      return updateLimitsCache(this.#o.limitsPath, new Map([[id, update]]));
+      updateLimitsCache(this.#o.limitsPath, updates);
     } catch (error) {
       // limits.json keeps what it had (a busy lock, an unwritable dir): this round's
       // update is shown from memory and saved on the next one.
       const code = (error as NodeJS.ErrnoException).code ?? "error";
       this.#log("warn", `limits: cannot save limits.json (${code}); serving the cached limits`);
-      return null;
     }
   }
 

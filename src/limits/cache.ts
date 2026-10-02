@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { ccUsageDir } from "../config.ts";
 import { configDir } from "../paths.ts";
 import { type Capture, freshest, parseCapture } from "./capture.ts";
+import type { GroupRecord, PairState } from "./groups.ts";
 import { withLock } from "./lease.ts";
 
 /**
@@ -12,7 +13,9 @@ import { withLock } from "./lease.ts";
  * keyed by account identity (the root's `sha256(resolved path)[:32]`) instead of
  * `claude:<label>`; `status` holds each account's fetch state, so the back-off, the Claude
  * rate limit and the history-only check hold across the TUI's Worker and every MCP server
- * process that reads and writes this file. It never holds a credential or a raw response.
+ * process that reads and writes this file; `pairs` and `groups` hold which roots share one
+ * subscription account (src/limits/groups.ts). It never holds a credential or a raw
+ * response.
  *
  * Every write takes the file's lock, re-reads the file, merges into it (a capture is
  * replaced only by a fresher one) and replaces it atomically (a temp file, then a rename),
@@ -72,6 +75,10 @@ export interface LimitsFile {
   providers: Record<string, Capture>;
   /** Account identity -> its fetch state. */
   status: Record<string, AccountStatus>;
+  /** `pairKey` of two roots -> what auto-detection found of them; absent until it ran. */
+  pairs?: Record<string, PairState>;
+  /** Account identity -> the group of roots on its account; absent until detection ran. */
+  groups?: Record<string, GroupRecord>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,6 +105,42 @@ function parseStatus(value: unknown): AccountStatus | null {
   return status;
 }
 
+function parsePair(value: unknown): PairState | null {
+  if (!isRecord(value) || typeof value.linked !== "boolean") return null;
+  const last = Array.isArray(value.last) ? value.last.map(numberOrNull) : [];
+  const [a, b] = last;
+  if (last.length !== 2 || a == null || b == null) return null;
+  const count = (x: unknown) => {
+    const n = numberOrNull(x);
+    return n !== null && n >= 0 ? Math.trunc(n) : 0;
+  };
+  return {
+    agree: count(value.agree),
+    disagree: count(value.disagree),
+    linked: value.linked,
+    detected_at: value.linked ? numberOrNull(value.detected_at) : null,
+    last: [a, b],
+  };
+}
+
+function parseGroup(value: unknown): GroupRecord | null {
+  if (!isRecord(value) || typeof value.id !== "string" || value.id === "") return null;
+  const detectedAt = numberOrNull(value.detected_at);
+  if (detectedAt === null || (value.source !== "auto" && value.source !== "manual")) return null;
+  return { id: value.id, detected_at: detectedAt, source: value.source };
+}
+
+/** The well-formed entries of `value`, a record of `parse`d values; null when it is not one. */
+function records<T>(value: unknown, parse: (v: unknown) => T | null): Record<string, T> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, T> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const parsed = parse(raw);
+    if (parsed !== null) out[key] = parsed;
+  }
+  return out;
+}
+
 /** The cache at `path`; empty when it is missing or unreadable. Never throws. */
 export function loadLimitsCache(path: string): LimitsFile {
   const file: LimitsFile = { providers: {}, status: {} };
@@ -114,12 +157,11 @@ export function loadLimitsCache(path: string): LimitsFile {
       if (capture !== null) file.providers[id] = capture;
     }
   }
-  if (isRecord(data.status)) {
-    for (const [id, raw] of Object.entries(data.status)) {
-      const status = parseStatus(raw);
-      if (status !== null) file.status[id] = status;
-    }
-  }
+  file.status = records(data.status, parseStatus) ?? {};
+  const pairs = records(data.pairs, parsePair);
+  if (pairs !== null) file.pairs = pairs;
+  const groups = records(data.groups, parseGroup);
+  if (groups !== null) file.groups = groups;
   return file;
 }
 
@@ -173,9 +215,33 @@ export function updateLimitsCache(
   );
 }
 
-/** Where one account's fetch lease lives: beside limits.json, in `.limits-leases/`. */
-export function leasePath(limitsPath: string, identity: string): string {
-  return join(dirname(limitsPath), ".limits-leases", `${identity}.lease`);
+/**
+ * Re-reads the file and lets `edit` change it, all under the file's lock; writes it back
+ * when `edit` returns true. Returns the file as it is after. Throws as `updateLimitsCache`.
+ */
+export function editLimitsCache(
+  path: string,
+  edit: (file: LimitsFile) => boolean,
+  lockTtlMs?: number,
+): LimitsFile {
+  mkdirSync(dirname(path), { recursive: true });
+  return withLock(
+    `${path}.lock`,
+    () => {
+      const file = loadLimitsCache(path);
+      if (edit(file)) saveLimitsCache(file, path);
+      return file;
+    },
+    lockTtlMs,
+  );
+}
+
+/**
+ * Where one fetch lease lives: beside limits.json, in `.limits-leases/`. `key` is a root's
+ * identity, or the id of a group of roots on one account, which are fetched as one.
+ */
+export function leasePath(limitsPath: string, key: string): string {
+  return join(dirname(limitsPath), ".limits-leases", `${key}.lease`);
 }
 
 /** An account as cc-usage named it: its labels are the ones in cc-usage's ledger. */

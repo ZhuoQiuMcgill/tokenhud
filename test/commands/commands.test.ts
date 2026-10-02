@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { type JsonOptions, runJson } from "../../src/commands/json.ts";
+import { groupId, pairKey } from "../../src/limits/groups.ts";
 import { lockPath, WriterLock } from "../../src/lock.ts";
 import { loadPriceTable } from "../../src/pricing/overrides.ts";
 import type {
@@ -717,6 +718,68 @@ describe("doctor: backups, recovery and sources", () => {
     }
     expect(out).toMatch(/backup {8}\d{4}-\d\d-\d\d \d\d:\d\d, 0(\.\d)? h ago/);
     onlyConfigPaths(env, out);
+  });
+
+  test("lists the roots that share one subscription account, and how each group formed", () => {
+    const env = home();
+    for (const dir of [".claude", ".claude-a", ".claude-b", ".claude-work"]) {
+      mkdirSync(join(env.home, dir, "projects"), { recursive: true });
+    }
+    const id = (dir: string) => rootIdentity(join(env.home, dir), env.home);
+    const [a, b] = [id(".claude-a"), id(".claude-b")];
+    mkdirSync(join(env.xdg, "tokenhud"));
+    writeFileSync(
+      env.config,
+      JSON.stringify({ same_account: [[id(".claude"), id(".claude-work")]], time_zone: "UTC" }),
+    );
+    // What auto-detection recorded for a and b.
+    const detected = Date.parse("2026-10-01T12:00:00Z");
+    writeFileSync(
+      join(env.xdg, "tokenhud", "limits.json"),
+      JSON.stringify({
+        providers: {},
+        status: {},
+        pairs: {
+          [pairKey(a, b)]: {
+            agree: 2,
+            disagree: 0,
+            linked: true,
+            detected_at: detected,
+            last: [1, 2],
+          },
+        },
+        groups: {
+          [a]: { id: groupId([a, b]), detected_at: detected, source: "auto" },
+          [b]: { id: groupId([a, b]), detected_at: detected, source: "auto" },
+        },
+      }),
+    );
+    const report = JSON.parse(run(env, "doctor", "--json").stdout);
+    expect(report.shared_accounts).toEqual([
+      { provider: "claude", roots: ["personal", "work"], source: "manual", since: null },
+      {
+        provider: "claude",
+        roots: ["a", "b"],
+        source: "auto",
+        since: "2026-10-01T12:00:00.000Z",
+      },
+    ]);
+    const out = run(env, "doctor").stdout;
+    for (const text of [
+      "Shared accounts (roots on one subscription account: one limits card each)",
+      "claude        personal + work · linked in config (same_account)",
+      "claude        a + b · found automatically: identical limits on two fetches in a row",
+      "              since 2026-10-01 12:00",
+    ]) {
+      expect(out).toContain(text);
+    }
+    onlyConfigPaths(env, out);
+  });
+
+  test("no shared accounts: says none", () => {
+    const out = run(home(), "doctor").stdout;
+    expect(out).toContain("Shared accounts");
+    expect(out).toMatch(/groups {8}none/);
   });
 
   // test_ledger_info_reports_an_unfinished_recovery
