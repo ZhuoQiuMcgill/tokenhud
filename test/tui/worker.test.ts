@@ -7,7 +7,10 @@ import { join } from "node:path";
 import { openStore } from "../../src/store/store.ts";
 import { superviseVmWorker } from "../../src/tui/vm/client.ts";
 import type { OverviewVM, VmMessage } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
+
+guard();
 
 let fixture: Fixture | null = null;
 let mcp: string | null = null;

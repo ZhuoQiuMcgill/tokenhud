@@ -8,6 +8,7 @@ import { saveLimitsCache } from "../../src/limits/cache.ts";
 import type { UsageRow } from "../../src/store/store.ts";
 import { ACTIVITY, activityRange } from "../../src/tui/vm/overview.ts";
 import type { LimitCard, OverviewVM } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { bundledTable, FIXTURE_ACCOUNTS, NOW } from "./fixture.ts";
 import {
   CAPTURES,
@@ -16,6 +17,8 @@ import {
   type OverviewFixture,
   overviewRows,
 } from "./overview-fixture.ts";
+
+guard();
 
 const rows = overviewRows();
 const table = bundledTable();

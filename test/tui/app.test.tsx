@@ -21,9 +21,12 @@ import type {
   Priced,
   ViewModels,
 } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { fixtureConfig } from "./fixture.ts";
 import { makeOverviewFixture, type OverviewFixture } from "./overview-fixture.ts";
 import { chars, cleanupRenderers, render, roles, settle } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 

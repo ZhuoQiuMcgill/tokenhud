@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { THEME_CHOICES } from "../../src/config.ts";
 import { level, onSel, PALETTES, ROLES, theme } from "../../src/tui/theme.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 function luminance(hex: string): number {
   const n = Number.parseInt(hex.slice(1), 16);

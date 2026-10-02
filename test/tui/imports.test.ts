@@ -7,6 +7,9 @@ import { dirname, join, relative, resolve } from "node:path";
 import { cachePath } from "../../src/ingest/cursors.ts";
 import { ccUsageLimitsPath, limitsPath } from "../../src/limits/cache.ts";
 import { tuiPaths } from "../../src/tui/main.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const ROOT = join(import.meta.dir, "..", "..");
 const SRC = join(ROOT, "src");

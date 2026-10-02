@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { POOL_MIN_BYTES, readAll } from "../../src/ingest/pool.ts";
 import { type ReadResult, type ReadTask, readTask } from "../../src/ingest/read.ts";
 import { workerUrl } from "../../src/ingest/worker-url.ts";
+import { guard } from "../guard.ts";
 import { claudeLine, cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

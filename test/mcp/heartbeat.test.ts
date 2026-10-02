@@ -3,7 +3,10 @@ import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { AGENT_WINDOW_MS, Heartbeat, mcpDir, readMcpActivity } from "../../src/mcp/heartbeat.ts";
+import { guard } from "../guard.ts";
 import { cleanup, MIN, NOW, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -16,6 +16,7 @@ import { storePath } from "../../src/paths.ts";
 import { Zone } from "../../src/query/tz.ts";
 import { discoverClaudeRoots, discoverCodexRoots, type Root } from "../../src/sources/roots.ts";
 import { openStore, type UsageRow } from "../../src/store/store.ts";
+import { removeTempDir } from "../temp.ts";
 
 const made: string[] = [];
 const closers: Array<() => Promise<void> | void> = [];
@@ -23,7 +24,7 @@ const closers: Array<() => Promise<void> | void> = [];
 /** Closes servers and removes temp dirs; each test file registers it with afterEach. */
 export async function cleanup(): Promise<void> {
   for (const close of closers.splice(0).reverse()) await close();
-  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  for (const dir of made.splice(0)) removeTempDir(dir);
 }
 
 export function tempDir(): string {

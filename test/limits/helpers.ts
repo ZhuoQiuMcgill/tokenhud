@@ -1,14 +1,15 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Capture } from "../../src/limits/capture.ts";
 import type { Provider, Root, RootSource } from "../../src/sources/roots.ts";
+import { removeTempDir } from "../temp.ts";
 
 const made: string[] = [];
 
 /** Removes the temp dirs; each test file registers it with afterEach. */
 export function cleanup(): void {
-  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  for (const dir of made.splice(0)) removeTempDir(dir);
 }
 
 export function tempDir(): string {

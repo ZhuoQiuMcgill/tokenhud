@@ -1,0 +1,99 @@
+name: Repeat
+
+# The full test suite, run N times in a row on every OS CI tests on, so a flake that hits
+# one run in ten shows up here before a release, not as a red PR. Run it by hand, e.g.
+#
+#   gh workflow run repeat.yml --ref main -f runs=10
+#
+# Every run is made even after a failure, so the summary gives a failure rate, not just
+# the first failure. Its own file, apart from ci.yml, so neither edit conflicts.
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Times to run the suite on each OS
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test ×${{ inputs.runs }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # A run takes 50–90 s. A hung run is stopped after RUN_LIMIT_MINUTES; this bounds the
+    # job, 10 runs included.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      # pwsh, the shell ci.yml's `bun test` runs in on Windows. Git Bash hands Bun a different
+      # environment there (`PATH` where pwsh says `Path`), and that once decided whether a
+      # test passed (T15).
+      #
+      # Each run writes logs/run-N.log (and .stdout.log) as it goes, and adds its row to
+      # logs/summary.md as it ends, so a run that hangs, or a job that is cancelled, still
+      # leaves its evidence for the upload below.
+      - name: bun test, ${{ inputs.runs }} times
+        shell: pwsh
+        env:
+          RUNS: ${{ inputs.runs }}
+          RUN_LIMIT_MINUTES: 10
+        run: |
+          if ($env:RUNS -notmatch '^[1-9][0-9]*$') {
+            Write-Output "::error::runs must be a positive whole number, got '$env:RUNS'"
+            exit 1
+          }
+          $runs = [int]$env:RUNS
+          $limitMs = [int]$env:RUN_LIMIT_MINUTES * 60 * 1000
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          function Report([string[]] $lines) {
+            $lines | Add-Content -Path logs/summary.md
+            $lines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          }
+          Report @("### ${env:RUNNER_OS}: bun test x $runs", "", "| run | result | seconds | failed tests |", "|---|---|---|---|")
+          $failed = 0
+          foreach ($i in 1..$runs) {
+            Write-Output "======== run $i of $runs on $env:RUNNER_OS ========"
+            $log = "logs/run-$i.log"
+            $out = "logs/run-$i.stdout.log"
+            $start = Get-Date
+            $p = Start-Process -FilePath bun -ArgumentList "test" -NoNewWindow -PassThru `
+              -RedirectStandardError $log -RedirectStandardOutput $out
+            $null = $p.Handle # keeps ExitCode readable once the process has ended
+            if ($p.WaitForExit($limitMs)) {
+              $result = if ($p.ExitCode -eq 0) { "pass" } else { "FAIL" }
+            } else {
+              $result = "TIMEOUT"
+              # The run and every test child it started; nothing else here runs Bun.
+              Get-Process bun -ErrorAction SilentlyContinue | Stop-Process -Force
+            }
+            if ($result -ne "pass") { $failed++ }
+            Get-Content $log, $out
+            # Bun prints each failure twice (in place and in the closing summary).
+            $names = Select-String -Path $log, $out -Pattern '^\(fail\) (.*?)( \[[0-9.]+m?s\])?$' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value.Replace('|', '\|') } |
+              Sort-Object -Unique
+            $seconds = [int]((Get-Date) - $start).TotalSeconds
+            Report "| $i | $result | $seconds | $($names -join ';') |"
+          }
+          Report @("", "**$($runs - $failed) of $runs runs passed on $env:RUNNER_OS.**")
+          if ($failed -gt 0) {
+            Write-Output "::error::$failed of $runs runs failed on $env:RUNNER_OS; the step summary lists the tests"
+            exit 1
+          }
+      - name: Upload the logs and the summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repeat-logs-${{ matrix.os }}
+          path: logs/
+          if-no-files-found: warn

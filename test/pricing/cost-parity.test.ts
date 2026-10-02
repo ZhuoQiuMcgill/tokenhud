@@ -4,7 +4,10 @@
 import { describe, expect, test } from "bun:test";
 import { computeCost, type Rates, type TokenCounts } from "../../src/pricing/cost.ts";
 import parity from "../fixtures/pricing/cost-parity.json";
+import { guard } from "../guard.ts";
 import { bundledTable, CC_USAGE_MODELS, CC_USAGE_V261_INSTANT } from "./helpers.ts";
+
+guard();
 
 type Case = [number, number, number, number, number, number | null, number | null, number];
 const cases = parity.cases as Case[];

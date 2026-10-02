@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { normalizeModel } from "../../src/pricing/normalize.ts";
 import { PriceTable } from "../../src/pricing/table.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 describe("normalizeModel", () => {
   test.each([

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { ccUsageDir, configDir, pricingOverridesPath, storePath } from "../src/paths.ts";
+import { guard } from "./guard.ts";
+
+guard();
 
 const home = join("/", "home", "someone");
 

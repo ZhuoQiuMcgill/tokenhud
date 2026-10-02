@@ -7,3 +7,5 @@ exact = true
 # with its own *.test.* files and dependencies, which must never run as part of this
 # project; dist/ holds build output. Bun already skips node_modules/.
 pathIgnorePatterns = ["docs/**", "dist/**"]
+# Puts temp dirs on a Windows runner's fast temp disk; see the file.
+preload = ["./test/preload.ts"]

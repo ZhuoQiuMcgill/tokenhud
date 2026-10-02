@@ -34,8 +34,11 @@ import {
 import { StoreCorrupt, StoreUnavailable } from "../../src/store/errors.ts";
 import { KEY_SCHEME, ledgerKey } from "../../src/store/key.ts";
 import { fileIdOf, openStore, type Store, type UsageRow } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { corruptUsageLeaf, scribblePage, usagePages } from "./damage.ts";
 import { cleanup, row, T0, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

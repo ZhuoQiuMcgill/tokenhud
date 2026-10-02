@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { type ResolveContext, resolveAccount, transcriptExists } from "../../src/mcp/accounts.ts";
 import { ToolError } from "../../src/mcp/errors.ts";
 import type { Root } from "../../src/sources/roots.ts";
+import { guard } from "../guard.ts";
 import { cleanup, type Machine, machine, rootsOf, SESSION, transcript } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

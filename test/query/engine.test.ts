@@ -16,7 +16,10 @@ import {
   openStoreReader,
   type UsageRow,
 } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "../store/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

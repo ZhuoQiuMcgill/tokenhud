@@ -15,8 +15,11 @@ import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
 import { UsageQueries } from "../../src/query/engine.ts";
 import type { Range } from "../../src/query/types.ts";
 import { openStore, openStoreReader, type UsageRow } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "../store/helpers.ts";
 import { ACCOUNTS, prng, syntheticRows } from "./synthetic.ts";
+
+guard();
 
 const FROM = Date.parse("2026-06-01T00:00:00Z");
 const TO = Date.parse("2026-10-01T00:00:00Z");

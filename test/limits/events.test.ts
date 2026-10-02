@@ -9,7 +9,10 @@ import {
   recordCaptureEvents,
 } from "../../src/limits/events.ts";
 import { openStore, type Store } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { capture, cleanup, fakeRoot, tempDir } from "./helpers.ts";
+
+guard();
 
 const stores: Store[] = [];
 afterEach(() => {

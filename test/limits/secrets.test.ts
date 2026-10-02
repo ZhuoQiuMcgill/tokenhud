@@ -9,6 +9,7 @@ import { LimitFetchError } from "../../src/limits/capture.ts";
 import { fetchClaudeLimits, type HttpFetch, redact } from "../../src/limits/claude.ts";
 import { Limits } from "../../src/limits/index.ts";
 import { LimitsService } from "../../src/limits/service.ts";
+import { guard } from "../guard.ts";
 import {
   CLAUDE_RESPONSE,
   cleanup,
@@ -18,6 +19,8 @@ import {
   tempDir,
   writeCredentials,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

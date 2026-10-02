@@ -14,6 +14,7 @@ import type {
   OverviewVM,
   ViewModels,
 } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import {
   bundledTable,
   FIXTURE_ACCOUNTS,
@@ -23,6 +24,8 @@ import {
   makeFixtureStore,
   NOW,
 } from "./fixture.ts";
+
+guard();
 
 const rows = fixtureRows();
 const table = bundledTable();

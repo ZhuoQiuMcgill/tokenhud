@@ -28,8 +28,11 @@ import type {
 import { rootIdentity } from "../../src/sources/roots.ts";
 import { openStore } from "../../src/store/store.ts";
 import expectedLedger from "../fixtures/store/cc-usage-ledger.expected.json";
+import { guard } from "../guard.ts";
 import { claudeLine } from "../ingest/helpers.ts";
 import { cleanup, tempDir } from "../store/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

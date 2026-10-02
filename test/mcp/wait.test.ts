@@ -3,7 +3,10 @@ import type { AccountLimits, LimitWindow } from "../../src/limits/index.ts";
 import { realClock } from "../../src/mcp/server.ts";
 import { type WaitArgs, type WaitDeps, waitForReset } from "../../src/mcp/wait.ts";
 import { Zone } from "../../src/query/tz.ts";
+import { guard } from "../guard.ts";
 import { FakeClock, HOUR, MIN, NOW } from "./helpers.ts";
+
+guard();
 
 const DAY = 24 * HOUR;
 

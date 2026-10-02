@@ -8,8 +8,11 @@ import { lockPath, WriterLock } from "../../src/lock.ts";
 import { storePath } from "../../src/paths.ts";
 import { rootIdentity } from "../../src/sources/roots.ts";
 import { openStore } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { claudeLine } from "../ingest/helpers.ts";
 import { CLI, cleanup, envOf, type Machine, machine } from "../mcp/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

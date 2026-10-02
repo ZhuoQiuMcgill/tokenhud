@@ -5,6 +5,9 @@ import {
   parseModelPricing,
   parsePriceTableFile,
 } from "../../src/pricing/schema.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const strict = { coerce: false };
 const lenient = { coerce: true };

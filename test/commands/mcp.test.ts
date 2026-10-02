@@ -3,7 +3,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import { guard } from "../guard.ts";
 import { CLI, cleanup, envOf, machine } from "../mcp/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

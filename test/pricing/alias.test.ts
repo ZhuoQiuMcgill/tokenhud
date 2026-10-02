@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { loadPriceTable } from "../../src/pricing/overrides.ts";
 import { parsePriceTableFile } from "../../src/pricing/schema.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
+import { guard } from "../guard.ts";
 import { at } from "./helpers.ts";
+
+guard();
 
 const bundled = () => new PriceTable(bundledPricing().models, bundledPricing().aliases);
 const SWITCH = at("2026-07-30T07:00:00Z");

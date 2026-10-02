@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { breakpoint, cardsPerRow, fitSections, splitWidth } from "../../src/tui/layout.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 test("breakpoints: wide ≥ 120, medium 100–119, narrow < 100", () => {
   expect([160, 120, 119, 105, 100, 99, 80].map(breakpoint)).toEqual([

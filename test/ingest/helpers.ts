@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, watch, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Config, defaultConfig, type RootEntry } from "../../src/config.ts";
 import { type EngineOptions, IngestEngine } from "../../src/ingest/engine.ts";
 import type { Store } from "../../src/store/store.ts";
+import { removeTempDir } from "../temp.ts";
 
 const made: string[] = [];
 const engines: IngestEngine[] = [];
@@ -17,7 +18,7 @@ export async function cleanup(): Promise<void> {
       // already closed by the test
     }
   }
-  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  for (const dir of made.splice(0)) removeTempDir(dir);
 }
 
 /** Registers `engine` to be stopped by `cleanup`. */

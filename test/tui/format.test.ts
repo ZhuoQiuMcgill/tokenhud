@@ -12,6 +12,9 @@ import {
   tokens,
   truncate,
 } from "../../src/tui/format.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 describe("money", () => {
   test.each([

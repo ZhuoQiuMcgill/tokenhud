@@ -26,7 +26,10 @@ import {
 import { KEY_SCHEME } from "../../src/store/key.ts";
 import { APPLICATION_ID, ROLL_TRIGGERS, SCHEMA_VERSION } from "../../src/store/schema.ts";
 import { KEY_SCHEME_MIGRATIONS, openStore, type Store } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { cleanup, HOUR, row, T0, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

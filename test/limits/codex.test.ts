@@ -9,7 +9,10 @@ import {
   rpcError,
   runCodexRpc,
 } from "../../src/limits/codex.ts";
+import { guard } from "../guard.ts";
 import { CODEX_RESPONSE, cleanup, stubExecutable, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

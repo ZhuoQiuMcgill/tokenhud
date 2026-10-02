@@ -4,7 +4,10 @@
 import { afterAll, afterEach, beforeAll, expect, mock, test } from "bun:test";
 import * as fs from "node:fs";
 import { join } from "node:path";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 const realOpen = fs.openSync;
 let fault: { code: string; times: number } | null = null;

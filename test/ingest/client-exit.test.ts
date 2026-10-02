@@ -4,7 +4,10 @@ import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import { defaultConfig } from "../../src/config.ts";
 import { startIngestWorker, type WorkerOptions } from "../../src/ingest/client.ts";
+import { guard } from "../guard.ts";
 import { cleanup, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

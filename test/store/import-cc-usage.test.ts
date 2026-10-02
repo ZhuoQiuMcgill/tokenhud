@@ -18,7 +18,10 @@ import {
 } from "../../src/store/import-cc-usage.ts";
 import { openStore, type Store, UNATTRIBUTED } from "../../src/store/store.ts";
 import expected from "../fixtures/store/cc-usage-ledger.expected.json";
+import { guard } from "../guard.ts";
 import { cleanup, row, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

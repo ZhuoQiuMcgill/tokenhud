@@ -3,7 +3,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { guard } from "../guard.ts";
 import { CLI, cleanup, envOf, type Machine, machine, tempDir } from "../mcp/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

@@ -37,9 +37,12 @@ import {
 } from "../../src/tui/vm/models.ts";
 import { createQueries } from "../../src/tui/vm/session.ts";
 import type { AccountInfo, ViewModels } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { bundledTable, fixtureConfig, fixtureRows, NOW, TZ } from "./fixture.ts";
 import { extraRows, makeT13Fixture, type T13Fixture, t13Views } from "./fixture-t13.ts";
 import { chars, cleanupRenderers, render, settle } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 

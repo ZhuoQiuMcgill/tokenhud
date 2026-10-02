@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { storePath } from "../../src/paths.ts";
 import type { Root } from "../../src/sources/roots.ts";
+import { guard } from "../guard.ts";
 import {
   capture,
   cleanup,
@@ -26,6 +27,8 @@ import {
   writeLimits,
   writeStore,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

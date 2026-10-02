@@ -12,7 +12,10 @@ import {
 } from "../../src/pricing/overrides.ts";
 import { bundledPricing } from "../../src/pricing/table.ts";
 import ccUsageUser from "../fixtures/pricing/cc-usage-user-pricing.json";
+import { guard } from "../guard.ts";
 import { at } from "./helpers.ts";
+
+guard();
 
 let dir: string;
 let path: string;

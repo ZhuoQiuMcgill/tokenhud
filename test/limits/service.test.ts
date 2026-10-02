@@ -13,6 +13,7 @@ import { codexAuthMtime, fetchCodexLimits } from "../../src/limits/codex.ts";
 import { Limits } from "../../src/limits/index.ts";
 import { LimitsService, type LimitsServiceOptions } from "../../src/limits/service.ts";
 import type { Root } from "../../src/sources/roots.ts";
+import { guard } from "../guard.ts";
 import {
   capture,
   cleanup,
@@ -23,6 +24,8 @@ import {
   tempDir,
   writeCredentials,
 } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 
@@ -507,11 +510,18 @@ describe("transient failures never sign an account out", () => {
     ["a 500", 500],
     ["a 429", 429],
   ])("%s: back-off from 30 s, still signed in", async (_name, failure) => {
+    let requests = 0;
     const { root, h } = signedInRoot({
       fetchClaude: (r, signal) =>
         fetchClaudeLimits(r, {
           signal,
+          // The token expires an hour after T0 on the harness's clock. On the wall clock it
+          // expired on 2026-10-01, and the fetcher then ran the refresh instead: the real
+          // `claude` from PATH, against the real home (an "auto" root), never the fetch.
+          now: () => h.clock.now,
+          which: () => null,
           fetch: async () => {
+            requests++;
             if (typeof failure === "number") return new Response("", { status: failure });
             throw failure;
           },
@@ -519,6 +529,7 @@ describe("transient failures never sign an account out", () => {
     });
     writeCredentials(root.path, FAKE_TOKEN, T0 + HOUR);
     await h.service.refreshDue();
+    expect(requests).toBe(1);
     expect(h.file().status[root.identity]).toMatchObject({
       signed_in: true,
       history_only: null,

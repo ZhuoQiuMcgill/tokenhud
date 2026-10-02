@@ -19,8 +19,11 @@ import { Controller, initialState, type Ports } from "../../src/tui/controller.t
 import { computeOverview } from "../../src/tui/vm/overview.ts";
 import { createQueries, discoverRoots } from "../../src/tui/vm/session.ts";
 import type { OverviewVM } from "../../src/tui/vm/types.ts";
+import { guard } from "../guard.ts";
 import { bundledTable } from "./fixture.ts";
 import { chars, cleanupRenderers, render } from "./render.ts";
+
+guard();
 
 cleanupRenderers();
 

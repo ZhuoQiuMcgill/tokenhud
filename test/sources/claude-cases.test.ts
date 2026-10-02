@@ -7,7 +7,10 @@ import { dirname, join } from "node:path";
 import { ledgerKey } from "../../src/store/key.ts";
 import { storedText } from "../../src/store/store.ts";
 import cases from "../fixtures/sources/claude-cases.json";
+import { guard } from "../guard.ts";
 import { cleanup, openEngine, storedRows, tempDir } from "../ingest/helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

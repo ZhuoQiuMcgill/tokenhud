@@ -7,7 +7,10 @@ import { join } from "node:path";
 import { StoreCorrupt, StoreUnavailable } from "../../src/store/errors.ts";
 import { LONG_CONTEXT_PREDICATE, SCHEMA_VERSION } from "../../src/store/schema.ts";
 import { emptyStoreDatabase, openStore, openStoreReader } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { cleanup, row, T0, tempDir, track } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

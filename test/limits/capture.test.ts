@@ -12,7 +12,10 @@ import {
   parseCapture,
   windowMinutes,
 } from "../../src/limits/capture.ts";
+import { guard } from "../guard.ts";
 import { CLAUDE_RESPONSE, CODEX_RESPONSE, capture } from "./helpers.ts";
+
+guard();
 
 // Ported from cc-usage's tests/test_limits_fetch.py and the T13 account tests.
 

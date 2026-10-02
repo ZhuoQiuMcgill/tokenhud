@@ -10,8 +10,11 @@ import { extractCodexV1 } from "../../src/sources/codex.ts";
 import { comparePyPaths } from "../../src/sources/pypath.ts";
 import { importCcUsage } from "../../src/store/import-cc-usage.ts";
 import { openStore, type UsageRow } from "../../src/store/store.ts";
+import { guard } from "../guard.ts";
 import { codexRoot, materialize, openCodexEngine } from "../sources/codex-helpers.ts";
 import { cleanup, storedRows, tempDir } from "./helpers.ts";
+
+guard();
 
 afterEach(cleanup);
 

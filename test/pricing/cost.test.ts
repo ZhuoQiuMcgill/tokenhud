@@ -23,7 +23,10 @@ import { normalizeModel } from "../../src/pricing/normalize.ts";
 import { parseOverrides } from "../../src/pricing/overrides.ts";
 import { isDated, type RateCard } from "../../src/pricing/schema.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
+import { guard } from "../guard.ts";
 import { bundledTable, CC_USAGE_V261_INSTANT, isClose } from "./helpers.ts";
+
+guard();
 
 const T = CC_USAGE_V261_INSTANT;
 const PRICING = new PriceTable({
