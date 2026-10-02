@@ -170,6 +170,10 @@ describe("the guard", () => {
     expect(() => refuseRealClient(real, {}, "/opt/tokenhud/cli.ts")).not.toThrow();
     expect(() => refuseRealClient(real, inBunTest, "/opt/tokenhud/cli.ts")).not.toThrow();
     expect(() => refuseRealClient(real, {}, testFile)).not.toThrow();
+    // The signal itself, as `bun test` gives it to this very thread on every OS CI runs.
+    expect(() =>
+      refuseRealClient(real, { NODE_ENV: process.env.NODE_ENV ?? "" }, Bun.main),
+    ).toThrow(/guard is not installed/);
     // TOKENHUD_TEST without a stub dir refuses everything too.
     expect(() => refuseRealClient(real, { TOKENHUD_TEST: "1" }, "cli.ts")).toThrow(RefusedClient);
     expect(takeSpawned()).toEqual([]);
