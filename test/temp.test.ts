@@ -1,5 +1,5 @@
-// The test suite's own temp-dir plumbing (T15): removing a temp dir whose files another
-// process is still closing.
+// The test suite's own temp-dir plumbing (T15): where temp dirs go on a Windows runner, and
+// removing one whose files another process is still closing.
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -8,6 +8,13 @@ import { join } from "node:path";
 import { removeTempDir } from "./temp.ts";
 
 const windows = process.platform === "win32";
+
+test.skipIf(!(windows && process.env.RUNNER_TEMP))(
+  "on a Windows runner, temp dirs are made on RUNNER_TEMP, not the OS disk",
+  () => {
+    expect(tmpdir()).toBe(process.env.RUNNER_TEMP as string);
+  },
+);
 
 describe("removeTempDir", () => {
   test("removes a dir and everything in it", () => {
