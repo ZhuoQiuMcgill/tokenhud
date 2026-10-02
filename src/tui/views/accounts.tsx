@@ -612,6 +612,8 @@ export const accounts: View<AccountsVM, AccountsState> = {
     { key: "h", label: "history only" },
   ],
   initial: { selected: null },
+  // Selection is by account id, so an account from another view is selected as it is.
+  select: (_state, account) => ({ selected: account }),
   keys(key, state, vm) {
     if (vm === undefined) return undefined;
     const rows = listRows(vm);

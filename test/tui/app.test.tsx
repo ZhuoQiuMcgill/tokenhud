@@ -1,6 +1,7 @@
-// The frame and every placeholder view at the four sizes the user runs (T10 §4): 105×50
-// and 120×45 (half screens), 80×24, 160×50. Deterministic: a fixture store, a fixed clock,
-// and view models computed exactly as the view-model Worker computes them.
+// The frame and every view at the four sizes the user runs (T10 §4): 105×50 and 120×45
+// (half screens), 80×24, 160×50. Deterministic: a fixture store (the Overview's, with
+// limits, events and MCP agents), a fixed clock, and view models computed exactly as the
+// view-model Worker computes them.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,7 +21,8 @@ import type {
   Priced,
   ViewModels,
 } from "../../src/tui/vm/types.ts";
-import { type Fixture, fixtureConfig, fixtureViews, makeFixtureStore } from "./fixture.ts";
+import { fixtureConfig } from "./fixture.ts";
+import { makeOverviewFixture, type OverviewFixture } from "./overview-fixture.ts";
 import { chars, cleanupRenderers, render, roles, settle } from "./render.ts";
 
 cleanupRenderers();
@@ -38,12 +40,12 @@ const VIEWS = [
   ["4", "accounts"],
 ] as const;
 
-let fixture: Fixture;
+let fixture: OverviewFixture;
 let views: ViewModels;
 let accounts: AccountInfo[];
 beforeAll(() => {
-  fixture = makeFixtureStore();
-  ({ views, accounts } = fixtureViews(fixture.storePath));
+  fixture = makeOverviewFixture();
+  ({ views, accounts } = fixture.views());
 });
 afterAll(() => fixture.remove());
 
@@ -59,7 +61,7 @@ const ports: Ports = {
 function controller(config: Config = fixtureConfig(), mode: "owner" | "reader" = "owner") {
   const c = new Controller(initialState(config, mode), ports, "America/Toronto");
   c.vmMessage({ type: "views", views, accounts, scope: null, ms: 1 });
-  c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 2, recent: [] } });
+  c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 2, recent: [], latest: [] } });
   if (mode === "owner") c.setIngest("live");
   return c;
 }
@@ -115,15 +117,14 @@ describe.each([
     const frame = chars(setup);
     for (const line of frame.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(width);
     expect(frame).not.toMatch(/[\d$%*]…|…\d/);
+    // The Overview's numbers have their own checker (overview.test.tsx).
     const priced: Priced[] =
       name === "models"
         ? [...(views.models as ModelsVM).rows]
         : name === "accounts"
           ? // The detail of the selected (first) account: its 30-day spend.
             [((views.accounts as AccountsVM).rows[0] as AccountsVM["rows"][number]).last30]
-          : name === "overview"
-            ? (views.overview as OverviewVM).accounts.flatMap((a) => [a.today, a.last24h])
-            : [];
+          : [];
     for (const p of priced) {
       const forms = [costText(p).text, costText(p, true).text];
       expect(forms.some((f) => frame.includes(f))).toBe(true);
@@ -253,7 +254,7 @@ describe("states", () => {
     const c = controller();
     c.vmMessage({
       type: "views",
-      views: fixtureViews(fixture.storePath, fixtureConfig(), work.id).views,
+      views: fixture.views(work.id).views,
       accounts,
       scope: work.id,
       ms: 1,
@@ -270,7 +271,7 @@ describe("states", () => {
     const setup = await render(<Frame controller={c} width={105} height={50} />, 105, 50);
     const frame = chars(setup);
     expect(frame).not.toContain("$");
-    expect(frame).toContain("tokens per 20 min");
+    expect(frame).toContain("tokens per 15 min");
   });
 
   test("a terminal too small says so instead of drawing a broken frame", async () => {

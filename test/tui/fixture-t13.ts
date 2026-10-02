@@ -193,6 +193,7 @@ export const MCP: McpActivity = {
     { at: NOW - 12_000, tool: "get_limits", account: "personal" },
     { at: NOW - 4 * MIN, tool: "usage", account: "personal" },
   ],
+  latest: [{ at: NOW - 12_000, tool: "get_limits", account: "personal" }],
 };
 
 export interface T13Fixture extends Fixture {

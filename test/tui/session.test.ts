@@ -1,9 +1,12 @@
 // The view-model Worker's logic, in-process with fake timers: what it posts, when it
 // recomputes, and that its engine forgets cached data only when told to.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { saveLimitsCache } from "../../src/limits/cache.ts";
+import { Heartbeat } from "../../src/mcp/heartbeat.ts";
+import { rootIdentity } from "../../src/sources/roots.ts";
 import { openStore, openStoreReader, type UsageRow } from "../../src/store/store.ts";
 import {
   Coalescer,
@@ -12,7 +15,7 @@ import {
   type Timers,
   VmSession,
 } from "../../src/tui/vm/session.ts";
-import type { OverviewVM, VmMessage, VmStart } from "../../src/tui/vm/types.ts";
+import type { AccountsVM, OverviewVM, VmMessage, VmStart } from "../../src/tui/vm/types.ts";
 import { bundledTable, type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
 
 /** Timers that move only when told to. */
@@ -64,6 +67,8 @@ function harness(over: Partial<VmStart> = {}, fixture?: Fixture) {
       storePath: fx.storePath,
       overridesPath: join(fx.dir, "no-overrides.json"),
       mcpDir,
+      limitsPath: join(fx.dir, "limits.json"),
+      cachePath: join(fx.dir, "cache.db"),
       mode: "owner",
       settings: { tz: TZ, window: "all", scope: null },
       scopeLabel: null,
@@ -165,7 +170,71 @@ describe("VmSession", () => {
       "overview",
     ]);
     expect(h.last().accounts).toHaveLength(5);
-    expect(h.posted[2]).toEqual({ type: "mcp", activity: { servers: 0, agents: 0, recent: [] } });
+    expect(h.posted[2]).toEqual({
+      type: "mcp",
+      activity: { servers: 0, agents: 0, recent: [], latest: [] },
+    });
+  });
+
+  test("the Overview's first views already have the limit cards and the MCP agents", () => {
+    const fx = makeFixtureStore();
+    const home = join(fx.dir, "home");
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    const identity = rootIdentity(join(home, ".claude"), home);
+    const limitsPath = join(fx.dir, "limits.json");
+    const save = (used: number) =>
+      saveLimitsCache(
+        {
+          providers: {
+            [identity]: {
+              captured_at: (NOW - 60_000) / 1000,
+              source: "claude",
+              rate_limits: {
+                session: { used_percentage: used, resets_at: (NOW + 3_600_000) / 1000 },
+              },
+            },
+          },
+          status: {},
+        },
+        limitsPath,
+      );
+    save(50);
+    const mcpDir = mkdtempSync(join(tmpdir(), "tokenhud-session-mcp-"));
+    const beat = new Heartbeat(mcpDir, { pid: process.pid, now: () => Date.now() });
+    beat.record("limits", "personal");
+    cleanups.push(() => rmSync(mcpDir, { recursive: true, force: true }));
+    const h = harness({ limitsPath, mcpDir }, fx);
+    h.session.begin();
+    expect(h.views()).toHaveLength(1);
+    const first = h.last().views.overview as OverviewVM;
+    const personal = first.cards?.find((c) => c.label === "personal");
+    expect(personal?.fiveHour?.utilization).toBe(0.5);
+    expect(first.agents?.calls.map((c) => c.tool)).toEqual(["limits"]);
+    expect(h.posted.map((m) => m.type)).toEqual(["views", "roots", "mcp"]);
+
+    // Someone else fetched: limits.json is rewritten. The next tick recomputes the views
+    // that show limits, and only those.
+    save(70);
+    h.session.handle({ type: "tick" });
+    h.timers.advance(RECOMPUTE_INTERVAL_MS);
+    expect(Object.keys(h.last().views)).toEqual(["overview", "accounts"]);
+    const after = (h.last().views.overview as OverviewVM).cards?.find(
+      (c) => c.label === "personal",
+    );
+    expect(after?.fiveHour?.utilization).toBe(0.7);
+
+    // An agent calls a tool: the footer's activity and the agents card both move.
+    const views = h.views().length;
+    beat.record("should_wait", "personal");
+    h.session.handle({ type: "tick" });
+    h.timers.advance(RECOMPUTE_INTERVAL_MS);
+    expect(h.views()).toHaveLength(views + 1);
+    expect((h.last().views.overview as OverviewVM).agents?.calls[0]?.tool).toBe("should_wait");
+    // Nothing changed: a tick recomputes nothing.
+    h.session.handle({ type: "tick" });
+    h.timers.advance(RECOMPUTE_INTERVAL_MS);
+    expect(h.views()).toHaveLength(views + 1);
+    beat.stop();
   });
 
   test("a changed message: invalidate that range, recompute off the input path", () => {
@@ -283,7 +352,10 @@ describe("VmSession", () => {
     h.session.begin();
     const work = h.last().accounts.find((a) => a.label === "work")?.id;
     expect(h.last().scope).toBe(work as number);
-    expect((h.last().views.overview as OverviewVM).accounts.map((a) => a.label)).toEqual(["work"]);
+    // Every Overview section is the scoped account's: its all-time spend is the Accounts row's.
+    const overview = h.last().views.overview as OverviewVM;
+    const row = (h.last().views.accounts as AccountsVM).rows.find((r) => r.label === "work");
+    expect(overview.spend.all.tokens).toBe(row?.tokens as number);
     write(h.fx.storePath, [newRow(NOW - 60_000)]);
     h.session.handle({
       type: "changed",
@@ -356,6 +428,8 @@ test("a config change re-reads history-only marks and recomputes every view", ()
       storePath: fx.storePath,
       overridesPath: join(fx.dir, "none.json"),
       mcpDir: mcp,
+      limitsPath: join(fx.dir, "limits.json"),
+      cachePath: join(fx.dir, "cache.db"),
       mode: "owner",
       settings: { tz: TZ, window: "all", scope: null },
       scopeLabel: null,

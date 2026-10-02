@@ -423,6 +423,8 @@ describe("the view model", () => {
         storePath,
         overridesPath: join(dir, "no-overrides.json"),
         mcpDir: join(dir, "mcp"),
+        limitsPath: join(dir, "limits.json"),
+        cachePath: join(dir, "cache.db"),
         mode: "owner",
         settings: { tz: TZ, window: "all", scope: null },
         scopeLabel: null,
@@ -457,6 +459,8 @@ describe("the view model", () => {
         storePath: copy,
         overridesPath: join(dir, "no-overrides.json"),
         mcpDir: join(dir, "mcp"),
+        limitsPath: join(dir, "limits.json"),
+        cachePath: join(dir, "cache.db"),
         mode: "owner",
         settings: { tz: TZ, window: "all", scope: null },
         scopeLabel: null,
@@ -632,7 +636,7 @@ async function frameOf(
 ) {
   const c = new Controller(initialState(config, "owner"), ports, TZ);
   c.vmMessage({ type: "views", views: { history: model }, accounts: [], scope: null, ms: 1 });
-  c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 2, recent: [] } });
+  c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 2, recent: [], latest: [] } });
   c.setIngest("live");
   const setup = await render(<Frame controller={c} width={width} height={height} />, width, height);
   await settle(setup, () => c.key(keyOf("2")));

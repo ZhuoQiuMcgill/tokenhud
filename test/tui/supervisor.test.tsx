@@ -49,6 +49,8 @@ function start(f: Fixture, mcp: string, testFault: { kind: string; marker: strin
     storePath: f.storePath,
     overridesPath: join(f.dir, "none.json"),
     mcpDir: mcp,
+    limitsPath: join(f.dir, "limits.json"),
+    cachePath: join(f.dir, "cache.db"),
     mode: "owner",
     settings: { tz: TZ, window: "all", scope: null },
     scopeLabel: null,

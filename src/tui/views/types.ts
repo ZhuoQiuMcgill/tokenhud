@@ -33,7 +33,9 @@ export interface Section extends SectionSpec {
  *   toggles back to every account;
  * - `root`: an edit of the root an account comes from (by identity), as the settings
  *   account editor makes it: enable or disable it, rename it, toggle history-only;
- * - `settings`: the settings account editor.
+ * - `settings`: the settings account editor;
+ * - `open`: another view, showing one account (by store id): the shell switches to it and
+ *   has it `select` the account (the Overview's Enter on a card opens Accounts).
  */
 export type ViewCommand =
   | { readonly type: "window"; readonly step: 1 | -1 }
@@ -44,7 +46,8 @@ export type ViewCommand =
       readonly label: string;
       readonly edit: "enable" | "rename" | "history";
     }
-  | { readonly type: "settings" };
+  | { readonly type: "settings" }
+  | { readonly type: "open"; readonly view: ViewId; readonly account: number };
 
 const COMMAND: unique symbol = Symbol("view command");
 
@@ -76,7 +79,8 @@ export function viewAnswer<S>(answer: S): { state: S; command: ViewCommand | nul
  *    `capturing` (a text field has focus).
  * 3. Every other key goes to the active view's `keys`, and only there. A view acts through
  *    the state it returns; for what the shell owns (the scope, config, the settings
- *    screen), that state carries a command (`withCommand`). Views have no other key hook.
+ *    screen, another view), that state carries a command (`withCommand`). Views have no
+ *    other key hook: `select` only answers another view's `open`.
  */
 export interface View<VM, S> {
   readonly id: ViewId;
@@ -92,5 +96,7 @@ export interface View<VM, S> {
   keys(key: string, state: S, vm: VM | undefined): S | undefined;
   /** True while a text field of the view has the keys: the shell's own keys pause. */
   capturing?(state: S): boolean;
+  /** This view's state showing a store account (by id), for another view's `open`. */
+  select?(state: S, account: number): S;
   sections(vm: VM, state: S, ctx: ViewContext): Section[];
 }

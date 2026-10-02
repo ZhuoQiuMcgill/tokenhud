@@ -18,6 +18,8 @@ export interface TuiPaths {
   readonly config: string;
   readonly store: string;
   readonly cache: string;
+  /** limits.json, which the Overview's limit cards read. */
+  readonly limits: string;
   readonly overrides: string;
   readonly lock: string;
   readonly mcp: string;

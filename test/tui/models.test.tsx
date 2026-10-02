@@ -516,7 +516,7 @@ const ports: Ports = {
 function controller(config: Config = fixtureConfig()) {
   const c = new Controller(initialState(config, "owner"), ports, TZ);
   c.vmMessage({ type: "views", views, accounts, scope: null, ms: 1 });
-  c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 1, recent: [] } });
+  c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 1, recent: [], latest: [] } });
   c.setIngest("live");
   c.key({ name: "3", sequence: "3", ctrl: false });
   return c;

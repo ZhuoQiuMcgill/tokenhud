@@ -9,18 +9,25 @@
 // - switch: ms from a view key to its frame being drawn (100 switches, 1–4 in turn);
 // - tick: ms the refresh tick takes on the UI thread.
 // Idle CPU is read from /proc/<pid>/stat over 60 s with nothing changing (Linux only).
+// The home also has a limits.json for its account and a running MCP server's heartbeat, so
+// the Overview draws its limit cards and agents card.
 // A second part times the same frames in-process (OpenTUI's test renderer), with view
-// models computed from the same store, and a tick that does change what's on screen.
+// models computed from the same store (the Overview's from its fixture, five cards and the
+// agents), and a tick that does change what's on screen.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { act } from "react";
+import { saveLimitsCache } from "../../src/limits/cache.ts";
 import { LOCK_FILE_NAME, lockHolder } from "../../src/lock.ts";
+import { Heartbeat } from "../../src/mcp/heartbeat.ts";
+import { rootIdentity } from "../../src/sources/roots.ts";
 import { openStore } from "../../src/store/store.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState } from "../../src/tui/controller.ts";
 import { ACCOUNTS, syntheticRows } from "../query/synthetic.ts";
 import { fixtureConfig, fixtureViews } from "./fixture.ts";
+import { MCP, makeOverviewFixture } from "./overview-fixture.ts";
 import { CLI, makeHome, runInPty } from "./pty/driver.ts";
 import { render } from "./render.ts";
 
@@ -90,6 +97,29 @@ try {
     `  built in ${((performance.now() - t) / 1000).toFixed(1)} s (${ACCOUNTS.length} accounts)`,
   );
 
+  // The account's limits, near its 5-hour limit, and an agent session calling tools.
+  const identity = rootIdentity(join(home.dir, ".claude"), home.dir);
+  const at = (ms: number) => ms / 1000;
+  saveLimitsCache(
+    {
+      providers: {
+        [identity]: {
+          captured_at: at(now - 60_000),
+          source: "claude",
+          rate_limits: {
+            session: { used_percentage: 72, resets_at: at(now + 2 * 3_600_000) },
+            weekly_all: { used_percentage: 31, resets_at: at(now + 4 * 86_400_000) },
+          },
+        },
+      },
+      status: {},
+    },
+    join(home.configDir, "limits.json"),
+  );
+  const agent = new Heartbeat(join(home.configDir, "mcp"));
+  agent.start();
+  agent.record("limits", "personal");
+
   // ── in a real terminal ──────────────────────────────────────────────────────────
   const command = binary ?? `${process.execPath} ${CLI}`;
   console.log(`\nin a pty (105×50): ${binary ? "binary" : "from source"}, refresh every 2 s`);
@@ -98,7 +128,7 @@ try {
     const tracePath = join(base, `start-${i}.jsonl`);
     writeFileSync(tracePath, "");
     const run = runInPty(command, { ...home.env, TOKENHUD_TRACE: tracePath });
-    await run.waitFor((s) => s.includes(" SPEND") && !s.includes("reading the store"), "data");
+    await run.waitFor((s) => s.includes(" SPEND") && s.includes("5h "), "data and limits");
     await run.waitFor(() => trace(tracePath, "first-frame").length > 0, "the trace");
     firstFrames.push(trace(tracePath, "first-frame")[0] as number);
     run.send("q");
@@ -158,6 +188,9 @@ try {
   console.log(
     `  view models computed cold in ${(performance.now() - t).toFixed(0)} ms (in the Worker, off the UI thread)`,
   );
+  const overview = makeOverviewFixture();
+  views.overview = overview.overview();
+  overview.remove();
   const ports = {
     saveConfig() {},
     vmSettings() {},
@@ -185,9 +218,7 @@ try {
   const tickFrames: number[] = [];
   for (let i = 0; i < 50; i++) {
     const a = performance.now();
-    await act(async () =>
-      c.vmMessage({ type: "mcp", activity: { servers: 1, agents: i % 3, recent: [] } }),
-    );
+    await act(async () => c.vmMessage({ type: "mcp", activity: { ...MCP, agents: i % 3 } }));
     await setup.renderOnce();
     tickFrames.push(performance.now() - a);
   }
@@ -196,6 +227,7 @@ try {
     `  a tick that changes the screen (state + frame): p95 ${tf.p95.toFixed(2)} max ${tf.max.toFixed(2)} ms`,
   );
   setup.renderer.destroy();
+  agent.stop();
 } finally {
   rmSync(base, { recursive: true, force: true });
 }

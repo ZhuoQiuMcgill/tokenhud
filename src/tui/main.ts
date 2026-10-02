@@ -23,6 +23,7 @@ export function tuiPaths(env: Env, home: string): TuiPaths {
     // src/ingest/cursors.ts `cachePath`, spelled out here: that module opens SQLite, which the
     // UI thread never loads. A test keeps the two equal.
     cache: join(configDir(env, home), "cache.db"),
+    limits: limitsPath(env, home),
     overrides: pricingOverridesPath(env, home),
     lock: lockPath(env, home),
     mcp: mcpDir(env, home),
@@ -66,7 +67,7 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
       storePath: paths.store,
       overridesPath: paths.overrides,
       mcpDir: paths.mcp,
-      limitsPath: limitsPath(env, home),
+      limitsPath: paths.limits,
       cachePath: paths.cache,
       mode: lock === null ? "reader" : "owner",
       settings: vmSettingsOf(config, null),

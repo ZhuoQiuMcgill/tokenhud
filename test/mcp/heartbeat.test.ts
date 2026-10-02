@@ -82,6 +82,7 @@ describe("read by the TUI (readMcpActivity)", () => {
       servers: 0,
       agents: 0,
       recent: [],
+      latest: [],
     });
   });
 
@@ -102,6 +103,10 @@ describe("read by the TUI (readMcpActivity)", () => {
         { at: now, tool: "should_wait", account: "work" },
         { at: NOW, tool: "limits", account: "personal" },
       ],
+      latest: [
+        { at: now, tool: "should_wait", account: "work" },
+        { at: NOW, tool: "limits", account: "personal" },
+      ],
     });
     // Ten minutes later the first call has aged out; both servers still beat.
     now += 9 * MIN;
@@ -112,13 +117,39 @@ describe("read by the TUI (readMcpActivity)", () => {
     b.stop();
   });
 
+  test("each agent session's latest call, newest first, for the Overview's agents card", () => {
+    const dir = join(tempDir(), "mcp");
+    let now = NOW;
+    const a = new Heartbeat(dir, { pid: 4242, now: () => now });
+    const b = new Heartbeat(dir, { pid: 4343, now: () => now });
+    a.record("limits", "personal");
+    now += MIN;
+    b.record("should_wait", "work");
+    now += MIN;
+    a.record("usage", "personal");
+    a.record("limits", "personal");
+    const activity = readMcpActivity(dir, now, here);
+    expect(activity.recent).toHaveLength(4);
+    expect(activity.latest).toEqual([
+      { at: now, tool: "limits", account: "personal" },
+      { at: now - MIN, tool: "should_wait", account: "work" },
+    ]);
+    a.stop();
+    b.stop();
+  });
+
   test("no heartbeat in the last 10 minutes, or a crashed server on this host: not running", () => {
     const dir = join(tempDir(), "mcp");
     const old = new Heartbeat(dir, { pid: 4242, now: () => NOW - AGENT_WINDOW_MS - 1 });
     old.write();
     const crashed = new Heartbeat(dir, { pid: 999_999, now: () => NOW });
     crashed.write();
-    expect(readMcpActivity(dir, NOW, here)).toEqual({ servers: 0, agents: 0, recent: [] });
+    expect(readMcpActivity(dir, NOW, here)).toEqual({
+      servers: 0,
+      agents: 0,
+      recent: [],
+      latest: [],
+    });
   });
 
   test("damaged and unrelated files are ignored", () => {
@@ -132,6 +163,7 @@ describe("read by the TUI (readMcpActivity)", () => {
       servers: 1,
       agents: 1,
       recent: [{ at: NOW, tool: "limits", account: null }],
+      latest: [{ at: NOW, tool: "limits", account: null }],
     });
     beat.stop();
   });

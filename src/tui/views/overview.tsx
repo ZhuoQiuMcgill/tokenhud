@@ -1,193 +1,548 @@
-// Overview placeholder (T11 builds the real "limits first" view). It already runs on the
-// real view model with the shared renderables: account cards, the spend row, the 24 h
-// activity chart and the top models, in priority order.
-import { type Line, seg, segsWidth } from "../components/base.ts";
+// The Overview, "limits first" (T11; gen.py `overview_a`): a card per account with its
+// 5-hour and weekly meters, reset countdowns and what the spend pace means for them, an MCP
+// agents card, spend, activity, the day's top models and the week's limit events.
+//
+// Built for half a 1080p screen (about 105×50) and the top half of a portrait one (about
+// 120×45). Sections keep their priority order and the lowest go first when rows run out;
+// the limit cards keep their full height until everything below them has gone. Cards sit
+// 3 to a row at 120 columns and up, 2 from 100, and below that become two compact lines
+// each. No number is ever cut: every line tries shorter forms, then drops parts, instead.
+import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column, XLabel } from "../components/index.ts";
-import { chartColumns } from "../components/vchart.ts";
+import { filledCells } from "../components/meter.ts";
 import { Lines, Table } from "../elements.tsx";
-import { clock, fit, money, moneyShort, percent, textWidth, tokens } from "../format.ts";
+import {
+  clip,
+  countdown,
+  fit,
+  money,
+  moneyShort,
+  percent,
+  textWidth,
+  tokens,
+  truncate,
+} from "../format.ts";
 import { sectionLine } from "../frame.ts";
 import { cardsPerRow, splitWidth } from "../layout.ts";
-import type { Role } from "../theme.ts";
-import type { OverviewAccount, OverviewVM, Priced, SpendPeriod, TopModel } from "../vm/types.ts";
-import { SPEND_PERIODS } from "../vm/types.ts";
+import { level, type Role } from "../theme.ts";
+import type {
+  ActivitySeries,
+  ActivityWindow,
+  AgentCall,
+  LimitCard,
+  LimitMeter,
+  OverviewEvent,
+  OverviewVM,
+  SpendColumn,
+  TopModel,
+  Verdict,
+} from "../vm/types.ts";
+import { ACTIVITY_WINDOWS, SPEND_PERIODS } from "../vm/types.ts";
 import { costNote, costText } from "./cells.ts";
-import type { Section, View, ViewContext } from "./types.ts";
+import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
+
+export interface OverviewState {
+  /** The activity chart's span (`←/→`). */
+  readonly window: ActivityWindow;
+  /** Chart and rank by tokens even while costs show (`t`, `↑/↓`). */
+  readonly tokens: boolean;
+  /** The selected limits card (`tab`), by position; null for none (Enter opens the first). */
+  readonly card: number | null;
+}
 
 const CARD_HEIGHT = 5;
+/** Limits captured longer ago than this show their age on the card. */
+const STALE_MS = 15 * 60_000;
 const CHART_ROWS = 7;
 /** The chart's y labels: `188.0M` and `$1.23K` are the widest. */
 const CHART_LABEL_WIDTH = 6;
+/** Top models beside the chart (wide screens): from this wide… */
 const TOP_WIDTH = 38;
-const X_LABELS: readonly XLabel[] = [
-  { at: 0, text: "-24h" },
-  { at: 0.25, text: "-18h" },
-  { at: 0.5, text: "-12h" },
-  { at: 0.75, text: "-6h" },
-  { at: 1, text: "now" },
-];
-const PERIOD_LABELS: Readonly<Record<SpendPeriod, string>> = {
+/** …to this, taking what a 96-column plot (24 h at 15 minutes) leaves. */
+const TOP_MAX_WIDTH = 56;
+/** The top models' table itself: at most this wide, unless its names need more. */
+const TOP_TABLE_WIDTH = 46;
+const AGENT_ROWS = 3;
+const EVENT_ROWS = 8;
+const SPEND_LABELS: Readonly<Record<SpendColumn, string>> = {
+  "1h": "1h",
+  "5h": "5h",
   today: "today",
   this_week: "this week",
   this_month: "this month",
   all: "all-time",
 };
+const ticks = (texts: readonly string[]): XLabel[] =>
+  texts.map((text, i) => ({ at: i / (texts.length - 1), text }));
+const X_LABELS: Readonly<Record<ActivityWindow, readonly XLabel[]>> = {
+  "5h": ticks(["-5h", "-4h", "-3h", "-2h", "-1h", "now"]),
+  "24h": ticks(["-24h", "-18h", "-12h", "-6h", "now"]),
+  "7d": ticks(["-7d", "-6d", "-5d", "-4d", "-3d", "-2d", "-1d", "now"]),
+};
 
-/** A cost and its tokens, the cost right-aligned in `costWidth` so a card's rows line up. */
-function amountSegs(p: Priced, ctx: ViewContext, costWidth: number, bold = false) {
-  if (!ctx.showCost) return [seg(tokens(p.tokens), "tokens", bold)];
-  const cost = costText(p);
-  return [
-    seg(fit(cost.text, costWidth, "right"), cost.role, bold && cost.role === "cost"),
-    seg(`  ${tokens(p.tokens)}`, "tokens"),
-  ];
+// ── times and amounts ──────────────────────────────────────────────────────────────
+
+const FORMATS = {
+  day: { locale: "en-CA", options: {} },
+  weekday: { locale: "en-GB", options: { weekday: "short" } },
+  clock: { locale: "en-GB", options: { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } },
+} as const satisfies Record<string, { locale: string; options: Intl.DateTimeFormatOptions }>;
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * One formatter per zone and kind, kept: building one costs about 0.1 ms, and a frame
+ * writes dozens of times (format.ts `clock` builds one per call).
+ */
+function format(t: number, tz: string, kind: keyof typeof FORMATS): string {
+  const key = `${kind}\0${tz}`;
+  let f = formatters.get(key);
+  if (f === undefined) {
+    const { locale, options } = FORMATS[kind];
+    f = new Intl.DateTimeFormat(locale, { ...options, timeZone: tz });
+    formatters.set(key, f);
+  }
+  return f.format(t);
 }
 
-function cardLines(a: OverviewAccount, ctx: ViewContext): Line[] {
-  const costWidth = Math.max(
-    textWidth(costText(a.today).text),
-    textWidth(costText(a.last24h).text),
+/** `Thu 16:20`. */
+function dayClock(t: number, tz: string): string {
+  return `${format(t, tz, "weekday")} ${format(t, tz, "clock")}`;
+}
+
+/** `16:20` on the day of `asOf`, else `Thu 16:20`. */
+function when(t: number, asOf: number, tz: string): string {
+  return format(t, tz, "day") === format(asOf, tz, "day")
+    ? format(t, tz, "clock")
+    : dayClock(t, tz);
+}
+
+/** How long ago, to the minute the view model is recomputed at: `<1m`, `4m`, `1h05m`. */
+function ago(ms: number): string {
+  return ms < 60_000 ? "<1m" : countdown(ms);
+}
+
+function pct(u: number): string {
+  return `${Math.round(u * 100)}%`;
+}
+
+/** The pace as the design writes it: `$41/h`, `$6.4/h`, `$0.40/h`, `$1.2K/h`; or tokens. */
+function paceText(card: LimitCard, showCost: boolean): string {
+  if (!showCost) return `${tokens(card.pace.tokens)}/h`;
+  const v = card.pace.cost;
+  const amount =
+    v >= 1000
+      ? moneyShort(v)
+      : v >= 10
+        ? `$${Math.round(v)}`
+        : v >= 1
+          ? `$${v.toFixed(1)}`
+          : v > 0
+            ? `$${v.toFixed(2)}`
+            : "$0";
+  return `${amount}/h`;
+}
+
+/** The verdict, long (`hits 100% at 16:20`) or short (`100% at 16:20`), and its colour. */
+function verdictSeg(v: Verdict, short: boolean, asOf: number, tz: string): Seg {
+  switch (v.kind) {
+    case "full":
+      return seg(`${short ? "" : "at "}100% until ${when(v.until, asOf, tz)}`, "high", true);
+    case "hits":
+      return seg(`${short ? "" : "hits "}100% at ${when(v.at, asOf, tz)}`, "high", true);
+    case "week":
+      return seg(`${short ? "wk" : "week ends"} ~${pct(v.utilization)}`, "mid");
+    case "safe":
+      return seg(short ? "safe" : "safe until reset", "mute");
+    case "idle":
+      return seg("idle", "dim");
+    case "unknown":
+      return seg(short ? "—" : "no estimate yet", "dim");
+  }
+}
+
+/** `(12m old)` for limits captured over 15 minutes ago; null when fresh or not shown. */
+function staleNote(card: LimitCard, asOf: number): string | null {
+  if (!card.signedIn || card.capturedAt === null || asOf - card.capturedAt <= STALE_MS) {
+    return null;
+  }
+  return `(${countdown(asOf - card.capturedAt)} old)`;
+}
+
+/** The first of `forms` that fits `width`, else the last. */
+function firstFit(forms: readonly Line[], width: number): Line {
+  for (const line of forms) {
+    const right = line.right === undefined ? 0 : segsWidth(line.right) + 1;
+    if (segsWidth(line.left) + right <= width) return line;
+  }
+  return forms[forms.length - 1] as Line;
+}
+
+/** `segs` in exactly `width` cells: cut with `…` if they overflow, else padded. */
+function fitSegs(segs: readonly Seg[], width: number): Seg[] {
+  const out: Seg[] = [];
+  let used = 0;
+  for (const s of segs) {
+    const w = textWidth(s.text);
+    if (used + w > width) {
+      if (width > used) out.push({ ...s, text: truncate(s.text, width - used) });
+      return out;
+    }
+    out.push(s);
+    used += w;
+  }
+  if (used < width) out.push(seg(" ".repeat(width - used), "fg"));
+  return out;
+}
+
+/**
+ * gen.py's `card()`: `╭─ title note ─╮`, three body lines between `│ ` and ` │`, and the
+ * bottom border, each exactly `width` cells. The note (a stale age) is kept whole; the
+ * title is cut first.
+ */
+function cardText(
+  title: string,
+  role: Role,
+  note: string | null,
+  body: (width: number) => Line[],
+  width: number,
+): Seg[][] {
+  const inner = width - 4;
+  const room = width - 6;
+  const after = note === null || textWidth(note) + 2 > room ? "" : ` ${note}`;
+  const head = truncate(title, room - textWidth(after));
+  const fill = width - 5 - textWidth(head) - textWidth(after);
+  const lines = body(inner);
+  const out: Seg[][] = [
+    [
+      seg("╭─ ", "border"),
+      seg(head, role, true),
+      ...(after === "" ? [] : [seg(after, "dim")]),
+      seg(` ${"─".repeat(Math.max(1, fill))}╮`, "border"),
+    ],
+  ];
+  for (let r = 0; r < CARD_HEIGHT - 2; r++) {
+    const line = lines[r] ?? { left: [] };
+    const right = line.right ?? [];
+    const gap = Math.max(1, inner - segsWidth(line.left) - segsWidth(right));
+    const content =
+      right.length === 0 ? line.left : [...line.left, seg(" ".repeat(gap), "fg"), ...right];
+    out.push([seg("│ ", "border"), ...fitSegs(content, inner), seg(" │", "border")]);
+  }
+  out.push([seg(`╰${"─".repeat(width - 2)}╯`, "border")]);
+  return out;
+}
+
+// ── limits: cards ──────────────────────────────────────────────────────────────────
+
+function meterSegs(m: LimitMeter, cells: number): Seg[] {
+  const n = filledCells(m.utilization, cells);
+  return [seg("━".repeat(n), level(m.utilization)), seg("━".repeat(cells - n), "empty")];
+}
+
+function resetIn(m: LimitMeter, asOf: number): string {
+  return m.resetsAt > asOf ? countdown(m.resetsAt - asOf) : "—";
+}
+
+/** gen.py's meter line, filling `width`: `5h   ━━━━━━━━━━━──────  62%   1h48m`. */
+function meterLine(name: string, m: LimitMeter | null, width: number, asOf: number): Line {
+  const label = seg(fit(name, 5), "mute");
+  if (m === null) return { left: [label, seg("—", "dim")] };
+  return {
+    left: [
+      label,
+      ...meterSegs(m, Math.max(4, width - 17)),
+      seg(fit(pct(m.utilization), 5, "right"), level(m.utilization), true),
+      seg(fit(resetIn(m, asOf), 7, "right"), "dim"),
+    ],
+  };
+}
+
+function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line {
+  const pace = paceText(card, ctx.showCost);
+  const verdict = (short: boolean) => verdictSeg(card.verdict, short, asOf, ctx.tz);
+  return firstFit(
+    [
+      {
+        left: [
+          seg("pace ", "mute"),
+          seg(`${pace.padEnd(6)} `, "cost"),
+          seg("→ ", "dim"),
+          verdict(false),
+        ],
+      },
+      { left: [seg("pace ", "mute"), seg(`${pace} `, "cost"), seg("→ ", "dim"), verdict(true)] },
+      { left: [seg(`${pace} `, "cost"), seg("→ ", "dim"), verdict(true)] },
+    ],
+    width,
   );
+}
+
+function cardBody(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line[] {
+  const pace = paceLine(card, width, ctx, asOf);
+  if (!card.signedIn) return [{ left: [seg("not signed in here", "dim")] }, { left: [] }, pace];
+  if (card.capturedAt === null) {
+    return [{ left: [seg("no limits captured yet", "dim")] }, { left: [] }, pace];
+  }
   return [
-    { left: [seg("today ", "mute"), ...amountSegs(a.today, ctx, costWidth, true)] },
-    { left: [seg("24h   ", "mute"), ...amountSegs(a.last24h, ctx, costWidth)] },
-    { left: [seg(a.historyOnly ? "not signed in here" : "limits: coming soon", "dim")] },
+    meterLine("5h", card.fiveHour, width, asOf),
+    meterLine("week", card.week, width, asOf),
+    pace,
   ];
 }
 
 /**
- * One line per account for narrow screens. Every line has the same shape, the first of
- * these that fits: with the provider; without it; compact money ($1.2K); a shorter label;
- * then without the 24 h figure. Numbers are never cut (critique m2).
+ * One line per agent session: `● claude session  personal  should_wait`, the time ago flush
+ * right. Every line takes the same shape, the first that fits them all: the account goes
+ * first, then the project.
  */
-function compactLines(accounts: readonly OverviewAccount[], ctx: ViewContext): Line[] {
-  const value = (p: Priced, short: boolean) =>
-    ctx.showCost ? costText(p, short) : { text: tokens(p.tokens), role: "tokens" as const };
-  const shapes = [
-    { provider: true, short: false, label: 13, day: true },
-    { provider: false, short: false, label: 13, day: true },
-    { provider: false, short: true, label: 13, day: true },
-    { provider: false, short: true, label: 9, day: true },
-    { provider: false, short: true, label: 9, day: false },
-  ];
-  const build = (shape: (typeof shapes)[number]) => {
-    const today = accounts.map((a) => value(a.today, shape.short));
-    const day = accounts.map((a) => value(a.last24h, shape.short));
-    const w1 = Math.max(...today.map((v) => textWidth(v.text)));
-    const w2 = Math.max(...day.map((v) => textWidth(v.text)));
-    return accounts.map((a, i): Line => {
-      const t = today[i] as { text: string; role: Role };
-      const d = day[i] as { text: string; role: Role };
-      return {
-        left: [
-          seg(" ● ", a.historyOnly ? "dim" : "live"),
-          seg(fit(a.label, shape.label), "fg"),
-          ...(shape.provider ? [seg(` ${fit(a.provider, 6)}`, "mute")] : []),
-          seg(" today ", "dim"),
-          seg(fit(t.text, w1, "right"), t.role),
-          ...(shape.day ? [seg("  24h ", "dim"), seg(fit(d.text, w2, "right"), d.role)] : []),
-        ],
-      };
-    });
-  };
-  for (const shape of shapes) {
-    const lines = build(shape);
-    if (lines.every((l) => segsWidth(l.left) <= ctx.width - 1)) return lines;
+function agentLines(
+  agents: NonNullable<OverviewVM["agents"]>,
+  width: number,
+  asOf: number,
+  dot = true,
+): Line[] {
+  const { calls, servers } = agents;
+  if (calls.length === 0) {
+    return [
+      { left: [seg("no tool calls in the last 10 min", "dim")] },
+      { left: [seg(`${servers} server${servers === 1 ? "" : "s"} running`, "dim")] },
+    ];
   }
-  return build(shapes[shapes.length - 1] as (typeof shapes)[number]);
+  const shown = calls.length <= AGENT_ROWS ? calls : calls.slice(0, AGENT_ROWS - 1);
+  const line = (call: AgentCall, project: boolean, account: boolean): Line => ({
+    left: [
+      ...(dot ? [seg("● ", "live")] : []),
+      // The heartbeat names no project, and a project's path is content: "claude session".
+      ...(project ? [seg("claude session  ", "fg")] : []),
+      ...(account && call.account !== null ? [seg(`${call.account}  `, "mute")] : []),
+      seg(call.tool, "fg"),
+    ],
+    right: [seg(ago(asOf - call.at), "dim")],
+  });
+  const fits = (l: Line) => segsWidth(l.left) + 1 + segsWidth(l.right ?? []) <= width;
+  const shapes: [boolean, boolean][] = [
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ];
+  const [project, account] = shapes.find(([p, a]) => shown.every((c) => fits(line(c, p, a)))) ?? [
+    false,
+    false,
+  ];
+  const lines = shown.map((c) => line(c, project, account));
+  if (shown.length < calls.length) {
+    lines.push({ left: [seg(`+${calls.length - shown.length} more`, "dim")] });
+  }
+  return lines;
 }
 
-function limitsSection(vm: OverviewVM, ctx: ViewContext): Section {
-  const n = vm.accounts.length;
+// ── limits: compact (narrow) ───────────────────────────────────────────────────────
+
+/** How a compact card's first line is drawn: one shape for every card, so they align. */
+interface CompactShape {
+  readonly provider: boolean;
+  readonly name: number;
+  /** Meter cells, or 0 for none. */
+  readonly cells: number;
+  readonly resets: boolean;
+}
+
+function compactName(card: LimitCard, shape: CompactShape): Seg {
+  const text = shape.provider ? `${card.label} · ${card.provider}` : card.label;
+  return seg(fit(text, shape.name), "fg", true);
+}
+
+function compactFirst(card: LimitCard, shape: CompactShape, asOf: number): Line {
+  const dot = !card.signedIn
+    ? seg(" ○ ", "dim")
+    : seg(" ● ", staleNote(card, asOf) === null ? "live" : "mid");
+  if (!card.signedIn || card.capturedAt === null) {
+    const why = card.signedIn ? "no limits captured yet" : "not signed in here";
+    return { left: [dot, compactName(card, shape), seg(`  ${why}`, "dim")] };
+  }
+  const window = (label: string, m: LimitMeter | null): Seg[] => {
+    if (m === null) return [seg(`  ${label} `, "mute"), seg("—", "dim")];
+    return [
+      seg(`  ${label} `, "mute"),
+      ...(shape.cells > 0 ? [...meterSegs(m, shape.cells), seg(" ", "fg")] : []),
+      seg(fit(pct(m.utilization), 4, "right"), level(m.utilization), true),
+      ...(shape.resets ? [seg(fit(resetIn(m, asOf), 7, "right"), "dim")] : []),
+    ];
+  };
+  return {
+    left: [
+      dot,
+      compactName(card, shape),
+      ...window("5h", card.fiveHour),
+      ...window("week", card.week),
+    ],
+  };
+}
+
+/** The second line: the pace and its verdict, and the age when the limits are stale. */
+function compactSecond(card: LimitCard, ctx: ViewContext, asOf: number): Line {
+  const width = ctx.width - 1;
+  const indent = seg("   ", "fg");
+  const pace = paceLine(card, width - 3, ctx, asOf);
+  const age = staleNote(card, asOf);
+  return firstFit(
+    [
+      { left: [indent, ...pace.left, ...(age === null ? [] : [seg(`  ${age}`, "dim")])] },
+      { left: [indent, ...pace.left] },
+    ],
+    width,
+  );
+}
+
+/**
+ * Two lines per card (the name, 5h and week; the pace and its verdict), in the first shape
+ * that fits every card: with meters, without them, without the provider, with shorter
+ * labels, then without the reset countdowns.
+ */
+function compactLines(
+  vm: OverviewVM,
+  cards: readonly LimitCard[],
+  ctx: ViewContext,
+  selected: number | null,
+): Line[] {
+  const widest = (texts: string[]) => Math.max(0, ...texts.map((t) => textWidth(t)));
+  const full = Math.min(22, widest(cards.map((c) => `${c.label} · ${c.provider}`)));
+  const label = Math.min(14, widest(cards.map((c) => c.label)));
+  const shapes: CompactShape[] = [
+    { provider: true, name: full, cells: 8, resets: true },
+    { provider: true, name: full, cells: 0, resets: true },
+    { provider: false, name: label, cells: 0, resets: true },
+    { provider: false, name: Math.min(label, 9), cells: 0, resets: true },
+    { provider: false, name: Math.min(label, 9), cells: 0, resets: false },
+  ];
+  const shape =
+    shapes.find((sh) =>
+      cards.every((c) => segsWidth(compactFirst(c, sh, vm.asOf).left) <= ctx.width - 1),
+    ) ?? (shapes[shapes.length - 1] as CompactShape);
+  const lines = cards.flatMap((c, i) => {
+    const pair = [compactFirst(c, shape, vm.asOf), compactSecond(c, ctx, vm.asOf)];
+    return i === selected ? pair.map((l): Line => ({ ...l, bg: "sel" })) : pair;
+  });
+  if (vm.agents !== null) {
+    const lead = [seg(" ◆ ", "live"), seg("MCP  ", "mute")];
+    for (const line of agentLines(vm.agents, ctx.width - 9, vm.asOf, false)) {
+      lines.push({ ...line, left: [...lead, ...line.left] });
+    }
+  }
+  return lines;
+}
+
+function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): Section {
+  const note = [
+    "pace = spend rate over the last 30 min · times are estimates",
+    "pace = last 30 min · estimates",
+  ].find((n) => textWidth(" LIMITS") + 2 + textWidth(`${n} `) <= ctx.width);
+  const title = sectionLine("LIMITS", note);
+  const cards = vm.cards;
+  if (cards === null || (cards.length === 0 && vm.agents === null)) {
+    const text =
+      cards === null
+        ? "reading limits…"
+        : ctx.scope === null
+          ? "no enabled accounts: add one in settings (s)"
+          : "no limits for this account";
+    const lines = [title, { left: [seg(`  ${text}`, "dim")] }];
+    return {
+      id: "limits",
+      priority: 1,
+      height: lines.length,
+      render: (height) => <Lines theme={ctx.theme} lines={lines} height={height} />,
+    };
+  }
+  const selected = state.card !== null && state.card < cards.length ? state.card : null;
+  const compact = [title, ...compactLines(vm, cards, ctx, selected)];
+  const grid = ctx.bp !== "narrow";
   const perRow = cardsPerRow(ctx.bp);
-  const compact = 1 + Math.max(1, n);
-  const cards = ctx.bp !== "narrow" && n > 0;
-  const full = cards ? 1 + Math.ceil(n / perRow) * CARD_HEIGHT : compact;
-  const title = sectionLine("LIMITS", "limits: coming soon");
+  const boxes: { title: string; role: Role; note: string | null; body: (w: number) => Line[] }[] =
+    cards.map((c, i) => ({
+      title: `${i === selected ? "▸ " : ""}${c.label} · ${c.provider}`,
+      role: i === selected ? "live" : "head",
+      note: staleNote(c, vm.asOf),
+      body: (w) => cardBody(c, w, ctx, vm.asOf),
+    }));
+  const agents = vm.agents;
+  if (agents !== null) {
+    boxes.push({
+      title: "agents · MCP",
+      role: "live",
+      note: null,
+      body: (w) => agentLines(agents, w, vm.asOf),
+    });
+  }
+  const full = grid ? 1 + Math.ceil(boxes.length / perRow) * CARD_HEIGHT : compact.length;
   return {
     id: "limits",
     priority: 1,
     height: full,
-    minHeight: compact,
+    // Limits first: every section below goes before the cards shrink (T10 critique Q2).
+    minHeight: full,
     render(height) {
-      if (n === 0) {
-        return (
-          <Lines
-            theme={ctx.theme}
-            lines={[
-              title,
-              { left: [seg("  no accounts yet: waiting for the first ingest", "dim")] },
-            ]}
-          />
-        );
-      }
-      if (!cards || height < full) {
-        return (
-          <Lines
-            theme={ctx.theme}
-            lines={[title, ...compactLines(vm.accounts, ctx)]}
-            height={height}
-          />
-        );
+      if (!grid || height < full) {
+        return <Lines theme={ctx.theme} lines={compact} height={height} />;
       }
       // Integer widths, one margin cell each side, two between cards (gen.py overview_a).
+      // The cards are drawn as text, as gen.py does: one renderable for the whole grid
+      // mounts in a fraction of the time of a card renderable per account.
       const widths = splitWidth(ctx.width - 2, perRow, 2);
-      const rows: OverviewAccount[][] = [];
-      for (let i = 0; i < n; i += perRow) rows.push(vm.accounts.slice(i, i + perRow));
-      return (
-        <box flexDirection="column" height={height} flexShrink={0}>
-          <Lines theme={ctx.theme} lines={[title]} />
-          {rows.map((row) => (
-            <box
-              key={(row[0] as OverviewAccount).id}
-              flexDirection="row"
-              height={CARD_HEIGHT}
-              flexShrink={0}
-              paddingLeft={1}
-              columnGap={2}
-            >
-              {row.map((a, i) => (
-                <th-card
-                  key={a.id}
-                  title={`${a.label} · ${a.provider}`}
-                  theme={ctx.theme}
-                  width={widths[i] as number}
-                  height={CARD_HEIGHT}
-                  flexShrink={0}
-                  flexDirection="column"
-                >
-                  <Lines theme={ctx.theme} lines={cardLines(a, ctx)} />
-                </th-card>
-              ))}
-            </box>
-          ))}
-        </box>
-      );
+      const lines: Line[] = [title];
+      for (let i = 0; i < boxes.length; i += perRow) {
+        const row = boxes
+          .slice(i, i + perRow)
+          .map((b, k) => cardText(b.title, b.role, b.note, b.body, widths[k] as number));
+        for (let r = 0; r < CARD_HEIGHT; r++) {
+          lines.push({
+            left: [
+              seg(" ", "fg"),
+              ...row.flatMap((card, k) => [
+                ...(k > 0 ? [seg("  ", "fg")] : []),
+                ...(card[r] as Seg[]),
+              ]),
+            ],
+          });
+        }
+      }
+      return <Lines theme={ctx.theme} lines={lines} height={height} />;
     },
   };
 }
 
+// ── spend ──────────────────────────────────────────────────────────────────────────
+
 /**
- * The spend table: today, this week, this month and all-time, cost and tokens. When it
- * doesn't fit it switches to compact money, then drops this month, then this week, so no
- * number is ever cut (critique m2).
+ * Cost and tokens for today, this week, this month and all-time (calendar periods, as in
+ * History), with the rolling last hour and 5 hours first on wide screens. When it doesn't
+ * fit it switches to compact money, then drops columns, so no number is ever cut.
  */
 function spendSection(vm: OverviewVM, ctx: ViewContext): Section {
-  const attempts: [readonly SpendPeriod[], boolean][] = [
-    [SPEND_PERIODS, false],
-    [SPEND_PERIODS, true],
+  const calendar: readonly SpendColumn[] = SPEND_PERIODS;
+  const rolling: readonly SpendColumn[] = ["1h", "5h", ...calendar];
+  const attempts: [readonly SpendColumn[], boolean][] = [
+    ...(ctx.bp === "wide"
+      ? ([
+          [rolling, false],
+          [rolling, true],
+        ] as [readonly SpendColumn[], boolean][])
+      : []),
+    [calendar, false],
+    [calendar, true],
     [["today", "this_week", "all"], true],
     [["today", "all"], true],
   ];
-  const build = (periods: readonly SpendPeriod[], short: boolean): Line[] => {
-    const costs = periods.map((p) => costText(vm.spend[p], short));
-    const counts = periods.map((p) => tokens(vm.spend[p].tokens));
-    const widths = periods.map((p, i) =>
+  const build = (columns: readonly SpendColumn[], short: boolean): Line[] => {
+    const costs = columns.map((p) => costText(vm.spend[p], short));
+    const counts = columns.map((p) => tokens(vm.spend[p].tokens));
+    const widths = columns.map((p, i) =>
       Math.max(
         short ? 0 : 13,
         2 +
           Math.max(
-            PERIOD_LABELS[p].length,
+            SPEND_LABELS[p].length,
             textWidth((costs[i] as { text: string }).text),
             textWidth(counts[i] as string),
           ),
@@ -197,7 +552,7 @@ function spendSection(vm: OverviewVM, ctx: ViewContext): Section {
       seg(fit(text, widths[i] as number, "right"), role, bold);
     const lines: Line[] = [
       {
-        left: [seg(fit("", 8), "dim"), ...periods.map((p, i) => cell(i, PERIOD_LABELS[p], "dim"))],
+        left: [seg(fit("", 8), "dim"), ...columns.map((p, i) => cell(i, SPEND_LABELS[p], "dim"))],
       },
     ];
     if (ctx.showCost) {
@@ -213,16 +568,15 @@ function spendSection(vm: OverviewVM, ctx: ViewContext): Section {
     });
     return lines;
   };
-  let body = build(...(attempts[attempts.length - 1] as [readonly SpendPeriod[], boolean]));
-  for (const [periods, short] of attempts) {
-    const lines = build(periods, short);
-    if (lines.every((l) => segsWidth(l.left) <= ctx.width)) {
-      body = lines;
+  let columns = attempts[attempts.length - 1] as [readonly SpendColumn[], boolean];
+  for (const attempt of attempts) {
+    if (build(...attempt).every((l) => segsWidth(l.left) <= ctx.width)) {
+      columns = attempt;
       break;
     }
   }
-  const note = ctx.showCost ? costNote(SPEND_PERIODS.map((p) => vm.spend[p])) : null;
-  const lines = [sectionLine("SPEND", note ?? undefined), ...body];
+  const note = ctx.showCost ? costNote(columns[0].map((p) => vm.spend[p])) : null;
+  const lines = [sectionLine("SPEND", note ?? undefined), ...build(...columns)];
   return {
     id: "spend",
     priority: 2,
@@ -231,20 +585,85 @@ function spendSection(vm: OverviewVM, ctx: ViewContext): Section {
   };
 }
 
-/** Each model's share of the 24 h: of the cost, or of the tokens when costs are hidden. */
-function topColumns(vm: OverviewVM, ctx: ViewContext): Column<TopModel>[] {
-  let dayTokens = 0;
-  for (const t of vm.activity.tokens) dayTokens += t;
-  const share = (m: TopModel) =>
-    ctx.showCost ? m.share : dayTokens > 0 ? m.tokens / dayTokens : 0;
-  return [
+// ── activity and top models ────────────────────────────────────────────────────────
+
+/**
+ * The series summed into the most columns that fit `width`: the fewest neighbouring
+ * buckets per column that divide them evenly. 288 five-minute buckets make 96 columns of
+ * 15 minutes in 98 cells, and 72 of 20 minutes in 73.
+ */
+export function fitBuckets(
+  values: readonly number[],
+  width: number,
+): { values: number[]; group: number } {
+  const n = values.length;
+  let group = Math.max(1, n);
+  for (let g = 1; g <= n; g++) {
+    if (n % g === 0 && n / g <= width) {
+      group = g;
+      break;
+    }
+  }
+  const out: number[] = [];
+  for (let i = 0; i < n; i += group) {
+    let sum = 0;
+    for (let k = i; k < i + group; k++) sum += values[k] as number;
+    out.push(sum);
+  }
+  return { values: out, group };
+}
+
+function per(minutes: number): string {
+  if (minutes % 60 !== 0) return `${minutes} min`;
+  return minutes === 60 ? "hour" : `${minutes / 60} h`;
+}
+
+const fastTail = (m: TopModel) => (m.tier === "fast" ? " (fast)" : "");
+
+/**
+ * The models' labels (`Sonnet 4.6`, `Opus 4.8 (fast)`) in at most `width` cells: whole when
+ * they fit. Otherwise a label is cut, never its "(fast)": at the end, then in the middle
+ * keeping more of the end (the version), until no two labels read the same.
+ */
+export function fitLabels(models: readonly TopModel[], width: number): string[] {
+  const whole = models.map((m) => `${m.name}${fastTail(m)}`);
+  if (whole.every((l) => textWidth(l) <= width)) return whole;
+  const cut = (keep: number) =>
+    models.map((m, i) => {
+      const label = whole[i] as string;
+      if (textWidth(label) <= width) return label;
+      const room = Math.max(0, width - textWidth(fastTail(m)) - 1);
+      const end = Math.min(keep, Math.max(0, room - 1), m.name.length);
+      return `${clip(m.name, room - end)}…${m.name.slice(m.name.length - end)}${fastTail(m)}`;
+    });
+  for (let keep = 0; keep < width; keep++) {
+    const labels = cut(keep);
+    if (new Set(labels).size === labels.length) return labels;
+  }
+  return cut(0);
+}
+
+/** Cells the top models' cost (or tokens) column takes: its widest text, at least 9. */
+function amountWidth(models: readonly TopModel[], costs: boolean): number {
+  const texts = models.map((m) => (costs ? costText(m).text : tokens(m.tokens)));
+  return Math.max(9, ...texts.map((t) => textWidth(t)));
+}
+
+/**
+ * The top models' table: by cost, or by tokens when the chart shows tokens. The names keep
+ * their width (`min`): the bar, then the share, go before a name is cut.
+ */
+function topColumns(costs: boolean, labels: readonly string[], rows: readonly TopModel[]) {
+  const label = new Map(rows.map((m, i) => [m, labels[i] as string]));
+  const columns: Column<TopModel>[] = [
     {
       title: "model",
       width: "fill",
+      min: Math.max(0, ...labels.map((l) => textWidth(l))),
       role: "fg",
-      text: (m) => (m.tier === "fast" ? `${m.model} (fast)` : m.model),
+      text: (m) => label.get(m) ?? m.name,
     },
-    ctx.showCost
+    costs
       ? {
           title: "cost",
           width: 9,
@@ -264,69 +683,57 @@ function topColumns(vm: OverviewVM, ctx: ViewContext): Column<TopModel>[] {
       width: 4,
       align: "right",
       role: "mute",
-      text: (m) => percent(share(m), 0),
+      text: (m) => percent(m.share, 0),
       drop: 2,
     },
-    { title: "", width: 6, role: ctx.showCost ? "cost" : "tokens", bar: share, drop: 3 },
+    { title: "", width: 6, role: costs ? "cost" : "tokens", bar: (m) => m.share, drop: 3 },
   ];
+  return columns;
 }
 
-function topModels(vm: OverviewVM, ctx: ViewContext, width: number, height: number) {
-  return (
-    <box flexDirection="column" width={width} height={height} flexShrink={0}>
-      <Lines theme={ctx.theme} lines={[sectionLine("TOP MODELS · 24h")]} />
-      {vm.topModels.length === 0 ? (
-        <Lines theme={ctx.theme} lines={[{ left: [seg("  no usage in the last 24 h", "dim")] }]} />
-      ) : (
-        <Table
-          columns={topColumns(vm, ctx)}
-          rows={vm.topModels}
-          theme={ctx.theme}
-          header={false}
-          height={Math.min(height - 1, vm.topModels.length)}
-          width={width - 1}
-          marginLeft={1}
-        />
-      )}
-    </box>
-  );
-}
-
-function activitySections(vm: OverviewVM, ctx: ViewContext): Section[] {
-  const values = ctx.showCost ? vm.activity.cost : vm.activity.tokens;
+function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext): Section[] {
+  const costs = ctx.showCost && !state.tokens;
+  const series: ActivitySeries = vm.activity[state.window];
+  const models = costs ? vm.topModels : vm.topModelsByTokens;
   const beside = ctx.bp === "wide";
-  const chartWidth = beside ? ctx.width - TOP_WIDTH - 2 : ctx.width;
-  // What the chart draws: below 72 columns it sums neighbouring buckets, so the title, the
-  // y scale and the peak all speak of the same, wider, bucket.
-  const { columns } = chartColumns(values, chartWidth - CHART_LABEL_WIDTH - 1);
-  const group = columns.length > 0 ? Math.ceil(values.length / columns.length) : 1;
-  const minutes = Math.round((vm.activity.bucketMs * group) / 60_000);
-  const per =
-    minutes % 60 === 0 ? (minutes === 60 ? "hour" : `${minutes / 60} h`) : `${minutes} min`;
+  // Top models whole: margin, names, amount, share and bar, with a gap between each.
+  const amountCells = amountWidth(models, costs);
+  const widestName = Math.max(0, ...fitLabels(models, 999).map((l) => textWidth(l)));
+  const topNeeds = 1 + widestName + 1 + amountCells + 1 + 4 + 1 + 6;
+  const topWidth = Math.max(
+    TOP_WIDTH,
+    Math.min(TOP_MAX_WIDTH, Math.max(topNeeds, ctx.width - 2 - (CHART_LABEL_WIDTH + 1 + 96))),
+  );
+  const chartWidth = beside ? ctx.width - topWidth - 2 : ctx.width;
+  const plotted = fitBuckets(
+    costs ? series.cost : series.tokens,
+    chartWidth - CHART_LABEL_WIDTH - 1,
+  );
+  // The title, the y scale and the peak all speak of the bucket actually drawn.
+  const bucketMs = series.bucketMs * plotted.group;
   let peak = 0;
-  columns.forEach((v, i) => {
-    if (v > (columns[peak] as number)) peak = i;
+  plotted.values.forEach((v, i) => {
+    if (v > (plotted.values[peak] as number)) peak = i;
   });
-  const peakValue = columns[peak] ?? 0;
+  const peakValue = plotted.values[peak] ?? 0;
+  const at = when(series.from + peak * bucketMs, vm.asOf, ctx.tz);
   const note =
-    peakValue > 0
-      ? `peak ${ctx.showCost ? money(peakValue) : tokens(peakValue)} at ${clock(vm.activity.from + peak * group * vm.activity.bucketMs, ctx.tz)}`
-      : undefined;
-  // The full title with the peak note when both fit; then the title alone; then "ACTIVITY · 24h".
-  const full = `ACTIVITY · ${ctx.showCost ? "cost" : "tokens"} per ${per} · 24h`;
+    peakValue > 0 ? `peak ${costs ? money(peakValue) : tokens(peakValue)} at ${at}` : undefined;
+  const metric = costs ? "cost" : "tokens";
+  const full = `ACTIVITY · ${metric} per ${per(bucketMs / 60_000)} · ${state.window}`;
   const fits = (title: string, withNote?: string) =>
     textWidth(` ${title}`) + (withNote === undefined ? 0 : textWidth(withNote) + 2) <= chartWidth;
-  const shownNote = !beside && note !== undefined && fits(full, note) ? note : undefined;
-  const title = fits(full, shownNote) ? full : "ACTIVITY · 24h";
-  const topHeight = 1 + Math.max(1, vm.topModels.length);
+  const titleNote = !beside && note !== undefined && fits(full, note) ? note : undefined;
+  const title = fits(full, titleNote) ? full : `ACTIVITY · ${state.window}`;
+  const topRows = Math.max(1, models.length);
   const chart = (height: number) => (
     <box flexDirection="column" width={chartWidth} height={height} flexShrink={0}>
-      <Lines theme={ctx.theme} lines={[sectionLine(title, shownNote)]} />
+      <Lines theme={ctx.theme} lines={[sectionLine(title, titleNote)]} />
       <th-vchart
-        values={values}
-        colorRole={ctx.showCost ? "cost" : "tokens"}
-        format={ctx.showCost ? moneyShort : tokens}
-        xLabels={X_LABELS}
+        values={plotted.values}
+        colorRole={costs ? "cost" : "tokens"}
+        format={costs ? moneyShort : tokens}
+        xLabels={X_LABELS[state.window]}
         labelWidth={CHART_LABEL_WIDTH}
         theme={ctx.theme}
         height={height - 1}
@@ -334,16 +741,49 @@ function activitySections(vm: OverviewVM, ctx: ViewContext): Section[] {
       />
     </box>
   );
+  const top = (width: number, height: number, peakNote?: string) => {
+    const tableWidth = Math.min(width, Math.max(TOP_TABLE_WIDTH, topNeeds)) - 1;
+    // Names never cut while the bar and the share can go: the room they then have.
+    const labels = fitLabels(models, tableWidth - amountCells - 1);
+    // gen.py puts the peak under the list, a blank line apart, when it sits beside the chart.
+    const showPeak =
+      peakNote !== undefined && height >= topRows + 3 && textWidth(peakNote) + 1 <= width;
+    return (
+      <box flexDirection="column" width={width} height={height} flexShrink={0}>
+        <Lines theme={ctx.theme} lines={[sectionLine("TOP MODELS · 24h")]} />
+        {models.length === 0 ? (
+          <Lines
+            theme={ctx.theme}
+            lines={[{ left: [seg("  no usage in the last 24 h", "dim")] }]}
+          />
+        ) : (
+          <Table
+            columns={topColumns(costs, labels, models)}
+            rows={models}
+            theme={ctx.theme}
+            header={false}
+            height={Math.min(height - 1, models.length)}
+            // Wider would push the numbers far from the names.
+            width={tableWidth}
+            marginLeft={1}
+          />
+        )}
+        {showPeak ? (
+          <Lines theme={ctx.theme} lines={[{ left: [] }, { left: [seg(` ${peakNote}`, "dim")] }]} />
+        ) : null}
+      </box>
+    );
+  };
   const activity: Section = {
     id: "activity",
     priority: 3,
     height: 2 + CHART_ROWS,
-    minHeight: beside ? Math.max(5, topHeight) : 5,
+    minHeight: beside ? Math.max(5, 1 + topRows) : 5,
     render: (height) =>
       beside ? (
         <box flexDirection="row" height={height} flexShrink={0} columnGap={2}>
           {chart(height)}
-          {topModels(vm, ctx, TOP_WIDTH, height)}
+          {top(topWidth, height, note)}
         </box>
       ) : (
         chart(height)
@@ -355,36 +795,152 @@ function activitySections(vm: OverviewVM, ctx: ViewContext): Section[] {
     {
       id: "top",
       priority: 4,
-      height: topHeight,
-      // Full width would push the numbers far from the names: cap it like the wide layout.
-      render: (height) => topModels(vm, ctx, Math.min(ctx.width, TOP_WIDTH + 22), height),
+      height: 1 + topRows,
+      render: (height) => top(ctx.width, height),
     },
   ];
 }
 
-function eventsSection(ctx: ViewContext): Section {
-  const lines: Line[] = [
-    sectionLine("LIMIT EVENTS · 7 days"),
-    { left: [seg("  limit events: coming soon", "dim")] },
+// ── limit events ───────────────────────────────────────────────────────────────────
+
+function eventText(e: OverviewEvent, short: boolean): Seg {
+  const window = e.window.toLowerCase();
+  if (e.kind === "reached") {
+    return seg(short ? `${window} 100%` : `${window} limit reached`, "high", true);
+  }
+  if (e.kind === "passed_80") {
+    return seg(short ? `${window} 80%` : `${window} passed 80%`, "mid", true);
+  }
+  return seg(`${window} resumed`, "live", true);
+}
+
+/**
+ * When the work could go on: "resumed 17:00", or the reset still to come. No MCP wait data
+ * reaches the store (the heartbeat keeps 10 minutes of calls), so it never says how long
+ * agents waited.
+ */
+function eventNote(e: OverviewEvent, asOf: number, tz: string): string {
+  if (e.kind !== "reached") return "—";
+  if (e.resumedAt !== null) return `resumed ${when(e.resumedAt, e.at, tz)}`;
+  return e.resetsAt > asOf ? `resets ${when(e.resetsAt, asOf, tz)}` : "—";
+}
+
+/**
+ * The events the list shows, in its order: `reached` first, then the rest, each newest
+ * first. A `resumed` event already shows as the note of the `reached` event it closed.
+ */
+export function listedEvents(vm: OverviewVM): OverviewEvent[] {
+  const closed = new Set(
+    vm.events
+      .filter((e) => e.kind === "reached" && e.resumedAt !== null)
+      .map((e) => `${e.account}\0${e.window}\0${e.resumedAt}`),
+  );
+  return vm.events
+    .filter((e) => e.kind !== "resumed" || !closed.has(`${e.account}\0${e.window}\0${e.at}`))
+    .sort((a, b) => Number(b.kind === "reached") - Number(a.kind === "reached"));
+}
+
+function eventsSection(vm: OverviewVM, ctx: ViewContext): Section {
+  const title = sectionLine("LIMIT EVENTS · 7 days");
+  const events = listedEvents(vm);
+  if (events.length === 0) {
+    const lines = [title, { left: [seg("  no limit events in the last 7 days", "dim")] }];
+    return {
+      id: "events",
+      priority: 5,
+      height: lines.length,
+      render: (height) => <Lines theme={ctx.theme} lines={lines} height={height} />,
+    };
+  }
+  const accountWidth = Math.min(14, Math.max(...events.map((e) => textWidth(e.account))));
+  const build = (short: boolean, account: boolean, note: boolean) => {
+    const what = Math.max(...events.map((e) => textWidth(eventText(e, short).text)));
+    return events.map(
+      (e): Line => ({
+        left: [
+          seg(`  ${fit(dayClock(e.at, ctx.tz), 11)}`, "dim"),
+          ...(account ? [seg(fit(e.account, accountWidth + 2), "fg")] : []),
+          { ...eventText(e, short), text: fit(eventText(e, short).text, what + 2) },
+          ...(note ? [seg(eventNote(e, vm.asOf, ctx.tz), "mute")] : []),
+        ],
+      }),
+    );
+  };
+  const shapes: [boolean, boolean, boolean][] = [
+    [false, true, true],
+    [true, true, true],
+    [true, true, false],
+    [true, false, false],
   ];
+  let rows = build(true, false, false);
+  for (const shape of shapes) {
+    const candidate = build(...shape);
+    if (candidate.every((l) => segsWidth(l.left) <= ctx.width - 1)) {
+      rows = candidate;
+      break;
+    }
+  }
+  // Every event that doesn't fit is counted on a last line (critique m1), so a short list
+  // never reads as the whole week.
+  const shown = (room: number): Line[] =>
+    rows.length <= room
+      ? rows
+      : [
+          ...rows.slice(0, Math.max(0, room - 1)),
+          { left: [seg(`  +${rows.length - Math.max(0, room - 1)} more events`, "dim")] },
+        ];
   return {
     id: "events",
     priority: 5,
-    height: lines.length,
-    render: (height) => <Lines theme={ctx.theme} lines={lines} height={height} />,
+    height: 1 + Math.min(rows.length, EVENT_ROWS),
+    minHeight: 1 + Math.min(rows.length, 2),
+    render: (height) => (
+      <Lines theme={ctx.theme} lines={[title, ...shown(height - 1)]} height={height} />
+    ),
   };
 }
 
-export const overview: View<OverviewVM, null> = {
+// ── the view ───────────────────────────────────────────────────────────────────────
+
+function cycle<T>(items: readonly T[], at: T, step: number): T {
+  const i = items.indexOf(at);
+  return items[(i + step + items.length) % items.length] as T;
+}
+
+export const overview: View<OverviewVM, OverviewState> = {
   id: "overview",
   title: "Overview",
-  hints: [],
-  initial: null,
-  keys: () => undefined,
-  sections: (vm, _state, ctx) => [
-    limitsSection(vm, ctx),
+  hints: [
+    { key: "←/→", label: "window" },
+    { key: "t", label: "cost/tokens" },
+    { key: "enter", label: "details" },
+    { key: "tab", label: "card" },
+  ],
+  initial: { window: "24h", tokens: false, card: null },
+  keys(key, state, vm) {
+    if (key === "left" || key === "right") {
+      return { ...state, window: cycle(ACTIVITY_WINDOWS, state.window, key === "right" ? 1 : -1) };
+    }
+    if (key === "t" || key === "up" || key === "down") return { ...state, tokens: !state.tokens };
+    if (key === "tab") {
+      const n = vm?.cards?.length ?? 0;
+      if (n === 0) return undefined;
+      return { ...state, card: state.card === null || state.card + 1 >= n ? 0 : state.card + 1 };
+    }
+    if (key === "escape" && state.card !== null) return { ...state, card: null };
+    if (key === "return") {
+      // The selected card's account in Accounts (the first card's when none is selected).
+      const cards = vm?.cards ?? [];
+      const card = cards[state.card !== null && state.card < cards.length ? state.card : 0];
+      if (card === undefined || card.account === null) return undefined;
+      return withCommand(state, { type: "open", view: "accounts", account: card.account });
+    }
+    return undefined;
+  },
+  sections: (vm, state, ctx) => [
+    limitsSection(vm, state, ctx),
     spendSection(vm, ctx),
-    ...activitySections(vm, ctx),
-    eventsSection(ctx),
+    ...activitySections(vm, state, ctx),
+    eventsSection(vm, ctx),
   ],
 };

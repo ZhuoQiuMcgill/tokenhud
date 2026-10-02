@@ -4,53 +4,53 @@ exports[`105×50 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- LIMITS                                                                              limits: coming soon 
- ╭─ personal · claude ─────────────────────────────╮  ╭─ work · claude ────────────────────────────────╮ 
- │ today unpriced  967K                            │  │ today $0.00  0                                 │ 
- │ 24h     $1.62*  2.9M                            │  │ 24h   $0.00  0                                 │ 
- │ limits: coming soon                             │  │ limits: coming soon                            │ 
+ LIMITS                                     pace = spend rate over the last 30 min · times are estimates 
+ ╭─ personal · claude ─────────────────────────────╮  ╭─ work · claude (47m old) ──────────────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  78%  1h48m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  3h55m │ 
+ │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  27%  4d06h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   9%  2d11h │ 
+ │ pace $1.3/h → hits 100% at 12:59                │  │ pace $0/h   → idle                             │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
- ╭─ codex · codex ─────────────────────────────────╮  ╭─ codex-win · codex ────────────────────────────╮ 
- │ today $2.38  1.6M                               │  │ today $0.00  0                                 │ 
- │ 24h   $2.38  1.6M                               │  │ 24h   $0.00  0                                 │ 
- │ limits: coming soon                             │  │ limits: coming soon                            │ 
+ ╭─ old-laptop · claude ───────────────────────────╮  ╭─ codex · codex ────────────────────────────────╮ 
+ │ not signed in here                              │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8%  4h31m │ 
+ │                                                 │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  83% 19h05m │ 
+ │ pace $0/h   → idle                              │  │ pace $0.04/h → week ends ~89%                  │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
- ╭─ old-laptop · claude ───────────────────────────╮                                                     
- │ today $0.00  0                                  │                                                     
- │ 24h   $0.00  0                                  │                                                     
- │ not signed in here                              │                                                     
- ╰─────────────────────────────────────────────────╯                                                     
+ ╭─ codex-win · codex ─────────────────────────────╮  ╭─ agents · MCP ─────────────────────────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● claude session  work  limits             <1m │ 
+ │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  personal  should_wait     3m │ 
+ │ pace $0.04/h → safe until reset                 │  │                                                │ 
+ ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
                                                                                                          
  SPEND                                                                           * not all tokens priced 
                 today    this week   this month     all-time                                             
-  cost         $2.38*       $8.55*     $158.43*     $336.20*                                             
-  tokens         2.6M         8.2M       142.8M       310.7M                                             
+  cost         $8.47*      $14.64*     $164.52*     $342.29*                                             
+  tokens         7.5M        13.1M       147.6M       315.5M                                             
                                                                                                          
- ACTIVITY · cost per 20 min · 24h                                                    peak $1.07 at 21:20 
- $1.07                             █                               ▂                                     
-                                   █                      ▆        █                                     
-                                   █                      █        █                                     
- $0.53                             █▄                    ▃█        █                                     
-                                   ██                    ██        █                                     
-                                   ██                    ██        █                                     
-     0                             ██                    ██        █                                     
-       -24h              -18h              -12h             -6h             now                          
+ ACTIVITY · cost per 15 min · 24h                                                peak $1.47 at Mon 21:30 
+ $1.47                                        █                                             ▃ ▃ ▃ ▃      
+                                              █                                             █ █ █ █      
+                                              █                             ▂               █ █ █ █      
+ $0.73                                        █                             █               █ █ █ █      
+                                              █                            ▄█           ▁▃  █ █ █ █  ▁   
+                                              █                            ██           ██  █ █ █ █  █▁  
+     0                                       ▂█▃                           ██           ██  █ █ █ █  ██  
+       -24h                    -18h                    -12h                   -6h                   now  
                                                                                                          
  TOP MODELS · 24h                                                                                        
- claude-opus-4-8                           $1.62  40% ━━━━━━                                             
- gpt-5.6-sol                               $1.42  35% ━━━━━━                                             
- gpt-5.5                                   $0.96  24% ━━━━━━                                             
- claude-mystery-9                       unpriced   0% ━━━━━━                                             
+ Opus 4.8                    $7.66  76% ━━━━━━                                                           
+ gpt-5.6-sol                 $1.42  14% ━━━━━━                                                           
+ gpt-5.5                     $1.01  10% ━━━━━━                                                           
+ Mystery 9                unpriced   0% ━━━━━━                                                           
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
-  limit events: coming soon                                                                              
-                                                                                                         
-                                                                                                         
-                                                                                                         
+  Tue 09:30  work      5-hour limit reached  —                                                           
+  Mon 14:10  personal  5-hour limit reached  resumed 16:05                                               
+  Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
+  Sun 21:10  codex     weekly passed 80%     —                                                           
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit                                     MCP ● 2 agents 
+ 1-4 views   ←/→ window   t cost/tokens   a account   s settings   ? help   q quit        MCP ● 2 agents 
 "
 `;
 
@@ -59,18 +59,18 @@ exports[`105×50 view 2 (history) 1`] = `
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ───────────────────────╮
-     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $2.38*   0.4× your 30-day avg     │
- Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M                              │
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · +2              │
- Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced   │
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   none                              │
+     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg     │
+ Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M                              │
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · +2          │
+ Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · +2              │
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30         │
  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day             │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                            │
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰────────────────────────────────────────────╯
                                                                                                          
   Day   Week   Month     This week   This month                       * not all tokens priced · / filter 
  date         input  output    cache        cost vs 30-day avg            top model        accounts      
- Tue Sep 29     90K     61K     2.4M      $2.38* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex, person…
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8  personal, cod…
  Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8  personal, cod…
  Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex-win, co…
  Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.6-sol      codex, codex-…
@@ -102,7 +102,7 @@ exports[`105×50 view 2 (history) 1`] = `
  Mon Aug 31     95K     57K     2.3M      $2.20* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex-win, wo…
  Sun Aug 30    190K    117K     4.8M      $5.65* ━━━━━━━━━━━━━━━━━━  1.0× claude-opus-4-8  personal, cod…
  ────────────────────────────────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.2M   291.8M    $336.20*                                                         
+ 177 days     11.7M    7.3M   296.5M    $342.29*                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
  1-4 views   d/w/m group   a account   s settings   ? help   q quit                       MCP ● 2 agents 
 "
@@ -114,23 +114,23 @@ exports[`105×50 view 3 (models) 1`] = `
                                                                                                          
  MODELS · all time · by cost                                  window  today  this week  this month  all  
  model                  provider  input    $/M  output    $/M   cache   $/M      cost  share             
- gpt-5.5                codex      2.5M   5.00    1.6M  30.00   63.9M  0.50   $117.25  ━━━━━━━━━━  34.9% 
- gpt-5.6-sol            codex      2.8M   4.00    1.8M  20.00   72.0M  0.40   $108.18  ━━━━━━━━━━  32.2% 
- Sonnet 4.6             claude     1.7M   3.00    1.0M  15.00   40.7M  0.30    $42.76  ━━━━━━━━━━  12.7% 
- Opus 4.8               claude     993K   5.00    579K  25.00   25.4M  0.50    $42.02  ━━━━━━━━━━  12.5% 
- Haiku 4.5              claude     1.9M   1.00    1.2M   5.00   47.6M  0.10    $16.53  ━━━━━━━━━━   4.9% 
+ gpt-5.5                codex      2.5M   5.00    1.6M  30.00   63.9M  0.50   $117.29  ━━━━━━━━━━  34.3% 
+ gpt-5.6-sol            codex      2.8M   4.00    1.8M  20.00   72.0M  0.40   $108.18  ━━━━━━━━━━  31.6% 
+ Opus 4.8               claude     1.1M   5.00    711K  25.00   30.0M  0.50    $48.06  ━━━━━━━━━━  14.0% 
+ Sonnet 4.6             claude     1.7M   3.00    1.0M  15.00   40.7M  0.30    $42.76  ━━━━━━━━━━  12.5% 
+ Haiku 4.5              claude     1.9M   1.00    1.2M   5.00   47.6M  0.10    $16.53  ━━━━━━━━━━   4.8% 
  Opus 4.8 (fast)        claude     110K  10.00     70K  50.00    2.7M  1.00     $9.47  ━━━━━━━━━━   2.8% 
  Mystery 9 *            claude     1.6M      —    997K      —   39.6M     —  unpriced  ━━━━━━━━━━   0.0% 
  ─────────────────────────────────────────────────────────────────────────────────────────────────────── 
- Total                            11.7M           7.2M         291.8M        $336.20*                    
+ Total                            11.7M           7.3M         296.5M        $342.29*                    
                                                                                                          
  $/M = base rate · cache = read rate; writes and long-context requests cost more                         
- * no published rate: tokens counted, cost excluded · 86.4% of tokens priced                             
+ * no published rate: tokens counted, cost excluded · 86.6% of tokens priced                             
                                                                                                          
  ╭─ gpt-5.5 · rates ─────────────────────────────────────╮  ╭─ gpt-5.5 · who used it ──────────────────╮ 
- │ input    $5.00 · output $30.00                        │  │ codex-win ━━━━━━━━━━━━━━━━━━  54% $62.87 │ 
- │ cache    read $0.50 (0.1× input)                      │  │ codex     ━━━━━━━━━━━━━━━━━━  46% $54.38 │ 
- │ write    5m $6.25 · 1h $10.00                         │  │ first seen Aug 2 · 1,483 requests        │ 
+ │ input    $5.00 · output $30.00                        │  │ codex-win ━━━━━━━━━━━━━━━━━━  54% $62.89 │ 
+ │ cache    read $0.50 (0.1× input)                      │  │ codex     ━━━━━━━━━━━━━━━━━━  46% $54.40 │ 
+ │ write    5m $6.25 · 1h $10.00                         │  │ first seen Aug 2 · 1,485 requests        │ 
  │ fast     $12.50 · $75.00 · read $1.25                 │  │                                          │ 
  │ long     >272K: input 2×, output 1.5×                 │  │                                          │ 
  │ source   developers.openai.com · checked 2026-10-01   │  │                                          │ 
@@ -166,28 +166,28 @@ exports[`105×50 view 4 (accounts) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- ACCOUNTS        ○ inactive here  │  codex-win · codex                                                   
+ ACCOUNTS        ○ inactive here  │  codex-win · codex                           limits fetched 11:37:00 
                                   │                                                                      
- ○ codex-win          codex     — │  root      not found on this machine: history only                   
- ○ codex              codex     — │  history   1,609 records since Aug 2                                 
- ○ personal           claude    — │                                                                      
- ○ work               claude    — │  limits    not fetched: no root on this machine                      
- ○ old-laptop         claude    — │                                                                      
- + add a root…                    │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                    
+ ● codex-win          codex   58% │  root      ~/.codex-win  (watched)                                   
+ ● codex              codex   83% │  history   1,610 records since Aug 2                                 
+ ● personal           claude  78% │                                                                      
+ ● work               claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50    
+ ○ old-laptop         claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
+ + add a root…                    │                                                                      
+                                  │  weekly usage when it reset · last 8 weeks                           
+ enter scope to it                │                                                                      
+ e enable/disable                 │                                                            ▂▂▂▂▂▂    
+ l rename label                   │                                                            ██████    
+ h history only                   │                                                            ██████    
+                                  │    —       —       —       —       —       —       —       58%       
+                                  │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now       
+                                  │    no limit events recorded yet: only this week is known             
                                   │                                                                      
- enter scope to it                │  models    gpt-5.5 59% · gpt-5.6-sol 41%                             
- e enable/disable                 │                                                                      
- l rename label                   │                                                                      
- h history only                   │                                                                      
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
-                                                                                                         
+                                  │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27                    
+                                  │                                                                      
+                                  │  models    gpt-5.5 59% · gpt-5.6-sol 41%                             
+                                  │                                                                      
+                                  │  agents    no MCP calls in the last 10 min                           
                                                                                                          
                                                                                                          
                                                                                                          
@@ -220,38 +220,38 @@ exports[`120×45 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- LIMITS                                                                                             limits: coming soon 
- ╭─ personal · claude ────────────────╮  ╭─ work · claude ────────────────────╮  ╭─ codex · codex ────────────────────╮ 
- │ today unpriced  967K               │  │ today $0.00  0                     │  │ today $2.38  1.6M                  │ 
- │ 24h     $1.62*  2.9M               │  │ 24h   $0.00  0                     │  │ 24h   $2.38  1.6M                  │ 
- │ limits: coming soon                │  │ limits: coming soon                │  │ limits: coming soon                │ 
+ LIMITS                                                    pace = spend rate over the last 30 min · times are estimates 
+ ╭─ personal · claude ────────────────╮  ╭─ work · claude (47m old) ──────────╮  ╭─ old-laptop · claude ──────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━  78%  1h48m │  │ 5h   ━━━━━━━━━━━━━━━━━  12%  3h55m │  │ not signed in here                 │ 
+ │ week ━━━━━━━━━━━━━━━━━  27%  4d06h │  │ week ━━━━━━━━━━━━━━━━━   9%  2d11h │  │                                    │ 
+ │ pace $1.3/h → hits 100% at 12:59   │  │ pace $0/h   → idle                 │  │ pace $0/h   → idle                 │ 
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯ 
- ╭─ codex-win · codex ────────────────╮  ╭─ old-laptop · claude ──────────────╮                                         
- │ today $0.00  0                     │  │ today $0.00  0                     │                                         
- │ 24h   $0.00  0                     │  │ 24h   $0.00  0                     │                                         
- │ limits: coming soon                │  │ not signed in here                 │                                         
- ╰────────────────────────────────────╯  ╰────────────────────────────────────╯                                         
+ ╭─ codex · codex ────────────────────╮  ╭─ codex-win · codex ────────────────╮  ╭─ agents · MCP ─────────────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● claude session  limits       <1m │ 
+ │ week ━━━━━━━━━━━━━━━━━  83% 19h05m │  │ week ━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  should_wait   3m │ 
+ │ pace $0.04/h → week ends ~89%      │  │ pace $0.04/h → safe until reset    │  │                                    │ 
+ ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯ 
                                                                                                                         
  SPEND                                                                                          * not all tokens priced 
-                today    this week   this month     all-time                                                            
-  cost         $2.38*       $8.55*     $158.43*     $336.20*                                                            
-  tokens         2.6M         8.2M       142.8M       310.7M                                                            
+                   1h           5h        today    this week   this month     all-time                                  
+  cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                  
+  tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                  
                                                                                                                         
  ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h                     
- $1.07                             █                               ▂               claude-opus-4-8     $1.62  40% ━━━━━━
-                                   █                      ▆        █               gpt-5.6-sol         $1.42  35% ━━━━━━
-                                   █                      █        █               gpt-5.5             $0.96  24% ━━━━━━
- $0.53                             █▄                    ▃█        █               claude-mystery…  unpriced   0% ━━━━━━
-                                   ██                    ██        █                                                    
-                                   ██                    ██        █                                                    
-     0                             ██                    ██        █                                                    
+ $1.53                              █                                  ▁▁ ▁▁       Opus 4.8            $7.66  76% ━━━━━━
+                                    █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
+                                    █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
+ $0.77                              █                     ▅         █  ██ ██       Mystery 9        unpriced   0% ━━━━━━
+                                    █                     █▆        █  ██ ██  ▁                                         
+                                    █                     ██        █  ██ ██  █    peak $1.53 at Mon 21:25              
+     0                              █▃                    ██        █  ██ ██ ▇█                                         
        -24h              -18h              -12h             -6h             now                                         
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
-  limit events: coming soon                                                                                             
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
+  Tue 09:30  work      5-hour limit reached  —                                                                          
+  Mon 14:10  personal  5-hour limit reached  resumed 16:05                                                              
+  Fri 11:05  personal  5-hour limit reached  resumed 12:57                                                              
+  Sun 21:10  codex     weekly passed 80%     —                                                                          
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -261,7 +261,7 @@ exports[`120×45 view 1 (overview) 1`] = `
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit                                                    MCP ● 2 agents 
+ 1-4 views   ←/→ window   t cost/tokens   enter details   a account   s settings   ? help   q quit       MCP ● 2 agents 
 "
 `;
 
@@ -270,18 +270,18 @@ exports[`120×45 view 2 (history) 1`] = `
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ──────────────────────────────────────╮
-     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $2.38*   0.4× your 30-day avg                    │
- Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M  in 90K · out 61K · cache 2.4M              │
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · gpt-5.5 40% · +1               │
- Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced                  │
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   none                                             │
+     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                    │
+ Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M            │
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · gpt-5.6-sol 17% · +1       │
+ Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · codex $2.41 · codex-win $0.02  │
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30                        │
  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day                            │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                           │
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰───────────────────────────────────────────────────────────╯
                                                                                                                         
   Day   Week   Month     This week   This month                                      * not all tokens priced · / filter 
  date         input  output    cache        cost vs 30-day avg            top model        accounts                     
- Tue Sep 29     90K     61K     2.4M      $2.38* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex, personal              
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8  personal, codex, codex-win   
  Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8  personal, codex-win, codex, …
  Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex-win, codex, personal   
  Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.6-sol      codex, codex-win, personal, …
@@ -308,7 +308,7 @@ exports[`120×45 view 2 (history) 1`] = `
  Sat Sep 5     281K    173K     6.4M      $5.23* ━━━━━━━━━━━━━━━━━━  1.0× gpt-5.5          codex-win, old-laptop, work,…
  Fri Sep 4     214K    135K     5.7M       $8.46 ━━━━━━━━━━━━━━━━━━  1.5× gpt-5.5          codex-win, codex, old-laptop…
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.2M   291.8M    $336.20*                                                                        
+ 177 days     11.7M    7.3M   296.5M    $342.29*                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  1-4 views   d/w/m group   / filter by model   a account   s settings   ? help   q quit                  MCP ● 2 agents 
 "
@@ -320,23 +320,23 @@ exports[`120×45 view 3 (models) 1`] = `
                                                                                                                         
  MODELS · all time · by cost                                    window  today  this week  this month  all  1h  5h  24h  
  model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                   
- gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.25   ━━━━━━━━━━   34.9%      
- gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   32.2%      
- Sonnet 4.6              claude      1.7M    3.00     1.0M   15.00    40.7M   0.30     $42.76   ━━━━━━━━━━   12.7%      
- Opus 4.8                claude      993K    5.00     579K   25.00    25.4M   0.50     $42.02   ━━━━━━━━━━   12.5%      
- Haiku 4.5               claude      1.9M    1.00     1.2M    5.00    47.6M   0.10     $16.53   ━━━━━━━━━━    4.9%      
+ gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.29   ━━━━━━━━━━   34.3%      
+ gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   31.6%      
+ Opus 4.8                claude      1.1M    5.00     711K   25.00    30.0M   0.50     $48.06   ━━━━━━━━━━   14.0%      
+ Sonnet 4.6              claude      1.7M    3.00     1.0M   15.00    40.7M   0.30     $42.76   ━━━━━━━━━━   12.5%      
+ Haiku 4.5               claude      1.9M    1.00     1.2M    5.00    47.6M   0.10     $16.53   ━━━━━━━━━━    4.8%      
  Opus 4.8 (fast)         claude      110K   10.00      70K   50.00     2.7M   1.00      $9.47   ━━━━━━━━━━    2.8%      
  Mystery 9 *             claude      1.6M       —     997K       —    39.6M      —   unpriced   ━━━━━━━━━━    0.0%      
  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────      
- Total                              11.7M             7.2M           291.8M          $336.20*                           
+ Total                              11.7M             7.3M           296.5M          $342.29*                           
                                                                                                                         
  $/M = base rate · cache = read rate; writes and long-context requests cost more                                        
- * no published rate: tokens counted, cost excluded · 86.4% of tokens priced                                            
+ * no published rate: tokens counted, cost excluded · 86.6% of tokens priced                                            
                                                                                                                         
  ╭─ gpt-5.5 · rates ──────────────────────────────────────────╮  ╭─ gpt-5.5 · who used it ────────────────────────────╮ 
- │ input    $5.00 · output $30.00                             │  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  54% $62.87 │ 
- │ cache    read $0.50 (0.1× input)                           │  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  46% $54.38 │ 
- │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,483 requests                  │ 
+ │ input    $5.00 · output $30.00                             │  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  54% $62.89 │ 
+ │ cache    read $0.50 (0.1× input)                           │  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━  46% $54.40 │ 
+ │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,485 requests                  │ 
  │ fast     $12.50 · $75.00 · read $1.25                      │  │                                                    │ 
  │ long     >272K: input 2×, output 1.5×                      │  │                                                    │ 
  │ source   developers.openai.com · checked 2026-10-01        │  │                                                    │ 
@@ -367,28 +367,28 @@ exports[`120×45 view 4 (accounts) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ACCOUNTS         ○ inactive here  │  codex-win · codex                                                                 
+ ACCOUNTS         ○ inactive here  │  codex-win · codex                                         limits fetched 11:37:00 
                                    │                                                                                    
- ○ codex-win           codex     — │  root      not found on this machine: history only                                 
- ○ codex               codex     — │  history   1,609 records since Aug 2                                               
- ○ personal            claude    — │                                                                                    
- ○ work                claude    — │  limits    not fetched: no root on this machine                                    
- ○ old-laptop          claude    — │                                                                                    
- + add a root…                     │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                  
+ ● codex-win           codex   58% │  root      ~/.codex-win  (watched)                                                 
+ ● codex               codex   83% │  history   1,610 records since Aug 2                                               
+ ● personal            claude  78% │                                                                                    
+ ● work                claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50         
+ ○ old-laptop          claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40     
+ + add a root…                     │                                                                                    
+                                   │  weekly usage when it reset · last 8 weeks                                         
+ enter scope to it                 │                                                                                    
+ e enable/disable                  │                                                            ▂▂▂▂▂▂                  
+ l rename label                    │                                                            ██████                  
+ h history only                    │                                                            ██████                  
+                                   │    —       —       —       —       —       —       —       58%                     
+                                   │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now                     
+                                   │    no limit events recorded yet: only this week is known                           
                                    │                                                                                    
- enter scope to it                 │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                           
- e enable/disable                  │                                                                                    
- l rename label                    │                                                                                    
- h history only                    │                                                                                    
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
-                                                                                                                        
+                                   │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27                                  
+                                   │                                                                                    
+                                   │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                           
+                                   │                                                                                    
+                                   │  agents    no MCP calls in the last 10 min                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -416,25 +416,25 @@ exports[`80×24 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2   3   4                 all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- LIMITS                                                     limits: coming soon 
- ● personal      claude today unpriced  24h $1.62*                              
- ● work          claude today    $0.00  24h  $0.00                              
- ● codex         codex  today    $2.38  24h  $2.38                              
- ● codex-win     codex  today    $0.00  24h  $0.00                              
- ● old-laptop    claude today    $0.00  24h  $0.00                              
+ LIMITS            pace = spend rate over the last 30 min · times are estimates 
+ ● personal · claude    5h ━━━━━━━━  78%  1h48m  week ━━━━━━━━  27%  4d06h      
+   pace $1.3/h → hits 100% at 12:59                                             
+ ● work · claude        5h ━━━━━━━━  12%  3h55m  week ━━━━━━━━   9%  2d11h      
+   pace $0/h   → idle  (47m old)                                                
+ ○ old-laptop · claude  not signed in here                                      
+   pace $0/h   → idle                                                           
+ ● codex · codex        5h ━━━━━━━━   8%  4h31m  week ━━━━━━━━  83% 19h05m      
+   pace $0.04/h → week ends ~89%                                                
+ ● codex-win · codex    5h ━━━━━━━━  44%  2h10m  week ━━━━━━━━  58%  1d03h      
+   pace $0.04/h → safe until reset                                              
+ ◆ MCP  claude session  work  limits                                         <1m
+ ◆ MCP  claude session  personal  should_wait                                 3m
                                                                                 
  SPEND                                                  * not all tokens priced 
                 today    this week   this month     all-time                    
-  cost         $2.38*       $8.55*     $158.43*     $336.20*                    
-  tokens         2.6M         8.2M       142.8M       310.7M                    
+  cost         $8.47*      $14.64*     $164.52*     $342.29*                    
+  tokens         7.5M        13.1M       147.6M       315.5M                    
                                                                                 
- ACTIVITY · cost per 20 min · 24h                           peak $1.07 at 21:20 
- $1.07                             █                      ▁        ▄            
-                                   █                      █        █            
- $0.53                             █▄                    ▃█        █            
-                                   ██                    ██        █            
-     0                             ██                    ██        █            
-       -24h              -18h              -12h             -6h             now 
 ────────────────────────────────────────────────────────────────────────────────
  1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
 "
@@ -454,15 +454,15 @@ exports[`80×24 view 2 (history) 1`] = `
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                          
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                          
                                                                                 
- Tue Sep 29 · today  $2.38*  0.4× avg  2.6M tokens  gpt-5.6-sol                 
+ Tue Sep 29 · today  $8.47*  1.6× avg  1 limit hit  enter lists them            
                                                                                 
   Day   Week   Month     This week   This month                        / filter 
  date         input  output    cache        cost vs 30-day avg                  
- Tue Sep 29     90K     61K     2.4M      $2.38* ━━━━━━━━━━━━━━━━━━  0.4×       
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×       
  Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×       
  Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×       
  ───────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.2M   291.8M    $336.20*                                
+ 177 days     11.7M    7.3M   296.5M    $342.29*                                
 ────────────────────────────────────────────────────────────────────────────────
  1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
 "
@@ -474,17 +474,17 @@ exports[`80×24 view 3 (models) 1`] = `
                                                                                 
  MODELS · all time · by cost                                                    
  model             provider  input  output   cache      cost  share             
- gpt-5.5           codex      2.5M    1.6M   63.9M   $117.25  ━━━━━━━━━━  34.9% 
- gpt-5.6-sol       codex      2.8M    1.8M   72.0M   $108.18  ━━━━━━━━━━  32.2% 
- Sonnet 4.6        claude     1.7M    1.0M   40.7M    $42.76  ━━━━━━━━━━  12.7% 
- Opus 4.8          claude     993K    579K   25.4M    $42.02  ━━━━━━━━━━  12.5% 
- Haiku 4.5         claude     1.9M    1.2M   47.6M    $16.53  ━━━━━━━━━━   4.9% 
+ gpt-5.5           codex      2.5M    1.6M   63.9M   $117.29  ━━━━━━━━━━  34.3% 
+ gpt-5.6-sol       codex      2.8M    1.8M   72.0M   $108.18  ━━━━━━━━━━  31.6% 
+ Opus 4.8          claude     1.1M    711K   30.0M    $48.06  ━━━━━━━━━━  14.0% 
+ Sonnet 4.6        claude     1.7M    1.0M   40.7M    $42.76  ━━━━━━━━━━  12.5% 
+ Haiku 4.5         claude     1.9M    1.2M   47.6M    $16.53  ━━━━━━━━━━   4.8% 
  Opus 4.8 (fast)   claude     110K     70K    2.7M     $9.47  ━━━━━━━━━━   2.8% 
  Mystery 9 *       claude     1.6M    997K   39.6M  unpriced  ━━━━━━━━━━   0.0% 
  ────────────────────────────────────────────────────────────────────────────── 
- Total                       11.7M    7.2M  291.8M  $336.20*                    
+ Total                       11.7M    7.3M  296.5M  $342.29*                    
                                                                                 
- * no published rate: tokens counted, cost excluded · 86.4% of tokens priced    
+ * no published rate: tokens counted, cost excluded · 86.6% of tokens priced    
                                                                                 
                                                                                 
                                                                                 
@@ -500,25 +500,25 @@ exports[`80×24 view 4 (accounts) 1`] = `
 " tokenhud   1   2   3   4 Accounts                 all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- ACCOUNTS ○ inactive here  │  codex-win · codex                                 
+ ACCOUNTS ○ inactive here  │  codex-win · codex         limits fetched 11:37:00 
                            │                                                    
- ○ codex-win   codex     — │  root      not found on this machine: history only 
- ○ codex       codex     — │  history   1,609 records since Aug 2               
- ○ personal    claude    — │                                                    
- ○ work        claude    — │  limits    not fetched: no root on this machine    
- ○ old-laptop  claude    — │                                                    
- + add a root…             │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25  
+ ● codex-win   codex   58% │  root      ~/.codex-win  (watched)                 
+ ● codex       codex   83% │  history   1,610 records since Aug 2               
+ ● personal    claude  78% │                                                    
+ ● work        claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━   44%   resets 13:50    
+ ○ old-laptop  claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
+ + add a root…             │                                                    
+                           │  weekly usage when it reset · last 8 weeks         
+ enter scope to it         │                                                    
+ e enable/disable          │                                              ▅▅▅▅  
+ l rename label            │                                              ████  
+ h history only            │    —     —     —     —     —     —     —     58%   
+                           │    8/12  8/19  8/26  9/2   9/9   9/16  9/23  now   
+                           │    no limit events yet: only this week is known    
                            │                                                    
- enter scope to it         │  models    gpt-5.5 59% · gpt-5.6-sol 41%           
- e enable/disable          │                                                    
- l rename label            │                                                    
- h history only            │                                                    
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
+                           │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27  
+                           │                                                    
+                           │  models    gpt-5.5 59% · gpt-5.6-sol 41%           
 ────────────────────────────────────────────────────────────────────────────────
  1-4 views   a account   s settings   ? help   q quit            MCP ● 2 agents 
 "
@@ -528,38 +528,38 @@ exports[`160×50 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- LIMITS                                                                                                                                     limits: coming soon 
- ╭─ personal · claude ──────────────────────────────╮  ╭─ work · claude ─────────────────────────────────╮  ╭─ codex · codex ─────────────────────────────────╮ 
- │ today unpriced  967K                             │  │ today $0.00  0                                  │  │ today $2.38  1.6M                               │ 
- │ 24h     $1.62*  2.9M                             │  │ 24h   $0.00  0                                  │  │ 24h   $2.38  1.6M                               │ 
- │ limits: coming soon                              │  │ limits: coming soon                             │  │ limits: coming soon                             │ 
+ LIMITS                                                                                            pace = spend rate over the last 30 min · times are estimates 
+ ╭─ personal · claude ──────────────────────────────╮  ╭─ work · claude (47m old) ───────────────────────╮  ╭─ old-laptop · claude ───────────────────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  78%  1h48m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  3h55m │  │ not signed in here                              │ 
+ │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  27%  4d06h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   9%  2d11h │  │                                                 │ 
+ │ pace $1.3/h → hits 100% at 12:59                 │  │ pace $0/h   → idle                              │  │ pace $0/h   → idle                              │ 
  ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯ 
- ╭─ codex-win · codex ──────────────────────────────╮  ╭─ old-laptop · claude ───────────────────────────╮                                                      
- │ today $0.00  0                                   │  │ today $0.00  0                                  │                                                      
- │ 24h   $0.00  0                                   │  │ 24h   $0.00  0                                  │                                                      
- │ limits: coming soon                              │  │ not signed in here                              │                                                      
- ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯                                                      
+ ╭─ codex · codex ──────────────────────────────────╮  ╭─ codex-win · codex ─────────────────────────────╮  ╭─ agents · MCP ──────────────────────────────────╮ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● claude session  work  limits              <1m │ 
+ │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  83% 19h05m │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  personal  should_wait      3m │ 
+ │ pace $0.04/h → week ends ~89%                    │  │ pace $0.04/h → safe until reset                 │  │                                                 │ 
+ ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯ 
                                                                                                                                                                 
  SPEND                                                                                                                                  * not all tokens priced 
-                today    this week   this month     all-time                                                                                                    
-  cost         $2.38*       $8.55*     $158.43*     $336.20*                                                                                                    
-  tokens         2.6M         8.2M       142.8M       310.7M                                                                                                    
+                   1h           5h        today    this week   this month     all-time                                                                          
+  cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                                                          
+  tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                                                          
                                                                                                                                                                 
- ACTIVITY · cost per 20 min · 24h                                                                                          TOP MODELS · 24h                     
- $1.07                             █                               ▂                                                       claude-opus-4-8     $1.62  40% ━━━━━━
-                                   █                      ▆        █                                                       gpt-5.6-sol         $1.42  35% ━━━━━━
-                                   █                      █        █                                                       gpt-5.5             $0.96  24% ━━━━━━
- $0.53                             █▄                    ▃█        █                                                       claude-mystery…  unpriced   0% ━━━━━━
-                                   ██                    ██        █                                                                                            
-                                   ██                    ██        █                                                                                            
-     0                             ██                    ██        █                                                                                            
-       -24h              -18h              -12h             -6h             now                                                                                 
+ ACTIVITY · cost per 15 min · 24h                                                                         TOP MODELS · 24h                                      
+ $1.47                                        █                                             ▃ ▃ ▃ ▃       Opus 4.8                    $7.66  76% ━━━━━━         
+                                              █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
+                                              █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
+ $0.73                                        █                             █               █ █ █ █       Mystery 9                unpriced   0% ━━━━━━         
+                                              █                            ▄█           ▁▃  █ █ █ █  ▁                                                          
+                                              █                            ██           ██  █ █ █ █  █▁   peak $1.47 at Mon 21:30                               
+     0                                       ▂█▃                           ██           ██  █ █ █ █  ██                                                         
+       -24h                    -18h                    -12h                   -6h                   now                                                         
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          
-  limit events: coming soon                                                                                                                                     
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
+  Tue 09:30  work      5-hour limit reached  —                                                                                                                  
+  Mon 14:10  personal  5-hour limit reached  resumed 16:05                                                                                                      
+  Fri 11:05  personal  5-hour limit reached  resumed 12:57                                                                                                      
+  Sun 21:10  codex     weekly passed 80%     —                                                                                                                  
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
@@ -574,7 +574,7 @@ exports[`160×50 view 1 (overview) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit                                                                                            MCP ● 2 agents 
+ 1-4 views   ←/→ window   t cost/tokens   enter details   tab card   a account   s settings   ? help   q quit                                    MCP ● 2 agents 
 "
 `;
 
@@ -583,18 +583,18 @@ exports[`160×50 view 2 (history) 1`] = `
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ─────────────────────────────────────────────────────────╮                     
-     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $2.38*   0.4× your 30-day avg                                       │                     
- Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   2.6M  in 90K · out 61K · cache 2.4M                                 │                     
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   gpt-5.6-sol 60% · gpt-5.5 40% · claude-mystery-9 0%                 │                     
- Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts codex $2.38 · personal unpriced                                     │                     
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   none                                                                │                     
+     Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                                       │                     
+ Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M                               │                     
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · gpt-5.6-sol 17% · gpt-5.5 12%                 │                     
+ Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · codex $2.41 · codex-win $0.02                     │                     
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30                                           │                     
  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ tab table · ←/→ week · ↑/↓ day                                               │                     
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                                              │                     
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰──────────────────────────────────────────────────────────────────────────────╯                     
                                                                                                                                                                 
   Day   Week   Month     This week   This month                                                                              * not all tokens priced · / filter 
  date         input  output    cache        cost vs 30-day avg            top model        accounts                                                             
- Tue Sep 29     90K     61K     2.4M      $2.38* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex, personal                                                      
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8  personal, codex, codex-win                                           
  Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8  personal, codex-win, codex, work                                     
  Sun Sep 27    113K     67K     2.9M       $4.34 ━━━━━━━━━━━━━━━━━━  0.8× gpt-5.6-sol      codex-win, codex, personal                                           
  Sat Sep 26    225K    139K     6.2M      $6.24* ━━━━━━━━━━━━━━━━━━  1.1× gpt-5.6-sol      codex, codex-win, personal, work                                     
@@ -626,7 +626,7 @@ exports[`160×50 view 2 (history) 1`] = `
  Mon Aug 31     95K     57K     2.3M      $2.20* ━━━━━━━━━━━━━━━━━━  0.4× gpt-5.6-sol      codex-win, work, old-laptop                                          
  Sun Aug 30    190K    117K     4.8M      $5.65* ━━━━━━━━━━━━━━━━━━  1.0× claude-opus-4-8  personal, codex, work, codex-win, old-laptop                         
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 177 days     11.7M    7.2M   291.8M    $336.20*                                                                                                                
+ 177 days     11.7M    7.3M   296.5M    $342.29*                                                                                                                
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  1-4 views   d/w/m group   / filter by model   W/M this week/month   tab heat map/table   a account   s settings   ? help   q quit               MCP ● 2 agents 
 "
@@ -638,23 +638,23 @@ exports[`160×50 view 3 (models) 1`] = `
                                                                                                                                                                 
  MODELS · all time · by cost                                                                            window  today  this week  this month  all  1h  5h  24h  
  model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                                                           
- gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.25   ━━━━━━━━━━   34.9%                                              
- gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   32.2%                                              
- Sonnet 4.6              claude      1.7M    3.00     1.0M   15.00    40.7M   0.30     $42.76   ━━━━━━━━━━   12.7%                                              
- Opus 4.8                claude      993K    5.00     579K   25.00    25.4M   0.50     $42.02   ━━━━━━━━━━   12.5%                                              
- Haiku 4.5               claude      1.9M    1.00     1.2M    5.00    47.6M   0.10     $16.53   ━━━━━━━━━━    4.9%                                              
+ gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.29   ━━━━━━━━━━   34.3%                                              
+ gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   31.6%                                              
+ Opus 4.8                claude      1.1M    5.00     711K   25.00    30.0M   0.50     $48.06   ━━━━━━━━━━   14.0%                                              
+ Sonnet 4.6              claude      1.7M    3.00     1.0M   15.00    40.7M   0.30     $42.76   ━━━━━━━━━━   12.5%                                              
+ Haiku 4.5               claude      1.9M    1.00     1.2M    5.00    47.6M   0.10     $16.53   ━━━━━━━━━━    4.8%                                              
  Opus 4.8 (fast)         claude      110K   10.00      70K   50.00     2.7M   1.00      $9.47   ━━━━━━━━━━    2.8%                                              
  Mystery 9 *             claude      1.6M       —     997K       —    39.6M      —   unpriced   ━━━━━━━━━━    0.0%                                              
  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────                                              
- Total                              11.7M             7.2M           291.8M          $336.20*                                                                   
+ Total                              11.7M             7.3M           296.5M          $342.29*                                                                   
                                                                                                                                                                 
  $/M = base rate · cache = read rate; writes and long-context requests cost more                                                                                
- * no published rate: tokens counted, cost excluded · 86.4% of tokens priced                                                                                    
+ * no published rate: tokens counted, cost excluded · 86.6% of tokens priced                                                                                    
                                                                                                                                                                 
  ╭─ gpt-5.5 · rates ──────────────────────────────────────────╮  ╭─ gpt-5.5 · who used it ────────────────────────────────────╮                                 
- │ input    $5.00 · output $30.00                             │  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  54% $62.87 │                                 
- │ cache    read $0.50 (0.1× input)                           │  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  46% $54.38 │                                 
- │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,483 requests                          │                                 
+ │ input    $5.00 · output $30.00                             │  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  54% $62.89 │                                 
+ │ cache    read $0.50 (0.1× input)                           │  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  46% $54.40 │                                 
+ │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,485 requests                          │                                 
  │ fast     $12.50 · $75.00 · read $1.25                      │  │                                                            │                                 
  │ long     >272K: input 2×, output 1.5×                      │  │                                                            │                                 
  │ source   developers.openai.com · checked 2026-10-01        │  │                                                            │                                 
@@ -690,28 +690,28 @@ exports[`160×50 view 4 (accounts) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- ACCOUNTS         ○ inactive here  │  codex-win · codex                                                                                                         
+ ACCOUNTS         ○ inactive here  │  codex-win · codex                                                                                 limits fetched 11:37:00 
                                    │                                                                                                                            
- ○ codex-win           codex     — │  root      not found on this machine: history only                                                                         
- ○ codex               codex     — │  history   1,609 records since Aug 2                                                                                       
- ○ personal            claude    — │                                                                                                                            
- ○ work                claude    — │  limits    not fetched: no root on this machine                                                                            
- ○ old-laptop          claude    — │                                                                                                                            
- + add a root…                     │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25                                                                          
+ ● codex-win           codex   58% │  root      ~/.codex-win  (watched)                                                                                         
+ ● codex               codex   83% │  history   1,610 records since Aug 2                                                                                       
+ ● personal            claude  78% │                                                                                                                            
+ ● work                claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50                                                 
+ ○ old-laptop          claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40                                             
+ + add a root…                     │                                                                                                                            
+                                   │  weekly usage when it reset · last 8 weeks                                                                                 
+ enter scope to it                 │                                                                                                                            
+ e enable/disable                  │                                                            ▂▂▂▂▂▂                                                          
+ l rename label                    │                                                            ██████                                                          
+ h history only                    │                                                            ██████                                                          
+                                   │    —       —       —       —       —       —       —       58%                                                             
+                                   │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now                                                             
+                                   │    no limit events recorded yet: only this week is known                                                                   
                                    │                                                                                                                            
- enter scope to it                 │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                                                                   
- e enable/disable                  │                                                                                                                            
- l rename label                    │                                                                                                                            
- h history only                    │                                                                                                                            
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
+                                   │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27                                                                          
+                                   │                                                                                                                            
+                                   │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                                                                   
+                                   │                                                                                                                            
+                                   │  agents    no MCP calls in the last 10 min                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
                                                                                                                                                                 
@@ -744,19 +744,19 @@ exports[`narrow 50×20 view 1 (overview): every number whole 1`] = `
 " tokenhud   1 Overview   2   3   4         ● live 
 ──────────────────────────────────────────────────
                                                   
- LIMITS                       limits: coming soon 
- ● personal      today unpriced  24h $1.62*       
- ● work          today    $0.00  24h  $0.00       
- ● codex         today    $2.38  24h  $2.38       
- ● codex-win     today    $0.00  24h  $0.00       
- ● old-laptop    today    $0.00  24h  $0.00       
-                                                  
- SPEND                    * not all tokens priced 
-           today  this week  this month  all-time 
-  cost    $2.38*     $8.55*       $158*     $336* 
-  tokens    2.6M       8.2M      142.8M    310.7M 
-                                                  
-                                                  
+ LIMITS            pace = last 30 min · estimates 
+ ● personal    5h  78%  1h48m  week  27%  4d06h   
+   pace $1.3/h → hits 100% at 12:59               
+ ● work        5h  12%  3h55m  week   9%  2d11h   
+   pace $0/h   → idle  (47m old)                  
+ ○ old-laptop  not signed in here                 
+   pace $0/h   → idle                             
+ ● codex       5h   8%  4h31m  week  83% 19h05m   
+   pace $0.04/h → week ends ~89%                  
+ ● codex-win   5h  44%  2h10m  week  58%  1d03h   
+   pace $0.04/h → safe until reset                
+ ◆ MCP  claude session  work  limits           <1m
+ ◆ MCP  claude session  personal  should_wait   3m
                                                   
                                                   
 ──────────────────────────────────────────────────
@@ -770,7 +770,7 @@ exports[`narrow 50×20 view 2 (history): every number whole 1`] = `
                                                   
   Day   Week   Month     This week   This month   
  date              cost vs 30-day avg             
- Tue Sep 29      $2.38* ━━━━━━━━━━━━━━━━━━  0.4×  
+ Tue Sep 29      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×  
  Mon Sep 28      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×  
  Sun Sep 27       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×  
  Sat Sep 26      $6.24* ━━━━━━━━━━━━━━━━━━  1.1×  
@@ -782,7 +782,7 @@ exports[`narrow 50×20 view 2 (history): every number whole 1`] = `
  Sun Sep 20      $3.89* ━━━━━━━━━━━━━━━━━━  0.7×  
  Sat Sep 19       $3.90 ━━━━━━━━━━━━━━━━━━  0.7×  
  ─────────────────────────────────────────────────
- 177 days      $336.20*                           
+ 177 days      $342.29*                           
 ──────────────────────────────────────────────────
  1-4 views   ? help   q quit       MCP ● 2 agents 
 "
@@ -794,17 +794,17 @@ exports[`narrow 50×20 view 3 (models): every number whole 1`] = `
                                                   
  MODELS · all time · by cost                      
  model             input  output      cost        
- gpt-5.5            2.5M    1.6M   $117.25  34.9% 
- gpt-5.6-sol        2.8M    1.8M   $108.18  32.2% 
- Sonnet 4.6         1.7M    1.0M    $42.76  12.7% 
- Opus 4.8           993K    579K    $42.02  12.5% 
- Haiku 4.5          1.9M    1.2M    $16.53   4.9% 
+ gpt-5.5            2.5M    1.6M   $117.29  34.3% 
+ gpt-5.6-sol        2.8M    1.8M   $108.18  31.6% 
+ Opus 4.8           1.1M    711K    $48.06  14.0% 
+ Sonnet 4.6         1.7M    1.0M    $42.76  12.5% 
+ Haiku 4.5          1.9M    1.2M    $16.53   4.8% 
  Opus 4.8 (fast)    110K     70K     $9.47   2.8% 
  Mystery 9 *        1.6M    997K  unpriced   0.0% 
  ──────────────────────────────────────────────── 
- Total             11.7M    7.2M  $336.20*        
+ Total             11.7M    7.3M  $342.29*        
                                                   
- * no published rate · 86.4% of tokens priced     
+ * no published rate · 86.6% of tokens priced     
                                                   
                                                   
 ──────────────────────────────────────────────────
@@ -817,20 +817,20 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
 ──────────────────────────────────────────────────
                                                   
  ACCOUNTS                         ○ inactive here 
- ○ codex-win                           codex     —
- ○ codex                               codex     —
- ○ personal                            claude    —
- ○ work                                claude    —
- 2 more ↓                                         
+ ● codex-win                           codex   58%
+ ● codex                               codex   83%
+ ● personal                            claude  78%
+ 3 more ↓                                         
                                                   
- codex-win · codex                                
+ codex-win · codex        limits fetched 11:37:00 
                                                   
- root      not found on this machine: history only
- history   1,609 records since Aug 2              
+ root      ~/.codex-win  (watched)                
+ history   1,610 records since Aug 2              
                                                   
- limits    not fetched: no root on this machine   
+ 5-HOUR  ━━━━━━━━━━━━━━━━   44%   resets 13:50    
+ WEEKLY  ━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
                                                   
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25 
+ spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27 
 ──────────────────────────────────────────────────
  1-4 views   ? help   q quit       MCP ● 2 agents 
 "
@@ -840,19 +840,19 @@ exports[`narrow 60×20 view 1 (overview): every number whole 1`] = `
 " tokenhud   1 Overview   2   3   4                   ● live 
 ────────────────────────────────────────────────────────────
                                                             
- LIMITS                                 limits: coming soon 
- ● personal      claude today unpriced  24h $1.62*          
- ● work          claude today    $0.00  24h  $0.00          
- ● codex         codex  today    $2.38  24h  $2.38          
- ● codex-win     codex  today    $0.00  24h  $0.00          
- ● old-laptop    claude today    $0.00  24h  $0.00          
-                                                            
- SPEND                              * not all tokens priced 
-                today    this week   this month     all-time
-  cost         $2.38*       $8.55*     $158.43*     $336.20*
-  tokens         2.6M         8.2M       142.8M       310.7M
-                                                            
-                                                            
+ LIMITS                      pace = last 30 min · estimates 
+ ● personal · claude    5h  78%  1h48m  week  27%  4d06h    
+   pace $1.3/h → hits 100% at 12:59                         
+ ● work · claude        5h  12%  3h55m  week   9%  2d11h    
+   pace $0/h   → idle  (47m old)                            
+ ○ old-laptop · claude  not signed in here                  
+   pace $0/h   → idle                                       
+ ● codex · codex        5h   8%  4h31m  week  83% 19h05m    
+   pace $0.04/h → week ends ~89%                            
+ ● codex-win · codex    5h  44%  2h10m  week  58%  1d03h    
+   pace $0.04/h → safe until reset                          
+ ◆ MCP  claude session  work  limits                     <1m
+ ◆ MCP  claude session  personal  should_wait             3m
                                                             
                                                             
 ────────────────────────────────────────────────────────────
@@ -866,7 +866,7 @@ exports[`narrow 60×20 view 2 (history): every number whole 1`] = `
                                                             
   Day   Week   Month     This week   This month    / filter 
  date         input        cost vs 30-day avg               
- Tue Sep 29     90K      $2.38* ━━━━━━━━━━━━━━━━━━  0.4×    
+ Tue Sep 29    180K      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×    
  Mon Sep 28    219K      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×    
  Sun Sep 27    113K       $4.34 ━━━━━━━━━━━━━━━━━━  0.8×    
  Sat Sep 26    225K      $6.24* ━━━━━━━━━━━━━━━━━━  1.1×    
@@ -878,7 +878,7 @@ exports[`narrow 60×20 view 2 (history): every number whole 1`] = `
  Sun Sep 20    139K      $3.89* ━━━━━━━━━━━━━━━━━━  0.7×    
  Sat Sep 19    102K       $3.90 ━━━━━━━━━━━━━━━━━━  0.7×    
  ───────────────────────────────────────────────────────────
- 177 days     11.7M    $336.20*                             
+ 177 days     11.7M    $342.29*                             
 ────────────────────────────────────────────────────────────
  1-4 views   a account   ? help   q quit     MCP ● 2 agents 
 "
@@ -890,17 +890,17 @@ exports[`narrow 60×20 view 3 (models): every number whole 1`] = `
                                                             
  MODELS · all time · by cost                                
  model               input  output   cache      cost        
- gpt-5.5              2.5M    1.6M   63.9M   $117.25  34.9% 
- gpt-5.6-sol          2.8M    1.8M   72.0M   $108.18  32.2% 
- Sonnet 4.6           1.7M    1.0M   40.7M    $42.76  12.7% 
- Opus 4.8             993K    579K   25.4M    $42.02  12.5% 
- Haiku 4.5            1.9M    1.2M   47.6M    $16.53   4.9% 
+ gpt-5.5              2.5M    1.6M   63.9M   $117.29  34.3% 
+ gpt-5.6-sol          2.8M    1.8M   72.0M   $108.18  31.6% 
+ Opus 4.8             1.1M    711K   30.0M    $48.06  14.0% 
+ Sonnet 4.6           1.7M    1.0M   40.7M    $42.76  12.5% 
+ Haiku 4.5            1.9M    1.2M   47.6M    $16.53   4.8% 
  Opus 4.8 (fast)      110K     70K    2.7M     $9.47   2.8% 
  Mystery 9 *          1.6M    997K   39.6M  unpriced   0.0% 
  ────────────────────────────────────────────────────────── 
- Total               11.7M    7.2M  291.8M  $336.20*        
+ Total               11.7M    7.3M  296.5M  $342.29*        
                                                             
- * no published rate · 86.4% of tokens priced               
+ * no published rate · 86.6% of tokens priced               
                                                             
                                                             
 ────────────────────────────────────────────────────────────
@@ -913,20 +913,20 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
 ────────────────────────────────────────────────────────────
                                                             
  ACCOUNTS                                   ○ inactive here 
- ○ codex-win                                     codex     —
- ○ codex                                         codex     —
- ○ personal                                      claude    —
- ○ work                                          claude    —
- 2 more ↓                                                   
+ ● codex-win                                     codex   58%
+ ● codex                                         codex   83%
+ ● personal                                      claude  78%
+ 3 more ↓                                                   
                                                             
- codex-win · codex                                          
+ codex-win · codex                  limits fetched 11:37:00 
                                                             
- root      not found on this machine: history only          
- history   1,609 records since Aug 2                        
+ root      ~/.codex-win  (watched)                          
+ history   1,610 records since Aug 2                        
                                                             
- limits    not fetched: no root on this machine             
+ 5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50    
+ WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
                                                             
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25           
+ spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27           
 ────────────────────────────────────────────────────────────
  1-4 views   a account   ? help   q quit     MCP ● 2 agents 
 "
@@ -936,38 +936,38 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 "[head/bg/b] tokenhud [-/bg] [head/tab/b] 1 Overview [-/bg] [dim/bg] 2 [mute/bg]History [-/bg] [dim/bg] 3 [mute/bg]Models [-/bg] [dim/bg] 4 [mute/bg]Accounts [-/bg] [-/bg]                         [dim/bg]scope [fg/bg]all accounts ▾[live/bg]   ● [dim/bg]live · 5s 
 [border/bg]────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 [-/bg]                                                                                                                        
-[head/bg/b] LIMITS[-/bg]                                                                                             [dim/bg]limits: coming soon 
-[-/bg] [border/bg]╭─ [head/bg/b]personal · claude[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]work · claude[border/bg] ────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ────────────────────╮[-/bg] 
-[-/bg] [border/bg]│[-/bg] [mute/bg]today [dim/bg]unpriced[tokens|heat4/bg]  967K[-/bg]               [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$0.00[tokens|heat4/bg]  0[-/bg]                     [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$2.38[tokens|heat4/bg]  1.6M[-/bg]                  [border/bg]│[-/bg] 
-[-/bg] [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]  $1.62*[tokens|heat4/bg]  2.9M[-/bg]               [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$0.00[tokens|heat4/bg]  0[-/bg]                     [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$2.38[tokens|heat4/bg]  1.6M[-/bg]                  [border/bg]│[-/bg] 
-[-/bg] [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                [border/bg]│[-/bg]  [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                [border/bg]│[-/bg]  [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                [border/bg]│[-/bg] 
+[head/bg/b] LIMITS[-/bg]                                                    [dim/bg]pace = spend rate over the last 30 min · times are estimates 
+[-/bg] [border/bg]╭─ [head/bg/b]personal · claude[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]work · claude[dim/bg] (47m old)[border/bg] ──────────╮[-/bg]  [border/bg]╭─ [head/bg/b]old-laptop · claude[border/bg] ──────────────╮[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]5h   [cost|mid/bg]━━━━━━━━━━━━━[empty/bg]━━━━[cost|mid/bg/b]  78%[dim/bg]  1h48m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━[empty/bg]━━━━━━━━━━━━━━━[low/bg/b]  12%[dim/bg]  3h55m[border/bg] │[-/bg]  [border/bg]│ [dim/bg]not signed in here[-/bg]                [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]week [low/bg]━━━━━[empty/bg]━━━━━━━━━━━━[low/bg/b]  27%[dim/bg]  4d06h[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [low/bg]━━[empty/bg]━━━━━━━━━━━━━━━[low/bg/b]   9%[dim/bg]  2d11h[border/bg] │[-/bg]  [border/bg]│ [-/bg]                                  [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h [dim/bg]→ [high/bg/b]hits 100% at 12:59[-/bg]  [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg] 
-[-/bg] [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]old-laptop · claude[border/bg] ──────────────╮[-/bg]                                         
-[-/bg] [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$0.00[tokens|heat4/bg]  0[-/bg]                     [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$0.00[tokens|heat4/bg]  0[-/bg]                     [border/bg]│[-/bg]                                         
-[-/bg] [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$0.00[tokens|heat4/bg]  0[-/bg]                     [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$0.00[tokens|heat4/bg]  0[-/bg]                     [border/bg]│[-/bg]                                         
-[-/bg] [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                [border/bg]│[-/bg]  [border/bg]│[-/bg] [dim/bg]not signed in here[-/bg]                 [border/bg]│[-/bg]                                         
-[-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]                                         
+[-/bg] [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [live/bg/b]agents · MCP[border/bg] ─────────────────────╮[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━[empty/bg]━━━━━━━━━━━━━━━━[low/bg/b]   8%[dim/bg]  4h31m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━[empty/bg]━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  limits       [dim/bg]<1m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]week [high/bg]━━━━━━━━━━━━━━[empty/bg]━━━[high/bg/b]  83%[dim/bg] 19h05m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [cost|mid/bg]━━━━━━━━━━[empty/bg]━━━━━━━[cost|mid/bg/b]  58%[dim/bg]  1d03h[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  should_wait   [dim/bg]3m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [cost|mid/bg]week ends ~89%[-/bg]     [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [mute/bg]safe until reset[-/bg]   [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                  [border/bg] │[-/bg] 
+[-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg] 
 [-/bg]                                                                                                                        
 [head/bg/b] SPEND[-/bg]                                                                                          [dim/bg]* not all tokens priced 
-[dim/bg]                today    this week   this month     all-time[-/bg]                                                            
-[mute/bg]  cost  [cost|mid/bg/b]       $2.38*       $8.55*     $158.43*     $336.20*[-/bg]                                                            
-[mute/bg]  tokens[tokens|heat4/bg]         2.6M         8.2M       142.8M       310.7M[-/bg]                                                            
+[dim/bg]                   1h           5h        today    this week   this month     all-time[-/bg]                                  
+[mute/bg]  cost  [cost|mid/bg/b]        $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*[-/bg]                                  
+[mute/bg]  tokens[tokens|heat4/bg]         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M[-/bg]                                  
 [-/bg]                                                                                                                        
 [head/bg/b] ACTIVITY · cost per 20 min · 24h[-/bg]                                                 [head/bg/b] TOP MODELS · 24h[-/bg]                     
-[-/bg] [dim/bg]$1.07[-/bg] [cost|mid/bg]                            █                               ▂           [-/bg]    [fg/bg]claude-opus-4-8[-/bg] [cost|mid/bg]    $1.62[-/bg] [mute/bg] 40%[-/bg] [cost|mid/bg]━━[empty/bg]━━━━
-[-/bg]       [cost|mid/bg]                            █                      ▆        █           [-/bg]    [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 35%[-/bg] [cost|mid/bg]━━[empty/bg]━━━━
-[-/bg]       [cost|mid/bg]                            █                      █        █           [-/bg]    [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $0.96[-/bg] [mute/bg] 24%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
-[-/bg] [dim/bg]$0.53[-/bg] [cost|mid/bg]                            █▄                    ▃█        █           [-/bg]    [fg/bg]claude-mystery…[-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [empty/bg]━━━━━━
-[-/bg]       [cost|mid/bg]                            ██                    ██        █           [-/bg]                                         
-[-/bg]       [cost|mid/bg]                            ██                    ██        █           [-/bg]                                         
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                            ██                    ██        █           [-/bg]                                         
+[-/bg] [dim/bg]$1.53[-/bg] [cost|mid/bg]                             █                                  ▁▁ ▁▁   [-/bg]    [fg/bg]Opus 4.8       [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[empty/bg]━
+[-/bg]       [cost|mid/bg]                             █                                  ██ ██   [-/bg]    [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[-/bg]       [cost|mid/bg]                             █                               ▃  ██ ██   [-/bg]    [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[-/bg] [dim/bg]$0.77[-/bg] [cost|mid/bg]                             █                     ▅         █  ██ ██   [-/bg]    [fg/bg]Mystery 9      [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [empty/bg]━━━━━━
+[-/bg]       [cost|mid/bg]                             █                     █▆        █  ██ ██  ▁[-/bg]                                         
+[-/bg]       [cost|mid/bg]                             █                     ██        █  ██ ██  █[-/bg]   [dim/bg] peak $1.53 at Mon 21:25[-/bg]              
+[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                             █▃                    ██        █  ██ ██ ▇█[-/bg]                                         
 [-/bg]       [dim/bg]-24h[-/bg]              [dim/bg]-18h[-/bg]              [dim/bg]-12h[-/bg]             [dim/bg]-6h[-/bg]             [dim/bg]now[-/bg]                                         
 [-/bg]                                                                                                                        
 [head/bg/b] LIMIT EVENTS · 7 days[-/bg]                                                                                                  
-[dim/bg]  limit events: coming soon[-/bg]                                                                                             
-[-/bg]                                                                                                                        
-[-/bg]                                                                                                                        
-[-/bg]                                                                                                                        
+[dim/bg]  Tue 09:30  [fg/bg]work      [high/bg/b]5-hour limit reached  [mute/bg]—[-/bg]                                                                          
+[dim/bg]  Mon 14:10  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 16:05[-/bg]                                                              
+[dim/bg]  Fri 11:05  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 12:57[-/bg]                                                              
+[dim/bg]  Sun 21:10  [fg/bg]codex     [cost|mid/bg/b]weekly passed 80%     [mute/bg]—[-/bg]                                                                          
 [-/bg]                                                                                                                        
 [-/bg]                                                                                                                        
 [-/bg]                                                                                                                        
@@ -977,65 +977,65 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [-/bg]                                                                                                                        
 [-/bg]                                                                                                                        
 [border/bg]────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                                                 [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
+[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]enter[dim/bg] details   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]    [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
 `;
 
 exports[`colours the light theme paints the same frame in its own roles 1`] = `
 "[head/bg/b] tokenhud [-/bg] [head/tab/b] 1 Overview [-/bg] [dim/bg] 2 [mute/bg]History [-/bg] [dim/bg] 3 [mute/bg]Models [-/bg] [dim/bg] 4 [mute/bg]Accounts [-/bg] [-/bg]          [dim/bg]scope [fg/bg]all accounts ▾[live/bg]   ● [dim/bg]live · 5s 
 [border/bg]─────────────────────────────────────────────────────────────────────────────────────────────────────────
 [-/bg]                                                                                                         
-[head/bg/b] LIMITS[-/bg]                                                                              [dim/bg]limits: coming soon 
-[-/bg] [border/bg]╭─ [head/bg/b]personal · claude[border/bg] ─────────────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]work · claude[border/bg] ────────────────────────────────╮[-/bg] 
-[-/bg] [border/bg]│[-/bg] [mute/bg]today [dim/bg]unpriced[tokens/bg]  967K[-/bg]                            [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$0.00[tokens/bg]  0[-/bg]                                 [border/bg]│[-/bg] 
-[-/bg] [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]  $1.62*[tokens/bg]  2.9M[-/bg]                            [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$0.00[tokens/bg]  0[-/bg]                                 [border/bg]│[-/bg] 
-[-/bg] [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                             [border/bg]│[-/bg]  [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                            [border/bg]│[-/bg] 
+[head/bg/b] LIMITS[-/bg]                                     [dim/bg]pace = spend rate over the last 30 min · times are estimates 
+[-/bg] [border/bg]╭─ [head/bg/b]personal · claude[border/bg] ─────────────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]work · claude[dim/bg] (47m old)[border/bg] ──────────────────────╮[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]5h   [cost|mid/bg]━━━━━━━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━[cost|mid/bg/b]  78%[dim/bg]  1h48m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]  12%[dim/bg]  3h55m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]week [low/bg]━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]  27%[dim/bg]  4d06h[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [low/bg]━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]   9%[dim/bg]  2d11h[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h [dim/bg]→ [high/bg/b]hits 100% at 12:59[-/bg]               [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                            [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
-[-/bg] [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ─────────────────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ────────────────────────────╮[-/bg] 
-[-/bg] [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$2.38[tokens/bg]  1.6M[-/bg]                               [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$0.00[tokens/bg]  0[-/bg]                                 [border/bg]│[-/bg] 
-[-/bg] [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$2.38[tokens/bg]  1.6M[-/bg]                               [border/bg]│[-/bg]  [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$0.00[tokens/bg]  0[-/bg]                                 [border/bg]│[-/bg] 
-[-/bg] [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                             [border/bg]│[-/bg]  [border/bg]│[-/bg] [dim/bg]limits: coming soon[-/bg]                            [border/bg]│[-/bg] 
+[-/bg] [border/bg]╭─ [head/bg/b]old-laptop · claude[border/bg] ───────────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ────────────────────────────────╮[-/bg] 
+[-/bg] [border/bg]│ [dim/bg]not signed in here[-/bg]                             [border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]   8%[dim/bg]  4h31m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [-/bg]                                               [border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [high/bg]━━━━━━━━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━[high/bg/b]  83%[dim/bg] 19h05m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                             [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [cost|mid/bg]week ends ~89%[-/bg]                 [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
-[-/bg] [border/bg]╭─ [head/bg/b]old-laptop · claude[border/bg] ───────────────────────────╮[-/bg]                                                     
-[-/bg] [border/bg]│[-/bg] [mute/bg]today [cost|mid/bg/b]$0.00[tokens/bg]  0[-/bg]                                  [border/bg]│[-/bg]                                                     
-[-/bg] [border/bg]│[-/bg] [mute/bg]24h   [cost|mid/bg]$0.00[tokens/bg]  0[-/bg]                                  [border/bg]│[-/bg]                                                     
-[-/bg] [border/bg]│[-/bg] [dim/bg]not signed in here[-/bg]                              [border/bg]│[-/bg]                                                     
-[-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]                                                     
+[-/bg] [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ─────────────────────────────╮[-/bg]  [border/bg]╭─ [live/bg/b]agents · MCP[border/bg] ─────────────────────────────────╮[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  [mute/bg]work  [fg/bg]limits             [dim/bg]<1m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]week [cost|mid/bg]━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━[cost|mid/bg/b]  58%[dim/bg]  1d03h[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  [mute/bg]personal  [fg/bg]should_wait     [dim/bg]3m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [mute/bg]safe until reset[-/bg]                [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                              [border/bg] │[-/bg] 
+[-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
 [-/bg]                                                                                                         
 [head/bg/b] SPEND[-/bg]                                                                           [dim/bg]* not all tokens priced 
 [dim/bg]                today    this week   this month     all-time[-/bg]                                             
-[mute/bg]  cost  [cost|mid/bg/b]       $2.38*       $8.55*     $158.43*     $336.20*[-/bg]                                             
-[mute/bg]  tokens[tokens/bg]         2.6M         8.2M       142.8M       310.7M[-/bg]                                             
+[mute/bg]  cost  [cost|mid/bg/b]       $8.47*      $14.64*     $164.52*     $342.29*[-/bg]                                             
+[mute/bg]  tokens[tokens/bg]         7.5M        13.1M       147.6M       315.5M[-/bg]                                             
 [-/bg]                                                                                                         
-[head/bg/b] ACTIVITY · cost per 20 min · 24h[-/bg]                                                    [dim/bg]peak $1.07 at 21:20 
-[-/bg] [dim/bg]$1.07[-/bg] [cost|mid/bg]                            █                               ▂           [-/bg]                          
-[-/bg]       [cost|mid/bg]                            █                      ▆        █           [-/bg]                          
-[-/bg]       [cost|mid/bg]                            █                      █        █           [-/bg]                          
-[-/bg] [dim/bg]$0.53[-/bg] [cost|mid/bg]                            █▄                    ▃█        █           [-/bg]                          
-[-/bg]       [cost|mid/bg]                            ██                    ██        █           [-/bg]                          
-[-/bg]       [cost|mid/bg]                            ██                    ██        █           [-/bg]                          
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                            ██                    ██        █           [-/bg]                          
-[-/bg]       [dim/bg]-24h[-/bg]              [dim/bg]-18h[-/bg]              [dim/bg]-12h[-/bg]             [dim/bg]-6h[-/bg]             [dim/bg]now[-/bg]                          
+[head/bg/b] ACTIVITY · cost per 15 min · 24h[-/bg]                                                [dim/bg]peak $1.47 at Mon 21:30 
+[-/bg] [dim/bg]$1.47[-/bg] [cost|mid/bg]                                       █                                             ▃ ▃ ▃ ▃    [-/bg]  
+[-/bg]       [cost|mid/bg]                                       █                                             █ █ █ █    [-/bg]  
+[-/bg]       [cost|mid/bg]                                       █                             ▂               █ █ █ █    [-/bg]  
+[-/bg] [dim/bg]$0.73[-/bg] [cost|mid/bg]                                       █                             █               █ █ █ █    [-/bg]  
+[-/bg]       [cost|mid/bg]                                       █                            ▄█           ▁▃  █ █ █ █  ▁ [-/bg]  
+[-/bg]       [cost|mid/bg]                                       █                            ██           ██  █ █ █ █  █▁[-/bg]  
+[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                                      ▂█▃                           ██           ██  █ █ █ █  ██[-/bg]  
+[-/bg]       [dim/bg]-24h[-/bg]                    [dim/bg]-18h[-/bg]                    [dim/bg]-12h[-/bg]                   [dim/bg]-6h[-/bg]                   [dim/bg]now[-/bg]  
 [-/bg]                                                                                                         
 [head/bg/b] TOP MODELS · 24h[-/bg]                                                                                        
-[-/bg] [fg/bg]claude-opus-4-8                      [-/bg] [cost|mid/bg]    $1.62[-/bg] [mute/bg] 40%[-/bg] [cost|mid/bg]━━[rule|empty/bg]━━━━[-/bg]                                             
-[-/bg] [fg/bg]gpt-5.6-sol                          [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 35%[-/bg] [cost|mid/bg]━━[rule|empty/bg]━━━━[-/bg]                                             
-[-/bg] [fg/bg]gpt-5.5                              [-/bg] [cost|mid/bg]    $0.96[-/bg] [mute/bg] 24%[-/bg] [cost|mid/bg]━[rule|empty/bg]━━━━━[-/bg]                                             
-[-/bg] [fg/bg]claude-mystery-9                     [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [rule|empty/bg]━━━━━━[-/bg]                                             
+[-/bg] [fg/bg]Opus 4.8               [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[rule|empty/bg]━[-/bg]                                                           
+[-/bg] [fg/bg]gpt-5.6-sol            [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[rule|empty/bg]━━━━━[-/bg]                                                           
+[-/bg] [fg/bg]gpt-5.5                [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[rule|empty/bg]━━━━━[-/bg]                                                           
+[-/bg] [fg/bg]Mystery 9              [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [rule|empty/bg]━━━━━━[-/bg]                                                           
 [-/bg]                                                                                                         
 [head/bg/b] LIMIT EVENTS · 7 days[-/bg]                                                                                   
-[dim/bg]  limit events: coming soon[-/bg]                                                                              
-[-/bg]                                                                                                         
-[-/bg]                                                                                                         
-[-/bg]                                                                                                         
+[dim/bg]  Tue 09:30  [fg/bg]work      [high/bg/b]5-hour limit reached  [mute/bg]—[-/bg]                                                           
+[dim/bg]  Mon 14:10  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 16:05[-/bg]                                               
+[dim/bg]  Fri 11:05  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 12:57[-/bg]                                               
+[dim/bg]  Sun 21:10  [fg/bg]codex     [cost|mid/bg/b]weekly passed 80%     [mute/bg]—[-/bg]                                                           
 [-/bg]                                                                                                         
 [-/bg]                                                                                                         
 [border/bg]─────────────────────────────────────────────────────────────────────────────────────────────────────────
-[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                                  [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
+[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]     [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "
 `;
 
-exports[`footer MCP status, from the heartbeat files two servers that called tools in the last 10 min: MCP ● 2 agents 1`] = `"[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                                  [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "`;
+exports[`footer MCP status, from the heartbeat files two servers that called tools in the last 10 min: MCP ● 2 agents 1`] = `"[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]     [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "`;
 
-exports[`footer MCP status, from the heartbeat files no heartbeat in the last 10 min: a dim MCP ○ 1`] = `"[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                                           [dim/bg]MCP ○ "`;
+exports[`footer MCP status, from the heartbeat files no heartbeat in the last 10 min: a dim MCP ○ 1`] = `"[-/bg] [head/bg/b]1-4[dim/bg] views   [head/bg/b]←/→[dim/bg] window   [head/bg/b]t[dim/bg] cost/tokens   [head/bg/b]a[dim/bg] account   [head/bg/b]s[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]              [dim/bg]MCP ○ "`;
 
 exports[`states another instance holds the lock: read-only, stale, and the notice 1`] = `" 1-4 views   a account   s settings   ? help   q quit     another tokenhud is ingesting   MCP ● 2 agents "`;
 
@@ -1063,7 +1063,7 @@ exports[`states before the first view models: the frame, and a line saying the s
                                                                                 
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- 1-4 views   a account   s settings   ? help   q quit                           
+ 1-4 views   ←/→ window   a account   s settings   ? help   q quit              
 "
 `;
 

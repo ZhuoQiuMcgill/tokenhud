@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { cachePath } from "../../src/ingest/cursors.ts";
+import { limitsPath } from "../../src/limits/cache.ts";
 import { tuiPaths } from "../../src/tui/main.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -43,7 +44,7 @@ const FORBIDDEN = [
   /^query\//,
   /^store\//,
   /^commands\//,
-  /^tui\/vm\/(compute|history|session|worker)\.ts$/,
+  /^tui\/vm\/(compute|history|overview|session|worker)\.ts$/,
   /^tui\/once\.tsx$/,
   /^ingest\/(?!client\.ts$|worker-url\.ts$)/,
 ];
@@ -99,5 +100,11 @@ describe("the UI thread's import graph", () => {
 test("the UI's cache.db path is the ingest cursors' (spelled out to keep SQLite off the UI thread)", () => {
   for (const env of [{}, { XDG_CONFIG_HOME: "/x/cfg" }]) {
     expect(tuiPaths(env, "/home/someone").cache).toBe(cachePath(env, "/home/someone"));
+  }
+});
+
+test("the UI's limits.json path is the limits module's", () => {
+  for (const env of [{}, { XDG_CONFIG_HOME: "/x/cfg" }]) {
+    expect(tuiPaths(env, "/home/someone").limits).toBe(limitsPath(env, "/home/someone"));
   }
 });
