@@ -4,7 +4,7 @@
 
 import type { Database } from "bun:sqlite";
 import type { Config } from "../../config.ts";
-import { readMcpActivity } from "../../mcp-heartbeat.ts";
+import { readMcpActivity } from "../../mcp/heartbeat.ts";
 import { loadPriceTable } from "../../pricing/overrides.ts";
 import type { PriceTable } from "../../pricing/table.ts";
 import { UsageQueries } from "../../query/engine.ts";

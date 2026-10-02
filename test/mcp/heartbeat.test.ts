@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { AGENT_WINDOW_MS, Heartbeat, mcpDir } from "../../src/mcp/heartbeat.ts";
+import { AGENT_WINDOW_MS, Heartbeat, mcpDir, readMcpActivity } from "../../src/mcp/heartbeat.ts";
 import { cleanup, MIN, NOW, tempDir } from "./helpers.ts";
 
 afterEach(cleanup);
@@ -71,4 +71,68 @@ describe("the MCP heartbeat file", () => {
       expect(logs).toEqual(["cannot write the heartbeat file (EACCES)"]);
     },
   );
+});
+
+// The TUI's side: its footer ("MCP ● 2 agents", or a dim "MCP ○") reads these files.
+describe("read by the TUI (readMcpActivity)", () => {
+  const here = { host: hostname(), isAlive: (pid: number) => pid === 4242 || pid === 4343 };
+
+  test("no directory, or nothing in it: no servers and no agents", () => {
+    expect(readMcpActivity(join(tempDir(), "mcp"), NOW, here)).toEqual({
+      servers: 0,
+      agents: 0,
+      recent: [],
+    });
+  });
+
+  test("a running server is counted; with a call in the last 10 minutes it is an agent", () => {
+    const dir = join(tempDir(), "mcp");
+    let now = NOW;
+    const a = new Heartbeat(dir, { pid: 4242, now: () => now });
+    const b = new Heartbeat(dir, { pid: 4343, now: () => now });
+    a.start();
+    b.start();
+    a.record("limits", "personal");
+    now += 2 * MIN;
+    b.record("should_wait", "work");
+    expect(readMcpActivity(dir, now, here)).toEqual({
+      servers: 2,
+      agents: 2,
+      recent: [
+        { at: now, tool: "should_wait", account: "work" },
+        { at: NOW, tool: "limits", account: "personal" },
+      ],
+    });
+    // Ten minutes later the first call has aged out; both servers still beat.
+    now += 9 * MIN;
+    a.write();
+    b.write();
+    expect(readMcpActivity(dir, now, here)).toMatchObject({ servers: 2, agents: 1 });
+    a.stop();
+    b.stop();
+  });
+
+  test("no heartbeat in the last 10 minutes, or a crashed server on this host: not running", () => {
+    const dir = join(tempDir(), "mcp");
+    const old = new Heartbeat(dir, { pid: 4242, now: () => NOW - AGENT_WINDOW_MS - 1 });
+    old.write();
+    const crashed = new Heartbeat(dir, { pid: 999_999, now: () => NOW });
+    crashed.write();
+    expect(readMcpActivity(dir, NOW, here)).toEqual({ servers: 0, agents: 0, recent: [] });
+  });
+
+  test("damaged and unrelated files are ignored", () => {
+    const dir = join(tempDir(), "mcp");
+    const beat = new Heartbeat(dir, { pid: 4242, now: () => NOW });
+    beat.record("limits", null);
+    writeFileSync(join(dir, "1.json"), "{broken");
+    writeFileSync(join(dir, "2.json"), JSON.stringify({ pid: "x" }));
+    writeFileSync(join(dir, "notes.txt"), "hello");
+    expect(readMcpActivity(dir, NOW, here)).toEqual({
+      servers: 1,
+      agents: 1,
+      recent: [{ at: NOW, tool: "limits", account: null }],
+    });
+    beat.stop();
+  });
 });

@@ -4,7 +4,7 @@
 // job) and does no I/O itself: saving config and talking to Workers go through `Ports`.
 
 import type { Config } from "../config.ts";
-import type { McpActivity } from "../mcp-heartbeat.ts";
+import type { McpActivity } from "../mcp/heartbeat.ts";
 import { initialSettings, type SettingsState, settingsKey } from "./settings.ts";
 import { VIEWS } from "./views/index.ts";
 import {

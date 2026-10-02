@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { ccUsageDir, configPath, ensureConfig } from "../config.ts";
 import { lockPath, WriterLock } from "../lock.ts";
-import { mcpDir } from "../mcp-heartbeat.ts";
+import { mcpDir } from "../mcp/heartbeat.ts";
 import { configDir, pricingOverridesPath, storePath } from "../paths.ts";
 import type { Boot, TuiPaths } from "./run.tsx";
 import { startVmWorker } from "./vm/client.ts";

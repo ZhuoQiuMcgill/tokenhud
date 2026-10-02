@@ -2,7 +2,7 @@
 // section titles, as `Line`s for the `th-lines` renderable. Pure functions of the width, so
 // each degrades the same way every time when the terminal is narrow.
 
-import type { McpActivity } from "../mcp-heartbeat.ts";
+import type { McpActivity } from "../mcp/heartbeat.ts";
 import { type Line, type Seg, seg, segsWidth } from "./components/base.ts";
 
 export const TABS = ["Overview", "History", "Models", "Accounts"] as const;

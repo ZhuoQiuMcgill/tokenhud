@@ -2,7 +2,7 @@
 // crosses postMessage: the UI thread renders it and never queries the store (T6 critic Q1).
 
 import type { Config, Window } from "../../config.ts";
-import type { McpActivity } from "../../mcp-heartbeat.ts";
+import type { McpActivity } from "../../mcp/heartbeat.ts";
 import type { PriceStatus } from "../../query/types.ts";
 import type { Provider, RootSource } from "../../sources/roots.ts";
 
