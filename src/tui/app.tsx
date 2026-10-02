@@ -47,6 +47,7 @@ const GLOBAL = {
 } as const satisfies Record<string, Hint>;
 
 function statusOf(state: UiState): Status {
+  if (state.vmDown !== null) return { kind: "error" };
   if (state.mode === "owner" && state.ingest === "live") {
     return { kind: "live", refresh: state.config.refresh_interval };
   }
@@ -383,7 +384,7 @@ export function Frame(props: {
         width={width}
         height={height - CHROME_ROWS}
         t={t}
-        error={state.error}
+        error={state.vmDown ?? state.ingestDown ?? state.error}
         overlay={state.overlay}
         view={state.view}
         vm={state.views[state.view]}
@@ -404,9 +405,14 @@ export function App(props: {
   onCommit?: (state: UiState) => void;
 }) {
   const { width, height } = useTerminalDimensions();
-  useKeyboard((key) =>
-    props.controller.key({ name: key.name, sequence: key.sequence, ctrl: key.ctrl }),
-  );
+  // A key handler that throws is a crash like a render error (OpenTUI would swallow it).
+  useKeyboard((key) => {
+    try {
+      props.controller.key({ name: key.name, sequence: key.sequence, ctrl: key.ctrl });
+    } catch (error) {
+      props.onFatal(error as Error);
+    }
+  });
   return (
     <Fatal onError={props.onFatal}>
       <Frame

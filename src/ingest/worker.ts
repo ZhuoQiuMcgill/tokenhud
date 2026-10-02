@@ -22,6 +22,16 @@ let limits: LimitsService | null = null;
 let stopping = false;
 let retry: ReturnType<typeof setTimeout> | null = null;
 
+// An error nothing here expected ends the Worker, said in one line first, rather than
+// leaving it alive and doing nothing: its owner hears the exit and starts another.
+const fatal = (error: unknown) => {
+  const message = error instanceof Error ? error.message : `uncaught ${String(error)}`;
+  post({ type: "log", level: "error", message: (message.split("\n")[0] as string) || "error" });
+  process.exit(1);
+};
+process.on("uncaughtException", fatal);
+process.on("unhandledRejection", fatal);
+
 function limitsService(live: IngestEngine, options: LimitsWorkerOptions, cachePath: string) {
   return new LimitsService({
     limitsPath: options.limitsPath,

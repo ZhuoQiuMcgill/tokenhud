@@ -213,4 +213,12 @@ export type VmMessage =
   | { readonly type: "mcp"; readonly activity: McpActivity }
   | { readonly type: "roots"; readonly roots: readonly RootInfo[] }
   | { readonly type: "error"; readonly message: string }
-  | { readonly type: "stopped" };
+  | { readonly type: "stopped" }
+  /** From the supervisor, not the Worker: it died, and restarts after `retryInMs`. */
+  | { readonly type: "down"; readonly reason: string; readonly retryInMs: number };
+
+/** The Worker's last word before it exits on an uncaught error: one clean line. */
+export interface VmFatal {
+  readonly type: "fatal";
+  readonly message: string;
+}

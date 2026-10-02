@@ -9,8 +9,9 @@ import { type IngestMessage, type IngestWorker, startIngestWorker } from "../ing
 import { HEARTBEAT_MS, WriterLock } from "../lock.ts";
 import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
+import { errorLine, fileLog } from "./log.ts";
 import { theme } from "./theme.ts";
-import type { VmWorker } from "./vm/client.ts";
+import { RESTART_BACKOFF_MS, type VmWorker } from "./vm/client.ts";
 import type { VmMessage } from "./vm/types.ts";
 
 export interface TuiPaths {
@@ -21,6 +22,8 @@ export interface TuiPaths {
   readonly lock: string;
   readonly mcp: string;
   readonly ccUsageLedger: string;
+  /** The log file (`<config dir>/logs/tokenhud.log`). */
+  readonly log: string;
 }
 
 export interface Boot {
@@ -56,9 +59,13 @@ export async function runApp(boot: Boot): Promise<number> {
       appendFileSync(boot.trace, `${JSON.stringify({ event, ms, at: performance.now() })}\n`);
     }
   };
+  const log = fileLog(paths.log, boot.home);
   let lock = boot.lock;
   let ingest: IngestWorker | null = null;
   let generation = 0;
+  let ingestFailures = 0;
+  let ingestRetry: ReturnType<typeof setTimeout> | null = null;
+  let ingestError: string | null = null;
   let resolveExit: (code: number) => void = () => {};
   const exited = new Promise<number>((resolve) => {
     resolveExit = resolve;
@@ -103,9 +110,18 @@ export async function runApp(boot: Boot): Promise<number> {
       vm.send({ type: "invalidate" });
       return;
     }
+    if (message.type === "log" && message.level !== "info") {
+      log.write(message.level, `ingest: ${message.message}`);
+    }
     if (own !== generation) return;
-    if (message.type === "ready") controller.setIngest("live");
-    else if (message.type === "pass" && message.report.storeError !== null)
+    if (message.type === "log" && message.level === "error")
+      ingestError = errorLine(message.message);
+    if (message.type === "ready") {
+      ingestFailures = 0;
+      controller.setIngestDown(null);
+      controller.setIngest("live");
+    }
+    if (message.type === "pass" && message.report.storeError !== null)
       controller.setIngest("error");
     else if (message.type === "pass" && controller.getState().ingest === "error")
       controller.setIngest("live");
@@ -125,6 +141,26 @@ export async function runApp(boot: Boot): Promise<number> {
         importLedger: paths.ccUsageLedger,
       },
       (message) => onIngest(own, message),
+      (code) => {
+        // It died: say why on one line, and start another after 1 s, 2 s, 5 s, then 30 s.
+        if (closing || own !== generation) return;
+        ingest = null;
+        const delay = RESTART_BACKOFF_MS[
+          Math.min(ingestFailures, RESTART_BACKOFF_MS.length - 1)
+        ] as number;
+        ingestFailures++;
+        const reason = ingestError ?? `exited with code ${code}`;
+        ingestError = null;
+        log.write("error", `ingest worker stopped: ${reason}; restarting in ${delay} ms`);
+        controller.setIngest("error");
+        controller.setIngestDown(
+          `ingest stopped (${reason}); restarting in ${Math.round(delay / 1000)} s`,
+        );
+        ingestRetry = setTimeout(() => {
+          ingestRetry = null;
+          startIngest();
+        }, delay);
+      },
     );
   }
 
@@ -213,6 +249,7 @@ export async function runApp(boot: Boot): Promise<number> {
     clearInterval(tickTimer);
     clearInterval(beatTimer);
     clearTimeout(fallback);
+    if (ingestRetry !== null) clearTimeout(ingestRetry);
     unsubscribe();
     try {
       renderer.destroy();
@@ -221,6 +258,7 @@ export async function runApp(boot: Boot): Promise<number> {
     }
     if (error !== undefined) {
       const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      log.write("error", `crashed: ${text}`);
       process.stderr.write(`tokenhud: crashed: ${text}\n`);
     }
     await stopIngest();
@@ -241,8 +279,19 @@ export async function runApp(boot: Boot): Promise<number> {
     process.on(signal, () => void shutdown(code));
   }
 
-  boot.attach((message) => controller.vmMessage(message));
-  for (const message of boot.early) controller.vmMessage(message);
+  const fromVm = (message: VmMessage) => {
+    if (message.type === "down") {
+      log.write(
+        "error",
+        `view-model worker stopped: ${message.reason}; restarting in ${message.retryInMs} ms`,
+      );
+    } else if (message.type === "error") {
+      log.write("warn", message.message);
+    }
+    controller.vmMessage(message);
+  };
+  boot.attach(fromVm);
+  for (const message of boot.early) fromVm(message);
   createRoot(renderer).render(<App controller={controller} onFatal={fatal} onCommit={onCommit} />);
   return exited;
 }

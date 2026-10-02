@@ -39,6 +39,13 @@ export interface UiState {
   readonly roots: readonly RootInfo[];
   /** A problem to show above the view (the store can't be read, settings not saved). */
   readonly error: string | null;
+  /**
+   * Set while the view-model Worker is down (it died and is restarting): the numbers on
+   * screen have stopped updating. One clean line.
+   */
+  readonly vmDown: string | null;
+  /** Set while the ingest Worker is down and restarting. One clean line. */
+  readonly ingestDown: string | null;
   /** Why this process is read-only when no other process holds the lock. */
   readonly readOnlyReason: string | null;
 }
@@ -81,6 +88,8 @@ export function initialState(config: Config, mode: IngestMode): UiState {
     settings: initialSettings(),
     roots: [],
     error: null,
+    vmDown: null,
+    ingestDown: null,
     readOnlyReason: null,
   };
 }
@@ -134,6 +143,7 @@ export class Controller {
         accounts: message.accounts,
         scope: message.scope,
         error: null,
+        vmDown: null,
       });
     } else if (message.type === "mcp") {
       this.#set({ mcp: message.activity });
@@ -141,6 +151,9 @@ export class Controller {
       this.#set({ roots: message.roots });
     } else if (message.type === "error") {
       this.#set({ error: message.message });
+    } else if (message.type === "down") {
+      const s = Math.max(1, Math.round(message.retryInMs / 1000));
+      this.#set({ vmDown: `view models stopped (${message.reason}); restarting in ${s} s` });
     }
   }
 
@@ -150,6 +163,10 @@ export class Controller {
 
   setIngest(ingest: IngestStatus): void {
     if (ingest !== this.#state.ingest) this.#set({ ingest });
+  }
+
+  setIngestDown(text: string | null): void {
+    if (text !== this.#state.ingestDown) this.#set({ ingestDown: text });
   }
 
   setReadOnlyReason(reason: string | null): void {

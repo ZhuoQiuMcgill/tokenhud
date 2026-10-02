@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore } from "../../src/store/store.ts";
-import { startVmWorker } from "../../src/tui/vm/client.ts";
+import { superviseVmWorker } from "../../src/tui/vm/client.ts";
 import type { OverviewVM, VmMessage } from "../../src/tui/vm/types.ts";
 import { type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
 
@@ -30,8 +30,8 @@ test("views on start, a reported change recomputed, a clean stop", async () => {
   fixture = makeFixtureStore();
   mcp = mkdtempSync(join(tmpdir(), "tokenhud-worker-mcp-"));
   const messages: VmMessage[] = [];
-  const vm = startVmWorker(
-    {
+  const vm = superviseVmWorker({
+    start: {
       type: "start",
       storePath: fixture.storePath,
       overridesPath: join(fixture.dir, "none.json"),
@@ -43,8 +43,8 @@ test("views on start, a reported change recomputed, a clean stop", async () => {
       discover: { home: join(fixture.dir, "home"), env: { TOKENHUD_WSL_USERS: "" } },
       now: NOW,
     },
-    (m) => messages.push(m),
-  );
+    onMessage: (m) => messages.push(m),
+  });
   const views = () =>
     messages.filter((m) => m.type === "views") as Extract<VmMessage, { type: "views" }>[];
   await until(() => views().length === 1, "the first views");

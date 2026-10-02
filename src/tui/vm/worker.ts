@@ -2,12 +2,22 @@
 // off the UI thread (T6 critic Q1). Stopped by a message, then it exits by itself; it is
 // never terminate()d.
 import { VmSession } from "./session.ts";
-import type { VmMessage, VmRequest } from "./types.ts";
+import type { VmFatal, VmMessage, VmRequest } from "./types.ts";
 
 declare const self: Worker;
 
-const post = (message: VmMessage) => postMessage(message);
+const post = (message: VmMessage | VmFatal) => postMessage(message);
 let session: VmSession | null = null;
+
+// An error nothing caught ends this Worker; the supervisor restarts it. Say why first, as
+// one line: Bun's own error event carries a source excerpt instead.
+const fatal = (error: unknown) => {
+  const message = error instanceof Error ? error.message : `uncaught ${String(error)}`;
+  post({ type: "fatal", message: message.split("\n")[0] as string });
+  process.exit(1);
+};
+process.on("uncaughtException", fatal);
+process.on("unhandledRejection", fatal);
 
 self.onmessage = (event: MessageEvent<VmRequest>) => {
   const request = event.data;

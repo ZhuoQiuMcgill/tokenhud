@@ -10,6 +10,8 @@ export const TABS = ["Overview", "History", "Models", "Accounts"] as const;
 export type Status =
   | { readonly kind: "live"; readonly refresh: number }
   | { readonly kind: "stale" }
+  /** The view models stopped updating (their Worker died and is restarting). */
+  | { readonly kind: "error" }
   /** `--once`: a static frame says when its data is from. */
   | { readonly kind: "asof"; readonly time: string };
 
@@ -38,6 +40,7 @@ function tabs(active: number, compact: boolean): Seg[] {
 function status(s: Status, short: boolean): Seg[] {
   if (s.kind === "asof") return [seg("   as of ", "dim"), seg(`${s.time} `, "fg")];
   if (s.kind === "stale") return [seg("   ● ", "mid"), seg("stale ", "dim")];
+  if (s.kind === "error") return [seg("   ● ", "high"), seg("error ", "high")];
   return [seg("   ● ", "live"), seg(short ? "live " : `live · ${s.refresh}s `, "dim")];
 }
 

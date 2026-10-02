@@ -8,8 +8,9 @@ import { ccUsageDir, configPath, ensureConfig } from "../config.ts";
 import { lockPath, WriterLock } from "../lock.ts";
 import { mcpDir } from "../mcp/heartbeat.ts";
 import { configDir, pricingOverridesPath, storePath } from "../paths.ts";
+import { logPath } from "./log.ts";
 import type { Boot, TuiPaths } from "./run.tsx";
-import { startVmWorker } from "./vm/client.ts";
+import { superviseVmWorker } from "./vm/client.ts";
 import { type VmMessage, vmSettingsOf } from "./vm/types.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -25,6 +26,7 @@ export function tuiPaths(env: Env, home: string): TuiPaths {
     lock: lockPath(env, home),
     mcp: mcpDir(env, home),
     ccUsageLedger: join(ccUsageDir(env, home), "ledger.sqlite3"),
+    log: logPath(env, home),
   };
 }
 
@@ -51,8 +53,8 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
   }
   const early: VmMessage[] = [];
   let deliver: (message: VmMessage) => void = (message) => early.push(message);
-  const vm = startVmWorker(
-    {
+  const vm = superviseVmWorker({
+    start: {
       type: "start",
       storePath: paths.store,
       overridesPath: paths.overrides,
@@ -63,8 +65,8 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
       config,
       discover: { home, env: { ...env } },
     },
-    (message) => deliver(message),
-  );
+    onMessage: (message) => deliver(message),
+  });
   const { runApp } = await import("./run.tsx");
   const boot: Boot = {
     env,
