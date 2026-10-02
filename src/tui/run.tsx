@@ -50,9 +50,15 @@ export interface Boot {
   readonly trace: string | null;
 }
 
-/** How long quitting waits for the ingest Worker to finish its pass. */
+/** How long restarting ingest (accounts edited) waits for the old Worker to finish its pass. */
 const INGEST_STOP_MS = 5000;
-const VM_STOP_MS = 1000;
+/**
+ * How long quitting waits for the Workers to stop, both at once: q quits within 1 s (T22).
+ * A pass still running then (a large history's cold scan takes seconds) is cut short by the
+ * exit, which is safe: the store commits in one transaction before the cursors move, so the
+ * next start reads the same bytes again.
+ */
+const QUIT_STOP_MS = 500;
 /** Start ingest anyway if the first frame with data hasn't come by then (e.g. a store error). */
 const INGEST_FALLBACK_MS = 2000;
 
@@ -98,7 +104,7 @@ export async function runApp(boot: Boot): Promise<number> {
     vmRoots: () => vm.send({ type: "roots" }),
     accountsEdited: () => {
       if (ingest === null) return;
-      void stopIngest().then(startIngest);
+      void stopIngest(INGEST_STOP_MS).then(startIngest);
     },
     quit: () => void shutdown(0),
   });
@@ -191,10 +197,16 @@ export async function runApp(boot: Boot): Promise<number> {
     );
   }
 
-  async function stopIngest(): Promise<void> {
+  /** Whether the ingest Worker (if any) stopped within `ms`. */
+  async function stopIngest(ms: number): Promise<boolean> {
     const worker = ingest;
     ingest = null;
-    if (worker !== null) await within(worker.stop(), INGEST_STOP_MS);
+    if (worker === null) return true;
+    const stopped = await within(
+      worker.stop().then(() => true),
+      ms,
+    );
+    return stopped === true;
   }
 
   // At most once a day, and never before the first frame: a newer release for the footer.
@@ -294,27 +306,36 @@ export async function runApp(boot: Boot): Promise<number> {
   async function shutdown(code: number, error?: unknown): Promise<void> {
     if (closing) return;
     closing = true;
-    clearInterval(tickTimer);
-    clearInterval(beatTimer);
-    clearTimeout(fallback);
-    if (ingestRetry !== null) clearTimeout(ingestRetry);
-    unsubscribe();
+    // Whatever fails on the way out, the process still exits: a later fatal error finds
+    // `closing` set and returns, so nothing else would (T22).
     try {
-      renderer.destroy();
-    } catch {
-      // the terminal is restored as far as OpenTUI could
+      clearInterval(tickTimer);
+      clearInterval(beatTimer);
+      clearTimeout(fallback);
+      if (ingestRetry !== null) clearTimeout(ingestRetry);
+      unsubscribe();
+      try {
+        renderer.destroy();
+      } catch {
+        // the terminal is restored as far as OpenTUI could
+      }
+      // OpenTUI turns on grapheme clustering (mode 2027) and leaves it on (critique n1).
+      if (process.stdout.isTTY) process.stdout.write("\x1b[?2027l");
+      if (error !== undefined) {
+        const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        log.write("error", `crashed: ${text}`);
+        process.stderr.write(`tokenhud: crashed: ${text}\n`);
+      }
+      const [ingestStopped] = await Promise.all([
+        stopIngest(QUIT_STOP_MS),
+        within(vm.stop(), QUIT_STOP_MS),
+      ]);
+      // An ingest Worker still in its pass keeps the lock until the exit, when the kernel
+      // drops it: no other tokenhud starts writing while this one may still be.
+      if (ingestStopped) lock?.release();
+    } finally {
+      resolveExit(code);
     }
-    // OpenTUI turns on grapheme clustering (mode 2027) and leaves it on (critique n1).
-    if (process.stdout.isTTY) process.stdout.write("\x1b[?2027l");
-    if (error !== undefined) {
-      const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      log.write("error", `crashed: ${text}`);
-      process.stderr.write(`tokenhud: crashed: ${text}\n`);
-    }
-    await stopIngest();
-    await within(vm.stop(), VM_STOP_MS);
-    lock?.release();
-    resolveExit(code);
   }
 
   const fatal = (error: unknown) => void shutdown(1, error);
