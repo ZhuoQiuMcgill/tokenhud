@@ -24,12 +24,9 @@ import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot, flushSync } from "@opentui/react";
 import { createElement } from "react";
 import { isWsl } from "../src/sources/roots.ts";
-import { Frame } from "../src/tui/app.tsx";
+import { Frame, viewLayout } from "../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../src/tui/controller.ts";
-import { breakpoint, fitSections } from "../src/tui/layout.ts";
 import { theme } from "../src/tui/theme.ts";
-import { VIEWS } from "../src/tui/views/index.ts";
-import type { ViewContext } from "../src/tui/views/types.ts";
 import type { AccountInfo, ViewModels } from "../src/tui/vm/types.ts";
 import { MCP, makeShotsFixture, type ShotsFixture, TZ } from "./readme-shots-fixture.ts";
 
@@ -118,8 +115,10 @@ class Screen {
     return { x: 0, y: 0, w: this.all.w, h: 1 };
   }
 
+  /** Under the frame's last rule: one line, or two from 30 rows. */
   footer(): Rect {
-    return { x: 0, y: this.all.h - 1, w: this.all.w, h: 1 };
+    const rule = this.lines.findLastIndex((l) => /^─+$/.test(l));
+    return { x: 0, y: rule + 1, w: this.all.w, h: this.all.h - rule - 1 };
   }
 
   section(id: string): Rect | null {
@@ -241,6 +240,11 @@ interface Note {
   readonly text: string;
   /** Where its badge goes, when the best place isn't found by itself. */
   readonly badge?: Spot;
+  /**
+   * Marked by its badge alone, without a box: a one-line header with text right above and
+   * under it leaves no line spacing for a border that wouldn't cross its text.
+   */
+  readonly bare?: true;
 }
 
 interface Shot {
@@ -329,7 +333,7 @@ const SHOTS: readonly Shot[] = [
           return split === null ? null : s.tight(Screen.cols(s.section("activity"), 0, split - 1));
         },
         name: "Activity",
-        text: "Cost over the last 24 hours, one bar per time slot (the view can switch to the last 5 hours or 7 days, and to tokens). The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.",
+        text: "Cost over the last 24 hours, one bar per time slot. The tabs on the right switch to the last 5 hours or 7 days (`a`/`d`; the one shown is in brackets), and `t` switches to tokens. The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.",
       },
       {
         section: "activity",
@@ -418,11 +422,21 @@ const SHOTS: readonly Shot[] = [
   {
     file: "history.png",
     block: "history",
-    alt: "The History view with five numbered boxes: heat map, day card, period table, totals, footer",
-    // The day before today, which reached a limit.
-    keys: ["2", "up"],
+    alt: "The History view with six numbered boxes: tabs, heat map, day card, period table, totals, footer",
+    // The days tab (History opens on this week), on the day before today, which reached a
+    // limit.
+    keys: ["2", "d", "d", "s"],
     font: 13,
     notes: [
+      {
+        section: "tabs",
+        locate: (s) => tight(s, "tabs"),
+        // The strip sits right on the heat map, with text under it: a badge, no box.
+        bare: true,
+        badge: "l",
+        name: "Tabs",
+        text: "What the table lists, switched with `a`/`d`; the one shown is in brackets. `this week` and `this month` list the days so far of the current week or month (History opens on this week), `days` every day of the heat map, `weeks` (Monday to Sunday) and `months` one row each. On the right, what `*` and `≈` mean, and `f`, the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.",
+      },
       {
         section: "heat",
         locate: (s) => {
@@ -430,7 +444,7 @@ const SHOTS: readonly Shot[] = [
           return s.tight(Screen.cols(s.section("heat"), 0, split));
         },
         name: "Heat map",
-        text: "One square per day for the last 26 weeks: a column per week, Monday at the top. The shade is the day's cost against the busiest day shown: the darkest square is a day without usage, and the four lighter shades are under a quarter of the busiest day, under a half, under three quarters, and the rest. The selected day is white; days after today are blank.",
+        text: "One square per day for the last 26 weeks: a column per week, Monday at the top. The shade is the day's cost against the busiest day shown: the darkest square is a day without usage, and the four lighter shades are under a quarter of the busiest day, under a half, under three quarters, and the rest. The table's selected row is white: here a day; on the weeks or months tab, that week's or month's days. Days after today are blank.",
       },
       {
         section: "heat",
@@ -442,7 +456,7 @@ const SHOTS: readonly Shot[] = [
         section: "table",
         locate: (s) => s.tight(Screen.inset(s.section("table"), 0, 2)),
         name: "Period table",
-        text: "The tabs choose days, weeks (Monday to Sunday) or months; `This week` and `This month` list the days so far of the current week or month. Rows are newest first. `input`, `output` and `cache` (reads and writes) are tokens; `cost` is at API prices. `vs 30-day avg` compares the period with your average day times the period's days so far: the bar is full at 2.25 times, 1 times is a little under half of it, and it turns red-orange above 1.5 times; the ratio follows it. `top model` is the period's most expensive model, `accounts` those with usage, most cost first. The selected row holds the selected day. On the right of the tabs, what `*` and `≈` mean, and the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.",
+        text: "The rows of the tab shown, newest first, moved through with `w`/`s`. On the weeks or months tab, `enter` lists a row's days and `esc` goes back; on a day with limit events, `enter` lists them. `input`, `output` and `cache` (reads and writes) are tokens; `cost` is at API prices. `vs 30-day avg` compares the period with your average day times the period's days so far: the bar is full at 2.25 times, 1 times is a little under half of it, and it turns red-orange above 1.5 times; the ratio follows it. `top model` is the period's most expensive model, `accounts` those with usage, most cost first.",
       },
       {
         section: "table",
@@ -457,7 +471,7 @@ const SHOTS: readonly Shot[] = [
         section: "footer",
         locate: (s) => s.tight(s.footer()),
         name: "Footer",
-        text: "The keys of the view you are on, then the keys every view has (all of them are in [Keys](#keys)). On the right, `MCP ● 2 agents`: tokenhud's MCP server is running (teal dot) and two agent sessions called it in the last 10 minutes; `MCP ○` means no server is running. A newer release, or another tokenhud reading the transcripts, is noted here too.",
+        text: "Its first line is the keys of the view you are on: `a/d` its tabs, `w/s` the selection, `enter` to open it, then the view's own; `esc back` joins them while there is something to go back from. Its second line is the keys every view has (all of them are in [Keys](#keys)). On the right, `MCP ● 2 agents`: tokenhud's MCP server is running (teal dot) and two agent sessions called it in the last 10 minutes; `MCP ○` means no server is running. A newer release, or another tokenhud reading the transcripts, is noted here too.",
       },
     ],
   },
@@ -472,7 +486,7 @@ const SHOTS: readonly Shot[] = [
         section: "models",
         locate: (s) => s.tight(Screen.inset(s.section("models"), 0, 2)),
         name: "Rate board",
-        text: "Every model used in the window, by cost (or by tokens, or by name). The tabs on the right are the windows: today, this week, this month and all time are calendar periods; the last 1, 5 and 24 hours show on screens 120 columns wide or more. One row per model and tier; a fast or priority tier is its own row, `(fast)`. For input, output and cache (reads and writes): the tokens used, and the `$/M` rate they are billed at today, in dollars per million tokens (`—`: no price). `cost` prices each request at the rate in effect on its date, so it can differ from tokens times today's rate. The bar and the percentage are the model's share of the window's cost. `*` after a name: some or all of its tokens have no published rate, so they are counted but not priced. The selected row is highlighted.",
+        text: "Every model used in the window, by cost (`r` sorts by tokens, then by name). The tabs on the right are the windows, switched with `a`/`d`; the one shown is in brackets. Today, this week, this month and all time are calendar periods, and 1h, 5h and 24h the last hours. One row per model and tier; a fast or priority tier is its own row, `(fast)`. For input, output and cache (reads and writes): the tokens used, and the `$/M` rate they are billed at today, in dollars per million tokens (`—`: no price). `cost` prices each request at the rate in effect on its date, so it can differ from tokens times today's rate. The bar and the percentage are the model's share of the window's cost. `*` after a name: some or all of its tokens have no published rate, so they are counted but not priced. The selected row (`w`/`s`) is highlighted, and `enter` shows or hides its cards below.",
       },
       {
         section: "models",
@@ -518,7 +532,7 @@ const SHOTS: readonly Shot[] = [
           return x === null ? null : s.tight(Screen.cols(s.section("accounts"), 0, x + 1));
         },
         name: "Accounts",
-        text: "Every account tokenhud has usage for: those active on this machine first, then by all-time cost. The dot and the percentage show the account's most-used limit among its windows that haven't reset yet: blue below 50 %, amber from 50 %, red-orange from 80 %. `○` and a grey label: inactive here (history only, not signed in, turned off, or its config directory isn't on this machine). `+ add a root…` opens the account settings. Under the list, the keys for the selected account.",
+        text: "Every account tokenhud has usage for: those active on this machine first, then by all-time cost. The dot and the percentage show the account's most-used limit among its windows that haven't reset yet: blue below 50 %, amber from 50 %, red-orange from 80 %. `○` and a grey label: inactive here (history only, not signed in, turned off, or its config directory isn't on this machine). `+ add a root…` opens the account settings. Under the list, the keys: `w`/`s` select an account, and `enter` opens its menu: show only this account, enable or disable it, rename it, history only, and linking it to another directory on the same subscription account.",
       },
       {
         section: "accounts",
@@ -598,32 +612,24 @@ async function render(
   }
   const state = c.getState();
   const t = theme(state.config.theme);
-  // The body sits between the frame's two rules; its first line is for notices.
+  // The body starts under the frame's first rule, its first line for notices; its sections
+  // are where the shell's own layout puts them, gaps and all.
   const text = frame.lines.map((l) => l.spans.map((s) => s.text).join(""));
-  const rule = "─".repeat(WIDTH);
-  const top = text.indexOf(rule);
-  const bottom = text.lastIndexOf(rule);
-  if (top < 0 || bottom <= top) throw new Error("the frame has no rules");
-  const rows = bottom - top - 2;
-  const ctx: ViewContext = {
-    width: WIDTH,
-    height: rows,
-    bp: breakpoint(WIDTH),
-    theme: t,
-    showCost: state.config.show_cost,
-    tz: TZ,
-    scope: state.scope,
-  };
-  const view = VIEWS[state.view];
-  const sections = new Map<string, Rect>();
-  let y = top + 2;
-  for (const f of fitSections(
-    view.sections(state.views[state.view], state.viewState[state.view], ctx),
-    rows,
-  )) {
-    sections.set(f.id, { x: 0, y, w: WIDTH, h: f.height });
-    y += f.height + 1;
-  }
+  const top = text.indexOf("─".repeat(WIDTH));
+  if (top < 0) throw new Error("the frame has no rule");
+  const layout = viewLayout(
+    state.view,
+    state.views[state.view],
+    state.viewState[state.view],
+    state.config,
+    state.scope,
+    WIDTH,
+    HEIGHT,
+    TZ,
+  );
+  const sections = new Map<string, Rect>(
+    layout.placed.map((p) => [p.id, { x: 0, y: top + 2 + p.top, w: WIDTH, h: p.height }]),
+  );
   return new Screen(frame, sections, t.hex.bg);
 }
 
@@ -634,6 +640,8 @@ interface Placed {
   readonly n: number;
   readonly rect: Rect;
   readonly spot?: Spot;
+  /** A badge with no box (`Note.bare`). */
+  readonly bare?: true;
 }
 
 const escapeHtml = (text: string) =>
@@ -702,7 +710,9 @@ function boxEdges(
   const gap = 2;
   boxes.forEach((a, i) => {
     boxes.forEach((b, j) => {
-      if (i === j || contains(a.rect, b.rect) || contains(b.rect, a.rect)) return;
+      if (i === j || a.bare || b.bare || contains(a.rect, b.rect) || contains(b.rect, a.rect)) {
+        return;
+      }
       const p = px[i] as Px;
       const q = px[j] as Px;
       const oa = out[i] as Px;
@@ -907,12 +917,14 @@ function page(
   };
   const spots = boxes.map((b) => b.spot);
   const centres = badgeCentres(screen, view, edges, spots, size, bounds, cw, ch);
-  const marks = boxes.map(({ n }, i) => {
+  const marks = boxes.map(({ n, bare }, i) => {
     const colour = COLOURS[n - 1] as (typeof COLOURS)[number];
     const e = edges[i] as Px;
     const c = centres[i] as { x: number; y: number };
     return {
-      box: `<div class="box" style="left:${e.left.toFixed(2)}px;top:${e.top.toFixed(2)}px;width:${(e.right - e.left).toFixed(2)}px;height:${(e.bottom - e.top).toFixed(2)}px;border-color:${colour.hex}"></div>`,
+      box: bare
+        ? ""
+        : `<div class="box" style="left:${e.left.toFixed(2)}px;top:${e.top.toFixed(2)}px;width:${(e.right - e.left).toFixed(2)}px;height:${(e.bottom - e.top).toFixed(2)}px;border-color:${colour.hex}"></div>`,
       tag: `<div class="badge" style="left:${(c.x - size / 2).toFixed(2)}px;top:${(c.y - size / 2).toFixed(2)}px;background:${colour.hex};color:${colour.ink}">${n}</div>`,
     };
   });
@@ -1232,6 +1244,7 @@ async function main(): Promise<void> {
           n: i + 1,
           rect: placed,
           ...(note.badge === undefined ? {} : { spot: note.badge }),
+          ...(note.bare === undefined ? {} : { bare: note.bare }),
         });
       });
       checkQuotes(shot, screen);

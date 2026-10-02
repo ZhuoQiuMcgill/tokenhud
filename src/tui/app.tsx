@@ -64,10 +64,13 @@ import { type RootInfo, VIEW_IDS, type ViewId } from "./vm/types.ts";
 
 export const MIN_WIDTH = 40;
 export const MIN_HEIGHT = 10;
-/** From this many rows the footer takes two lines: the view's keys, then the global ones. */
-const TWO_LINE_FOOTER = 30;
 /** Header, rule and rule; the footer's lines come on top. */
 const CHROME_ROWS = 3;
+
+/** The footer's lines: two from 30 rows (the view's keys, then the global ones), else one. */
+function footerRows(height: number): 1 | 2 {
+  return height >= 30 ? 2 : 1;
+}
 
 /** The global keys as the footer shows them: `1-4/tab views · c account · …`. */
 const GLOBAL_HINTS = {
@@ -512,17 +515,54 @@ function SettingsPanel(props: {
   );
 }
 
-/** The active view laid out in the body: its sections, those that fit, and their ids. */
-interface ViewLayout {
+/** A section of the active view as the body places it: `top` rows below the first. */
+export interface Placed extends Fitted {
+  readonly top: number;
+}
+
+/** The active view laid out in the body: its sections, where those that fit go, their ids. */
+export interface ViewLayout {
   readonly sections: readonly Section[];
-  readonly fitted: readonly Fitted[];
+  readonly placed: readonly Placed[];
   readonly drawn: ReadonlySet<string>;
 }
 
-function layoutView(view: ViewId, vm: unknown, viewState: unknown, ctx: ViewContext): ViewLayout {
+/**
+ * The active view as the body lays it out in a `width` × `height` terminal (the whole
+ * frame): its sections, which fit and where, with the gap each asks for after it. The frame
+ * draws by it, its footer, help and keys leave out what it leaves out, and the README's
+ * screenshots (scripts/readme-shots.ts) place their boxes by it.
+ */
+export function viewLayout(
+  view: ViewId,
+  vm: unknown,
+  viewState: unknown,
+  config: Config,
+  scope: number | null,
+  width: number,
+  height: number,
+  systemZone: string,
+): ViewLayout {
+  // The body's first row is for notices; the sections share the rest.
+  const rows = height - CHROME_ROWS - footerRows(height) - 1;
+  const ctx: ViewContext = {
+    width,
+    height: rows,
+    bp: breakpoint(width),
+    theme: themeNamed(config.theme),
+    showCost: config.show_cost,
+    tz: config.time_zone === "system" ? systemZone : config.time_zone,
+    scope,
+  };
   const sections = VIEWS[view].sections(vm, viewState, ctx);
-  const fitted = fitSections(sections, ctx.height ?? 0);
-  return { sections, fitted, drawn: new Set(fitted.map((f) => f.id)) };
+  const gaps = new Map(sections.map((s) => [s.id, s.gap ?? 1]));
+  const placed: Placed[] = [];
+  let top = 0;
+  for (const f of fitSections(sections, rows)) {
+    placed.push({ ...f, top });
+    top += f.height + (gaps.get(f.id) as number);
+  }
+  return { sections, placed, drawn: new Set(placed.map((p) => p.id)) };
 }
 
 interface BodyProps {
@@ -575,9 +615,9 @@ const Body = memo(function Body(props: BodyProps) {
     content = <Lines theme={t} lines={[{ left: [seg("  reading the store…", "dim")] }]} />;
   } else {
     const byId = new Map(layout.sections.map((s) => [s.id, s]));
-    content = layout.fitted.flatMap((f, i) => {
-      const above = layout.fitted[i - 1];
-      const gap = above === undefined ? 0 : (byId.get(above.id)?.gap ?? 1);
+    content = layout.placed.flatMap((f, i) => {
+      const above = layout.placed[i - 1];
+      const gap = above === undefined ? 0 : f.top - above.top - above.height;
       return [
         ...(gap > 0 ? [<box key={`gap-${f.id}`} height={gap} flexShrink={0} />] : []),
         <box key={f.id} flexDirection="column" height={f.height} flexShrink={0}>
@@ -628,25 +668,19 @@ export function Frame(props: {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   useLayoutEffect(() => onCommit?.(state), [state, onCommit]);
   const t = themeNamed(state.config.theme);
-  const footerRows = height >= TWO_LINE_FOOTER ? 2 : 1;
-  const bodyHeight = height - CHROME_ROWS - footerRows;
+  const lines = footerRows(height);
   const { view, config, scope } = state;
   const vm = state.views[view];
   const viewState = state.viewState[view];
   // The view laid out once per change it sees: the body draws it; the footer, the help and
   // the controller's keys leave out what it left out.
-  const layout = useMemo(() => {
-    if (vm === undefined) return null;
-    return layoutView(view, vm, viewState, {
-      width,
-      height: bodyHeight - 1,
-      bp: breakpoint(width),
-      theme: themeNamed(config.theme),
-      showCost: config.show_cost,
-      tz: config.time_zone === "system" ? controller.systemZone : config.time_zone,
-      scope,
-    });
-  }, [view, vm, viewState, config, scope, width, bodyHeight, controller]);
+  const layout = useMemo(
+    () =>
+      vm === undefined
+        ? null
+        : viewLayout(view, vm, viewState, config, scope, width, height, controller.systemZone),
+    [view, vm, viewState, config, scope, width, height, controller],
+  );
   useLayoutEffect(() => {
     if (layout !== null) controller.drawn(view, layout.drawn);
   }, [controller, view, layout]);
@@ -672,7 +706,7 @@ export function Frame(props: {
       <Body
         controller={controller}
         width={width}
-        height={bodyHeight}
+        height={height - CHROME_ROWS - lines}
         t={t}
         error={state.vmDown ?? state.ingestDown ?? state.error}
         overlay={state.overlay}
@@ -684,10 +718,7 @@ export function Frame(props: {
         roots={state.roots}
         menu={state.menu}
       />
-      <Lines
-        theme={t}
-        lines={[ruleLine(width), ...footer(state, width, footerRows, layout?.drawn)]}
-      />
+      <Lines theme={t} lines={[ruleLine(width), ...footer(state, width, lines, layout?.drawn)]} />
     </box>
   );
 }
