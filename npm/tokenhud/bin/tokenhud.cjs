@@ -75,14 +75,34 @@ if (bin === null) {
   process.exit(1);
 }
 
-const child = spawn(bin, process.argv.slice(2), { stdio: "inherit", windowsHide: false });
+// Signals that stop this launcher stop tokenhud: each is passed on to it. Windows sends
+// Ctrl-C, Ctrl-Break and a closing console window as SIGINT, SIGBREAK and SIGHUP.
+const FORWARD =
+  process.platform === "win32"
+    ? ["SIGINT", "SIGBREAK", "SIGHUP", "SIGTERM"]
+    : ["SIGINT", "SIGTERM", "SIGHUP"];
 
-// Ctrl-C reaches the binary straight from the terminal; this launcher waits for it to exit
-// rather than dying first. Signals sent to the launcher alone are passed on.
-process.on("SIGINT", () => {});
-for (const signal of ["SIGTERM", "SIGHUP"]) {
-  process.on(signal, () => child.kill(signal));
+let child = null;
+const running = () => child !== null && child.exitCode === null && child.signalCode === null;
+
+// Registered before tokenhud starts. A runtime can hand a handler to the OS a moment after
+// `process.on` returns (Bun does), and a signal landing in that moment, with tokenhud already
+// running, would kill this launcher and leave tokenhud running on its own.
+for (const signal of FORWARD) {
+  try {
+    process.on(signal, () => {
+      if (running()) child.kill(signal);
+    });
+  } catch {
+    // A signal this runtime can't listen for on this platform.
+  }
 }
+// However this launcher ends (an uncaught error, a forced exit), tokenhud doesn't outlive it.
+process.on("exit", () => {
+  if (running()) child.kill("SIGTERM");
+});
+
+child = spawn(bin, process.argv.slice(2), { stdio: "inherit", windowsHide: false });
 
 child.on("error", (error) => {
   console.error(`tokenhud: couldn't start ${bin}: ${error.message}`);
@@ -90,7 +110,8 @@ child.on("error", (error) => {
 });
 child.on("exit", (code, signal) => {
   if (signal !== null) {
-    process.removeAllListeners(signal);
+    // Die of the same signal, so whoever started this launcher sees what stopped tokenhud.
+    for (const s of FORWARD) process.removeAllListeners(s);
     process.kill(process.pid, signal);
     return;
   }
