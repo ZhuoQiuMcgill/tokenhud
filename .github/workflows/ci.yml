@@ -51,6 +51,12 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      # The images the Alpine and Debian tests run in: tests never pull one (test/docker.ts).
+      - name: Pull the test images
+        if: runner.os == 'Linux'
+        run: |
+          docker pull --quiet alpine:3.22
+          docker pull --quiet debian:13-slim
       - run: bun test
 
   build:
@@ -170,8 +176,11 @@ jobs:
           mv dist/tokenhud e2e/old/
           git checkout -- package.json
 
+      # Checked against the SHA-256 in that release's SHASUMS256.txt.
       - name: Bun for musl, the version CI pins
-        run: curl -fsSL -o bun-linux-x64-musl.zip https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-musl.zip
+        run: |
+          curl -fsSL -o bun-linux-x64-musl.zip https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-musl.zip
+          echo "4835eca59d6da70f4674f5642f6e459dcadab773695b2ed9922d131057989742  bun-linux-x64-musl.zip" | sha256sum --check --strict
 
       - name: Install, run and update in Alpine with bun (no Node) and npm (no Bun)
         run: |

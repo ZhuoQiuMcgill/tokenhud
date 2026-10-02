@@ -35,6 +35,12 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      # The images the Alpine and Debian tests run in: tests never pull one (test/docker.ts).
+      - name: Pull the test images
+        if: runner.os == 'Linux'
+        run: |
+          docker pull --quiet alpine:3.22
+          docker pull --quiet debian:13-slim
       # pwsh, the shell ci.yml's `bun test` runs in on Windows. Git Bash hands Bun a different
       # environment there (`PATH` where pwsh says `Path`), and that once decided whether a
       # test passed (T15).

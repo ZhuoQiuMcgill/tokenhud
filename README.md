@@ -33,7 +33,7 @@ adds to your PATH; `tokenhud doctor` says if it isn't there. Release candidates:
 **With npm:**
 
 ```sh
-npm install -g tokenhud     # or run it without installing: npx tokenhud, bunx tokenhud
+npm install -g tokenhud     # or run it without installing: npx tokenhud, or bunx tokenhud (not on Windows)
 ```
 
 Either way you get `tokenhud`, and the prebuilt binary for your machine in a platform

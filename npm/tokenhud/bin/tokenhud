@@ -15,6 +15,15 @@ say() {
   printf '%s\n' "$@" >&2
 }
 
+# Its own tools (uname, readlink, sed, getconf, ldd) are found even on a PATH without them;
+# the binary is given PATH as it was, unset included.
+if [ "${PATH+set}" = set ]; then
+  given_path=$PATH
+else
+  unset given_path
+fi
+PATH=${PATH:+$PATH:}/usr/bin:/bin
+
 # The C library this Linux runs on, as the system answers it: glibc knows its own version
 # (getconf), and ldd names its libc. A musl loader on disk proves nothing by itself: glibc
 # systems can have one for building musl programs. It decides only when neither answers.
@@ -146,4 +155,9 @@ if [ -n "$mine" ] && [ -n "$theirs" ] && [ "$mine" != "$theirs" ]; then
     "to match: bun add -g ${found##*/node_modules/}@$mine (or npm install -g ${found##*/node_modules/}@$mine)"
 fi
 
+if [ "${given_path+set}" = set ]; then
+  PATH=$given_path
+else
+  unset PATH
+fi
 exec "$binary" "$@"

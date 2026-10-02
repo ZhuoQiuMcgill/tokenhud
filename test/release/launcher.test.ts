@@ -3,8 +3,8 @@
 // as bun, npm, npx and pnpm lay them out, reached through the links they make, with a sh
 // script standing in for the binary. Every case runs under each shell there is: sh (dash on
 // Debian and Ubuntu, bash on macOS), dash and bash; and BusyBox in an Alpine container when
-// Docker is there (offline). `uname`, `getconf` and `ldd` stubs first on PATH make it see
-// another OS, CPU or C library.
+// Docker and the image are there (offline, never pulled: test/docker.ts). `uname`, `getconf`
+// and `ldd` stubs first on PATH make it see another OS, CPU or C library.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
@@ -21,6 +21,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { RELEASE_TARGETS, targetId } from "../../src/release.ts";
+import { DOCKER_RUN, haveImage } from "../docker.ts";
 import { guard } from "../guard.ts";
 
 guard();
@@ -277,6 +278,26 @@ describe.skipIf(!posix).each(shells())("the sh command under %s", (_, shell) => 
     expect(out.stderr).toStartWith("tokenhud: there is no tokenhud binary for FreeBSD-riscv64.");
   });
 
+  // Critique R-n3: with PATH=/nonexistent it said `readlink: not found`, `uname: not found`.
+  test("a PATH without its tools: it finds them, and the binary gets PATH as it was", async () => {
+    const global = join(dir, "g", "node_modules");
+    const command = launcherAt(join(global, "tokenhud"));
+    platformAt(join(global, "@tokenhud", here()), "1.2.3", 'echo "path=[$PATH]"');
+    const proc = Bun.spawn([...shell, command], {
+      cwd: dir,
+      env: { PATH: "/nonexistent" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect([await proc.exited, stderr]).toEqual([0, ""]);
+    // The test guard puts its stub dir (claude and codex only) first on every child's PATH.
+    expect(stdout).toEndWith(`path=[${process.env.TOKENHUD_TEST_STUBS}:/nonexistent]\n`);
+  });
+
   test("the working directory's .env and bunfig.toml mean nothing to it", async () => {
     const global = join(dir, "g", "node_modules");
     const command = launcherAt(join(global, "tokenhud"));
@@ -291,13 +312,8 @@ describe.skipIf(!posix).each(shells())("the sh command under %s", (_, shell) => 
   });
 });
 
-function docker(): boolean {
-  if (process.platform !== "linux" || Bun.which("docker") === null) return false;
-  return Bun.spawnSync(["docker", "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
-}
-
 // BusyBox ash on a real musl system: what Alpine's /bin/sh is. Offline.
-describe.skipIf(!docker())("the sh command in Alpine (BusyBox, musl)", () => {
+describe.skipIf(!haveImage("alpine:3.22"))("the sh command in Alpine (BusyBox, musl)", () => {
   let dir: string;
   beforeAll(() => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), "tokenhud-launcher-alpine-")));
@@ -328,19 +344,7 @@ describe.skipIf(!docker())("the sh command in Alpine (BusyBox, musl)", () => {
       join(dir, "g", ".bun", "bin", "tokenhud"),
     );
     const proc = Bun.spawn(
-      [
-        "docker",
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "-v",
-        `${dir}:/w:ro`,
-        "alpine:3.22",
-        "/w/g/.bun/bin/tokenhud",
-        "a b",
-        "c",
-      ],
+      [...DOCKER_RUN, "-v", `${dir}:/w:ro`, "alpine:3.22", "/w/g/.bun/bin/tokenhud", "a b", "c"],
       { stdout: "pipe", stderr: "pipe" },
     );
     const [stdout, stderr] = await Promise.all([
