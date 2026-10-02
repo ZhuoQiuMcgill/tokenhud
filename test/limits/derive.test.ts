@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { saveLimitsCache } from "../../src/limits/cache.ts";
 import {
   type ProjectionInput,
+  projectAtReset,
   projectExhaustion,
   spendFromQueries,
 } from "../../src/limits/derive.ts";
@@ -71,6 +72,27 @@ describe("projectExhaustion (the formula)", () => {
     expect(projectExhaustion({ ...base, utilization: 1 })).toBeNull();
     expect(projectExhaustion({ ...base, now: base.resetsAt })).toBeNull();
     expect(projectExhaustion({ ...base, capturedAt: base.resetsAt })).toBeNull();
+  });
+
+  test("projectAtReset: where the window ends at this pace (the Overview's 'week ends ~N%')", () => {
+    // Weekly from Sep 26 at 10 %: 0.05 per dollar, 12.5 % now; 34 h to the Oct 2 00:00
+    // reset at $3/h is $102, so 12.5 % + 0.05 * 102 = 522.5 %.
+    const weekly = {
+      ...base,
+      utilization: 0.1,
+      resetsAt: at("2026-10-02T00:00:00Z"),
+      windowMs: 7 * 24 * HOUR,
+    };
+    expect(projectAtReset(weekly)).toBeCloseTo(5.225, 12);
+    // At 1 % (0.005 per dollar, 1.25 % now) and $0.30/h: 1.25 % + 0.005 * 10.2 = 6.35 %.
+    expect(projectAtReset({ ...weekly, utilization: 0.01, costPerHour: 0.3 })).toBeCloseTo(
+      0.0635,
+      12,
+    );
+    // The same cases as projectExhaustion's "—".
+    expect(projectAtReset({ ...weekly, costPerHour: 0 })).toBeNull();
+    expect(projectAtReset({ ...weekly, windowMs: null })).toBeNull();
+    expect(projectAtReset({ ...weekly, utilization: 1 })).toBeNull();
   });
 
   test("a window this spend does not move is safe; one already past 100 % by now is now", () => {

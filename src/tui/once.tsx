@@ -9,10 +9,16 @@ import { createTestRenderer } from "@opentui/core/testing";
 import { createRoot, flushSync } from "@opentui/react";
 import type { ReactNode } from "react";
 import { type Config, configPath, loadConfig } from "../config.ts";
+import { cachePath } from "../ingest/cursors.ts";
+import { codexSnapshotsFrom, Limits, limitsPath, spendFromQueries } from "../limits/index.ts";
+import { mcpDir, readMcpActivity } from "../mcp/heartbeat.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import type { PriceTable } from "../pricing/table.ts";
+import type { UsageQueries } from "../query/engine.ts";
+import type { Range } from "../query/types.ts";
 import { Zone } from "../query/tz.ts";
+import { isWsl } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
 import { emptyStoreDatabase, openStoreReader } from "../store/store.ts";
 import { frameToAnsi, frameToText } from "./ansi.ts";
@@ -25,7 +31,9 @@ import { breakpoint } from "./layout.ts";
 import { theme } from "./theme.ts";
 import { overview } from "./views/overview.tsx";
 import type { ViewContext } from "./views/types.ts";
-import { computeOverview } from "./vm/compute.ts";
+import type { AccountSources } from "./vm/accounts.ts";
+import { type AccountEvent, readAccountEvents } from "./vm/history.ts";
+import { computeOverview } from "./vm/overview.ts";
 import {
   configuredLabels,
   createQueries,
@@ -45,6 +53,13 @@ export interface OnceInput {
   readonly now: number;
   /** The zone config's "system" means. */
   readonly systemZone: string;
+  /**
+   * Roots, limits and MCP activity over the engine, as the view-model Worker reads them;
+   * without them the cards say "reading limits".
+   */
+  readonly sources?: (q: UsageQueries) => AccountSources;
+  /** The store's limit events, as History reads them. */
+  readonly limitEvents?: (range: Range) => readonly AccountEvent[];
 }
 
 /** The Overview as text: header, rule, then every section at its full height. */
@@ -63,7 +78,8 @@ export async function renderOverview(input: OnceInput): Promise<string> {
       scope: scoped?.id ?? null,
       window: config.default_window,
       prices: input.prices,
-      sources: null,
+      sources: input.sources?.(q) ?? null,
+      ...(input.limitEvents === undefined ? {} : { limitEvents: input.limitEvents }),
     }),
   );
   const width = Math.max(MIN_WIDTH, input.width);
@@ -76,7 +92,7 @@ export async function renderOverview(input: OnceInput): Promise<string> {
     tz,
     scope: scoped?.id ?? null,
   };
-  const sections = overview.sections(vm, null, ctx);
+  const sections = overview.sections(vm, overview.initial, ctx);
   const height = 3 + sections.reduce((n, s) => n + s.height, 0) + sections.length - 1;
   const header = headerLine(width, {
     active: 0,
@@ -141,8 +157,10 @@ export async function runOnce(
     return 1;
   }
   try {
-    const labels = configuredLabels(discoverRoots(config, { home, env }));
+    const roots = discoverRoots(config, { home, env });
+    const labels = configuredLabels(roots);
     const tty = process.stdout.isTTY === true;
+    const now = Date.now();
     const text = await renderOverview({
       db,
       prices: loadPriceTable(pricingOverridesPath(env, home)).table,
@@ -150,8 +168,24 @@ export async function runOnce(
       accounts: displayAccounts(readStoreAccounts(db), labels, config),
       width: width ?? (tty ? process.stdout.columns : 120),
       color: tty && env.NO_COLOR === undefined,
-      now: Date.now(),
+      now,
       systemZone: Zone.system().name,
+      // What the TUI's cards show: limits.json as the last fetch left it (never a fetch).
+      sources: (q) => ({
+        roots,
+        limits: new Limits({
+          limitsPath: limitsPath(env, home),
+          roots: () => roots,
+          db,
+          spend: spendFromQueries(q),
+          snapshots: codexSnapshotsFrom(cachePath(env, home)),
+          now: () => now,
+        }),
+        mcp: readMcpActivity(mcpDir(env, home), now),
+        wsl: isWsl(),
+        home,
+      }),
+      limitEvents: (range) => readAccountEvents(db, readStoreAccounts(db), range),
     });
     process.stdout.write(text);
     return 0;

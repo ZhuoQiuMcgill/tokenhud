@@ -7,7 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
-import { RESTART_BACKOFF_MS, superviseVmWorker, type VmWorker } from "../../src/tui/vm/client.ts";
+import {
+  RESTART_BACKOFF_MS,
+  RestartBackoff,
+  STABLE_MS,
+  superviseVmWorker,
+  type VmWorker,
+} from "../../src/tui/vm/client.ts";
 import type { VmMessage, VmStart } from "../../src/tui/vm/types.ts";
 import { type Fixture, fixtureConfig, makeFixtureStore, NOW, TZ } from "./fixture.ts";
 import { chars, cleanupRenderers, render, settle } from "./render.ts";
@@ -43,6 +49,8 @@ function start(f: Fixture, mcp: string, testFault: { kind: string; marker: strin
     storePath: f.storePath,
     overridesPath: join(f.dir, "none.json"),
     mcpDir: mcp,
+    limitsPath: join(f.dir, "limits.json"),
+    cachePath: join(f.dir, "cache.db"),
     mode: "owner",
     settings: { tz: TZ, window: "all", scope: null },
     scopeLabel: null,
@@ -130,3 +138,89 @@ test("a Worker that keeps dying is retried after 1 s, 2 s, 5 s, then every 30 s"
   expect(delays.slice(0, 6)).toEqual([1000, 2000, 5000, 30_000, 30_000, 30_000]);
   expect(new Set(downs)).toEqual(new Set(["injected fault"]));
 }, 30_000);
+
+// Critique r1: a Worker that posts its view models and dies soon after, on every start, used
+// to reset the back-off with each start and so was restarted every second for ever.
+test("a Worker that dies right after every start still backs off 1 s, 2 s, 5 s, then 30 s", async () => {
+  fixture = makeFixtureStore();
+  dir = mkdtempSync(join(tmpdir(), "tokenhud-supervisor-"));
+  const delays: number[] = [];
+  let starts = 0;
+  vm = superviseVmWorker({
+    start: start(fixture, join(dir, "mcp"), { kind: "boot", marker: join(dir, "x") }),
+    onMessage: (m) => {
+      if (m.type === "views") starts++;
+    },
+    url: FAULT_WORKER,
+    schedule: (fn, ms) => {
+      delays.push(ms);
+      return setTimeout(fn, 0);
+    },
+  });
+  await until(() => delays.length >= 5, "five failures");
+  // Every one of them got as far as its view models before it died.
+  expect(starts).toBeGreaterThanOrEqual(5);
+  expect(delays.slice(0, 5)).toEqual([1000, 2000, 5000, 30_000, 30_000]);
+}, 30_000);
+
+test("the back-off starts over once a Worker has stayed up a minute", async () => {
+  fixture = makeFixtureStore();
+  dir = mkdtempSync(join(tmpdir(), "tokenhud-supervisor-"));
+  const delays: number[] = [];
+  let clock = 0;
+  vm = superviseVmWorker({
+    start: start(fixture, join(dir, "mcp"), { kind: "boot", marker: join(dir, "x") }),
+    // Each Worker "stays up" a minute between its first view models and its death.
+    onMessage: (m) => {
+      if (m.type === "views") clock += STABLE_MS;
+    },
+    url: FAULT_WORKER,
+    now: () => clock,
+    schedule: (fn, ms) => {
+      delays.push(ms);
+      return setTimeout(fn, 0);
+    },
+  });
+  await until(() => delays.length >= 3, "three failures");
+  expect(delays.slice(0, 3)).toEqual([1000, 1000, 1000]);
+}, 30_000);
+
+// The policy both Workers restart by: the view-model Worker comes up with its first view
+// models, the ingest Worker with `ready` (src/tui/run.tsx). Critique m3: the ingest Worker
+// used to start over at 1 s on every `ready`, so one dying soon after it restarted every
+// second for ever, re-running its first scan each time.
+describe("RestartBackoff", () => {
+  test("dying right after coming up, every time: 1 s, 2 s, 5 s, then every 30 s", () => {
+    let clock = 0;
+    const backoff = new RestartBackoff(RESTART_BACKOFF_MS, () => clock);
+    const delays: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      backoff.up(); // `ready`
+      clock += 3_000; // the limits round starts, and the Worker dies
+      delays.push(backoff.next());
+      clock += delays[delays.length - 1] as number;
+    }
+    expect(delays).toEqual([1000, 2000, 5000, 30_000, 30_000, 30_000]);
+  });
+
+  test("never coming up backs off the same way", () => {
+    const backoff = new RestartBackoff(RESTART_BACKOFF_MS, () => 0);
+    expect([1, 2, 3, 4, 5].map(() => backoff.next())).toEqual([1000, 2000, 5000, 30_000, 30_000]);
+  });
+
+  test("a minute up since it came up starts over; 59.9 s, or a second `ready`, doesn't", () => {
+    let clock = 0;
+    const backoff = new RestartBackoff(RESTART_BACKOFF_MS, () => clock);
+    backoff.next();
+    backoff.next(); // 1 s, 2 s: the next would be 5 s
+    backoff.up();
+    clock += STABLE_MS - 100;
+    backoff.up(); // only the first `up` of a life counts
+    clock += 99;
+    expect(backoff.next()).toBe(5000);
+    backoff.up();
+    clock += STABLE_MS;
+    expect(backoff.next()).toBe(1000);
+    expect(backoff.next()).toBe(2000);
+  });
+});

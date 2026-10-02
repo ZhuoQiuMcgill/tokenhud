@@ -5,11 +5,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ccUsageDir, configPath, ensureConfig } from "../config.ts";
-import { limitsPath } from "../limits/cache.ts";
-import { lockPath, WriterLock } from "../lock.ts";
+import { ccUsageLimitsPath, limitsPath } from "../limits/cache.ts";
+import { lockFailure, lockPath, WriterLock } from "../lock.ts";
 import { mcpDir } from "../mcp/heartbeat.ts";
 import { configDir, pricingOverridesPath, storePath } from "../paths.ts";
-import { logPath } from "./log.ts";
+import { fileLog, logPath } from "./log.ts";
 import type { Boot, TuiPaths } from "./run.tsx";
 import { superviseVmWorker } from "./vm/client.ts";
 import { type VmMessage, vmSettingsOf } from "./vm/types.ts";
@@ -23,10 +23,12 @@ export function tuiPaths(env: Env, home: string): TuiPaths {
     // src/ingest/cursors.ts `cachePath`, spelled out here: that module opens SQLite, which the
     // UI thread never loads. A test keeps the two equal.
     cache: join(configDir(env, home), "cache.db"),
+    limits: limitsPath(env, home),
     overrides: pricingOverridesPath(env, home),
     lock: lockPath(env, home),
     mcp: mcpDir(env, home),
     ccUsageLedger: join(ccUsageDir(env, home), "ledger.sqlite3"),
+    ccUsageLimits: ccUsageLimitsPath(env, home),
     log: logPath(env, home),
   };
 }
@@ -46,11 +48,17 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
   });
   let lock: WriterLock | null = null;
   let lockError: string | null = null;
+  const log = fileLog(paths.log, home);
   try {
-    lock = WriterLock.tryAcquire({ path: paths.lock, owner: "tui" });
+    lock = WriterLock.tryAcquire({
+      path: paths.lock,
+      owner: "tui",
+      log: (message) => log.write("warn", message),
+    });
   } catch (error) {
-    // The config directory is not writable: show what is stored, never ingest.
-    lockError = (error as Error).message;
+    // An unwritable config dir, or a lock file or journal that can't be repaired: show what
+    // is stored, and retry on every tick (run.tsx).
+    lockError = lockFailure(error);
   }
   const early: VmMessage[] = [];
   let deliver: (message: VmMessage) => void = (message) => early.push(message);
@@ -60,7 +68,7 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
       storePath: paths.store,
       overridesPath: paths.overrides,
       mcpDir: paths.mcp,
-      limitsPath: limitsPath(env, home),
+      limitsPath: paths.limits,
       cachePath: paths.cache,
       mode: lock === null ? "reader" : "owner",
       settings: vmSettingsOf(config, null),

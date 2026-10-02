@@ -36,30 +36,103 @@ export interface AccountInfo {
 export type SpendPeriod = "today" | "this_week" | "this_month" | "all";
 export const SPEND_PERIODS: readonly SpendPeriod[] = ["today", "this_week", "this_month", "all"];
 
-export interface OverviewAccount extends AccountInfo {
-  readonly today: Amount;
-  readonly last24h: Amount;
-}
+/** The Overview's spend columns: rolling 1 h and 5 h (wide screens), then the calendar ones. */
+export type SpendColumn = "1h" | "5h" | SpendPeriod;
 
 export interface TopModel extends Priced {
   readonly model: string;
+  /** How the model is written: `Opus 4.8` for `claude-opus-4-8`, other ids as they are. */
+  readonly name: string;
   readonly tier: "standard" | "fast";
   readonly share: number;
   readonly status: PriceStatus;
 }
 
+/** One limit window on a card: utilisation 0..1 (may exceed 1) and its reset (epoch ms). */
+export interface LimitMeter {
+  readonly utilization: number;
+  readonly resetsAt: number;
+}
+
+/**
+ * What the pace means for an account's limits, all **estimates** (T8): an account-wide
+ * window at 100 % now (`full`, until the last of them resets), one projected to reach it
+ * (`hits`), a weekly window projected to end high but under 100 % (`week`, its projected
+ * share), all projected to last (`safe`), no spend (`idle`), or too little data (`unknown`).
+ */
+export type Verdict =
+  | { readonly kind: "full"; readonly until: number }
+  | { readonly kind: "hits"; readonly at: number }
+  | { readonly kind: "week"; readonly utilization: number }
+  | { readonly kind: "safe" }
+  | { readonly kind: "idle" }
+  | { readonly kind: "unknown" };
+
+/** One account's limits card: an enabled root, with its store account when it has usage. */
+export interface LimitCard {
+  /** The store's account id; null before the account has any usage stored. */
+  readonly account: number | null;
+  readonly label: string;
+  readonly provider: string;
+  /** False for a history-only account: "not signed in here" instead of meters. */
+  readonly signedIn: boolean;
+  /** The account-wide 5-hour and weekly windows; null when the limits have none. */
+  readonly fiveHour: LimitMeter | null;
+  readonly week: LimitMeter | null;
+  /** Spend per hour over the last 30 minutes. */
+  readonly pace: { readonly cost: number; readonly tokens: number };
+  readonly verdict: Verdict;
+  /** When the limits were captured (epoch ms); null when none ever were. */
+  readonly capturedAt: number | null;
+}
+
+/** An MCP agent session's latest tool call in the last 10 minutes (T9's heartbeat). */
+export interface AgentCall {
+  readonly tool: string;
+  /** The account label the call resolved to, or null. */
+  readonly account: string | null;
+  readonly at: number;
+}
+
+/** A limit event of the last 7 days (T8's `limit_events`). */
+export interface OverviewEvent {
+  readonly at: number;
+  /** The account's label. */
+  readonly account: string;
+  readonly kind: "reached" | "passed_80" | "resumed";
+  /** The window's label when recorded ("5-HOUR", "WEEKLY", "FABLE WEEKLY"). */
+  readonly window: string;
+  readonly resetsAt: number;
+  /** For `reached`: when the window was usable again, or null while it isn't. */
+  readonly resumedAt: number | null;
+}
+
+export type ActivityWindow = "5h" | "24h" | "7d";
+export const ACTIVITY_WINDOWS: readonly ActivityWindow[] = ["5h", "24h", "7d"];
+
+/** Cost and tokens in equal buckets, oldest first, the last one holding now. */
+export interface ActivitySeries {
+  readonly from: number;
+  readonly bucketMs: number;
+  readonly cost: readonly number[];
+  readonly tokens: readonly number[];
+}
+
 export interface OverviewVM {
-  readonly accounts: readonly OverviewAccount[];
-  readonly spend: Readonly<Record<SpendPeriod, Amount>>;
-  /** Cost and tokens in 72 buckets of 20 minutes, the last one holding now. */
-  readonly activity: {
-    readonly from: number;
-    readonly bucketMs: number;
-    readonly cost: readonly number[];
-    readonly tokens: readonly number[];
-  };
-  /** The 24 h of the activity chart, most cost first, at most 5. */
+  /** When it was computed: countdowns and "ago" times count from here. */
+  readonly asOf: number;
+  /** One card per enabled account in scope; null until the roots are known. */
+  readonly cards: readonly LimitCard[] | null;
+  /** MCP agent sessions' latest calls, newest first; null with no MCP server about. */
+  readonly agents: { readonly servers: number; readonly calls: readonly AgentCall[] } | null;
+  readonly spend: Readonly<Record<SpendColumn, Amount>>;
+  readonly activity: Readonly<Record<ActivityWindow, ActivitySeries>>;
+  /** The last 24 h (the 24 h chart's range), most cost first, at most 5. */
   readonly topModels: readonly TopModel[];
+  /** The same 24 h, most tokens first, at most 5: the list when costs are hidden. */
+  readonly topModelsByTokens: readonly TopModel[];
+  /** Newest first. */
+  readonly events: readonly OverviewEvent[];
   /** Share of all-time tokens that have a price. */
   readonly pricedShare: number;
 }
@@ -185,10 +258,10 @@ export interface VmStart {
   readonly storePath: string;
   readonly overridesPath: string;
   readonly mcpDir: string;
-  /** limits.json; absent, the Accounts view shows no limits. */
-  readonly limitsPath?: string;
-  /** cache.db, for Codex rate-limit snapshots. */
-  readonly cachePath?: string;
+  /** limits.json (T8), the last-good limits of every account. */
+  readonly limitsPath: string;
+  /** The ingest cache (cache.db), for Codex rollout limit snapshots. */
+  readonly cachePath: string;
   readonly mode: IngestMode;
   readonly settings: VmSettings;
   /** The scope as saved in config (a label), resolved once the accounts are known. */
@@ -217,6 +290,8 @@ export type VmRequest =
   | { readonly type: "config"; readonly config: Config }
   | { readonly type: "mode"; readonly mode: IngestMode }
   | { readonly type: "tick" }
+  /** The ingest Worker rewrote limits.json (T8's `limits` message). */
+  | { readonly type: "limits" }
   | { readonly type: "roots" }
   | { readonly type: "stop" };
 

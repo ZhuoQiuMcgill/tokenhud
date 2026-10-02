@@ -6,22 +6,26 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { type Config, saveConfig } from "../config.ts";
 import { type IngestMessage, type IngestWorker, startIngestWorker } from "../ingest/client.ts";
-import { HEARTBEAT_MS, WriterLock } from "../lock.ts";
+import { HEARTBEAT_MS, lockFailure, WriterLock } from "../lock.ts";
 import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
 import { errorLine, fileLog } from "./log.ts";
 import { theme } from "./theme.ts";
-import { RESTART_BACKOFF_MS, type VmWorker } from "./vm/client.ts";
+import { RestartBackoff, type VmWorker } from "./vm/client.ts";
 import type { VmMessage } from "./vm/types.ts";
 
 export interface TuiPaths {
   readonly config: string;
   readonly store: string;
   readonly cache: string;
+  /** limits.json, which the Overview's limit cards read. */
+  readonly limits: string;
   readonly overrides: string;
   readonly lock: string;
   readonly mcp: string;
   readonly ccUsageLedger: string;
+  /** cc-usage's provider-limits.json, imported once into limits.json (read-only). */
+  readonly ccUsageLimits: string;
   /** The log file (`<config dir>/logs/tokenhud.log`). */
   readonly log: string;
 }
@@ -63,7 +67,8 @@ export async function runApp(boot: Boot): Promise<number> {
   let lock = boot.lock;
   let ingest: IngestWorker | null = null;
   let generation = 0;
-  let ingestFailures = 0;
+  // Reset only after a minute up since `ready`, never on `ready` itself (critique m3).
+  const ingestBackoff = new RestartBackoff();
   let ingestRetry: ReturnType<typeof setTimeout> | null = null;
   let ingestError: string | null = null;
   let resolveExit: (code: number) => void = () => {};
@@ -93,7 +98,16 @@ export async function runApp(boot: Boot): Promise<number> {
     },
     quit: () => void shutdown(0),
   });
-  if (boot.lockError !== null) controller.setReadOnlyReason(`read-only: ${boot.lockError}`);
+  // Why the lock can't be taken (an unwritable config dir, a lock file or journal that can't
+  // be repaired): shown while read-only, logged once per reason, retried on every tick.
+  let lockProblem: string | null = null;
+  const lockFailed = (problem: string | null) => {
+    if (problem === lockProblem) return;
+    lockProblem = problem;
+    if (problem !== null) log.write("warn", `${problem}; read-only, retrying`);
+    controller.setReadOnlyReason(problem === null ? null : `read-only: ${problem}; retrying`);
+  };
+  if (boot.lockError !== null) lockFailed(boot.lockError);
 
   function onIngest(own: number, message: IngestMessage): void {
     // A replaced Worker's changes still count; its status no longer does.
@@ -110,6 +124,11 @@ export async function runApp(boot: Boot): Promise<number> {
       vm.send({ type: "invalidate" });
       return;
     }
+    // The Worker rewrote limits.json: the Overview's cards, at once.
+    if (message.type === "limits") {
+      vm.send({ type: "limits" });
+      return;
+    }
     if (message.type === "log" && message.level !== "info") {
       log.write(message.level, `ingest: ${message.message}`);
     }
@@ -117,7 +136,7 @@ export async function runApp(boot: Boot): Promise<number> {
     if (message.type === "log" && message.level === "error")
       ingestError = errorLine(message.message);
     if (message.type === "ready") {
-      ingestFailures = 0;
+      ingestBackoff.up();
       controller.setIngestDown(null);
       controller.setIngest("live");
     }
@@ -139,16 +158,16 @@ export async function runApp(boot: Boot): Promise<number> {
         config: controller.getState().config,
         discover: { home: boot.home, env: { ...boot.env } },
         importLedger: paths.ccUsageLedger,
+        // T8's schedule: a fetch after the first scan, then every 5 minutes per account,
+        // with its back-off, history-only accounts left alone and the cross-process lease.
+        limits: { limitsPath: paths.limits, ccUsageLimits: paths.ccUsageLimits },
       },
       (message) => onIngest(own, message),
       (code) => {
         // It died: say why on one line, and start another after 1 s, 2 s, 5 s, then 30 s.
         if (closing || own !== generation) return;
         ingest = null;
-        const delay = RESTART_BACKOFF_MS[
-          Math.min(ingestFailures, RESTART_BACKOFF_MS.length - 1)
-        ] as number;
-        ingestFailures++;
+        const delay = ingestBackoff.next();
         const reason = ingestError ?? `exited with code ${code}`;
         ingestError = null;
         log.write("error", `ingest worker stopped: ${reason}; restarting in ${delay} ms`);
@@ -184,10 +203,16 @@ export async function runApp(boot: Boot): Promise<number> {
     const t0 = performance.now();
     if (lock === null || !lock.held) {
       try {
-        const taken = WriterLock.tryAcquire({ path: paths.lock, owner: "tui" });
+        const taken = WriterLock.tryAcquire({
+          path: paths.lock,
+          owner: "tui",
+          log: (message) => log.write("warn", message),
+        });
+        // Taken, or held by another process: either way the problem is gone.
+        lockFailed(null);
         if (taken !== null) promote(taken);
-      } catch {
-        // still not writable; stay read-only
+      } catch (error) {
+        lockFailed(lockFailure(error));
       }
     }
     vm.send({ type: "tick" });

@@ -3,13 +3,7 @@
 // T6's; this checks the view models ask it the right questions.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { UsageRow } from "../../src/store/store.ts";
-import {
-  ALL_TIME,
-  activityRange,
-  affectedViews,
-  changeRange,
-  overlaps,
-} from "../../src/tui/vm/compute.ts";
+import { ALL_TIME, affectedViews, changeRange, overlaps } from "../../src/tui/vm/compute.ts";
 import type {
   AccountRow,
   AccountsVM,
@@ -24,7 +18,6 @@ import {
   bundledTable,
   FIXTURE_ACCOUNTS,
   type Fixture,
-  fixtureConfig,
   fixtureRows,
   fixtureViews,
   makeFixtureStore,
@@ -35,13 +28,11 @@ const rows = fixtureRows();
 const table = bundledTable();
 let fixture: Fixture;
 let views: ViewModels;
-let accountIds: Map<string, number>;
 
 beforeAll(() => {
   fixture = makeFixtureStore(rows);
   const out = fixtureViews(fixture.storePath);
   views = out.views;
-  accountIds = new Map(out.accounts.map((a) => [a.label, a.id]));
 });
 afterAll(() => fixture.remove());
 
@@ -69,91 +60,12 @@ function oracle(from: number, to: number, keep: (r: UsageRow) => boolean = () =>
 
 // NOW is Tue 2026-09-29 11:40 EDT (UTC-4), worked out by hand:
 const TODAY = { from: Date.parse("2026-09-29T04:00:00Z"), to: Date.parse("2026-09-30T04:00:00Z") };
-const WEEK = { from: Date.parse("2026-09-28T04:00:00Z"), to: Date.parse("2026-10-05T04:00:00Z") };
-const MONTH = { from: Date.parse("2026-09-01T04:00:00Z"), to: Date.parse("2026-10-01T04:00:00Z") };
-// The activity chart's 24 h end at the next 20-minute edge after 15:40Z.
+// A rolling 24 h, for the views' dependencies.
 const DAY24 = { from: Date.parse("2026-09-28T16:00:00Z"), to: Date.parse("2026-09-29T16:00:00Z") };
 
 function close(actual: number, expected: number) {
   expect(Math.abs(actual - expected)).toBeLessThan(1e-6);
 }
-
-describe("Overview", () => {
-  test("spend: today, this week, this month, all-time", () => {
-    const vm = views.overview as OverviewVM;
-    for (const [period, range] of [
-      ["today", TODAY],
-      ["this_week", WEEK],
-      ["this_month", MONTH],
-      ["all", { from: 0, to: Number.MAX_SAFE_INTEGER }],
-    ] as const) {
-      const want = oracle(range.from, range.to);
-      close(vm.spend[period].cost, want.cost);
-      expect(vm.spend[period].tokens).toBe(want.tokens);
-    }
-    expect(vm.spend.today.cost).toBeGreaterThan(0);
-  });
-
-  test("activity: 72 buckets of 20 minutes ending at the next 20-minute edge", () => {
-    const vm = views.overview as OverviewVM;
-    expect(activityRange(NOW)).toEqual(DAY24);
-    expect(vm.activity.from).toBe(DAY24.from);
-    expect(vm.activity.bucketMs).toBe(20 * 60_000);
-    expect(vm.activity.cost).toHaveLength(72);
-    for (let i = 0; i < 72; i++) {
-      const from = DAY24.from + i * 20 * 60_000;
-      const want = oracle(from, from + 20 * 60_000);
-      close(vm.activity.cost[i] as number, want.cost);
-      expect(vm.activity.tokens[i]).toBe(want.tokens);
-    }
-  });
-
-  test("top models over the chart's 24 h: at most 5, most cost first, shares of that cost", () => {
-    const vm = views.overview as OverviewVM;
-    expect(vm.topModels.length).toBeLessThanOrEqual(5);
-    expect(vm.topModels.length).toBeGreaterThan(0);
-    const total = oracle(DAY24.from, DAY24.to).cost;
-    for (const m of vm.topModels) {
-      const tier = m.tier === "fast" ? 1 : 0;
-      const want = oracle(DAY24.from, DAY24.to, (r) => r.model === m.model && r.tier === tier);
-      close(m.cost, want.cost);
-      close(m.share, want.cost / total);
-    }
-    const costs = vm.topModels.map((m) => m.cost);
-    expect(costs).toEqual([...costs].sort((a, b) => b - a));
-  });
-
-  test("one entry per account, the history-only one marked, today and 24 h per account", () => {
-    const vm = views.overview as OverviewVM;
-    // In store id order, which is the store's to choose.
-    expect(vm.accounts.map((a) => a.label).sort()).toEqual(
-      FIXTURE_ACCOUNTS.map((a) => a.label).sort(),
-    );
-    expect(vm.accounts.map((a) => a.id)).toEqual(
-      [...vm.accounts.map((a) => a.id)].sort((x, y) => x - y),
-    );
-    expect(vm.accounts.filter((a) => a.historyOnly).map((a) => a.label)).toEqual(["old-laptop"]);
-    for (const a of vm.accounts) {
-      const identity = FIXTURE_ACCOUNTS.find((f) => f.label === a.label)?.identity;
-      const mine = (r: UsageRow) => r.identity === identity;
-      close(a.today.cost, oracle(TODAY.from, TODAY.to, mine).cost);
-      close(a.last24h.cost, oracle(DAY24.from, DAY24.to, mine).cost);
-    }
-  });
-
-  test("a scope filters every section to that account", () => {
-    const work = accountIds.get("work") as number;
-    const scoped = fixtureViews(fixture.storePath, fixtureConfig(), work).views
-      .overview as OverviewVM;
-    const mine = (r: UsageRow) => r.identity === "fixture-identity-work";
-    expect(scoped.accounts.map((a) => a.label)).toEqual(["work"]);
-    close(scoped.spend.this_week.cost, oracle(WEEK.from, WEEK.to, mine).cost);
-    close(
-      scoped.activity.cost.reduce((a, b) => a + b, 0),
-      oracle(DAY24.from, DAY24.to, mine).cost,
-    );
-  });
-});
 
 describe("History", () => {
   test("days from the 1st of the heat map's first month to today; 26 Monday weeks; whole months", () => {

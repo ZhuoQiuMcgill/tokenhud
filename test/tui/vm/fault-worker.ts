@@ -4,7 +4,8 @@
 // - "throw", "reject", "exit": after the first view models, an uncaught throw, an
 //   unhandled rejection or `process.exit(3)`, once (the marker file records it), so the
 //   restarted Worker runs normally;
-// - "always": a throw on every start, before any view model.
+// - "always": a throw on every start, before any view model;
+// - "boot": a throw soon after every start's first view models (critique r1's crash loop).
 import { existsSync, writeFileSync } from "node:fs";
 import "../../../src/tui/vm/worker.ts";
 
@@ -23,6 +24,10 @@ self.onmessage = (event: MessageEvent<{ type: string; testFault?: Fault }>) => {
   const spec = event.data.type === "start" ? (event.data.testFault ?? null) : null;
   if (spec?.kind === "always") fault("always");
   real(event);
+  if (spec?.kind === "boot") {
+    setTimeout(() => fault("throw"), 50);
+    return;
+  }
   if (spec !== null && !existsSync(spec.marker)) {
     writeFileSync(spec.marker, "");
     setTimeout(() => fault(spec.kind), 50);

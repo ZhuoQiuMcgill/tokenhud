@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { LOCK_FILE_NAME, lockHolder, lockPath, WriterLock } from "../../src/lock.ts";
+import { LOCK_FILE_NAME, lockFailure, lockHolder, lockPath, WriterLock } from "../../src/lock.ts";
 import { round } from "./stress.ts";
 
 const dirs: string[] = [];
@@ -104,6 +113,145 @@ describe("in one process", () => {
   );
 });
 
+// Critique r2: a damaged lock file made every process read-only for good.
+describe("a damaged lock file", () => {
+  const posix = process.platform !== "win32";
+  const asRoot = process.getuid?.() === 0;
+
+  function writeAt(file: string): string {
+    writeFileSync(file, "");
+    return file;
+  }
+
+  function damaged(content: string | Uint8Array): string {
+    const path = lockFile();
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, content);
+    return path;
+  }
+
+  test("one that isn't a database is emptied in place and taken, logged once", () => {
+    const path = damaged("not a database, just text ".repeat(40));
+    const inode = statSync(path).ino;
+    const logs: string[] = [];
+    const log = (m: string) => logs.push(m);
+    const lock = WriterLock.tryAcquire({ path, owner: "tui", log }) as WriterLock;
+    held.push(lock);
+    expect(lock.held).toBe(true);
+    // Still a lock: any other connection is busy.
+    expect(take(path, "mcp")).toBeNull();
+    // The same file, not a new one, so every contender still meets on it.
+    if (posix) expect(statSync(path).ino).toBe(inode);
+    expect(logs).toEqual([
+      "the ingest lock file was damaged (SQLITE_NOTADB); emptied it and took the lock",
+    ]);
+    // Damaged again later: rebuilt again, but the log has said it once.
+    lock.release();
+    writeFileSync(path, "garbage again ".repeat(40));
+    expect(take(path)?.held).toBe(true);
+    expect(WriterLock.tryAcquire({ path, owner: "mcp", log })).toBeNull();
+    expect(logs).toHaveLength(1);
+  });
+
+  test("a corrupt lock database is emptied and taken", () => {
+    const path = lockFile();
+    (take(path) as WriterLock).release();
+    const bytes = readFileSync(path);
+    expect(bytes.length).toBeGreaterThan(100);
+    // Keep the 100-byte header, wreck every page after it.
+    bytes.fill(0xab, 100);
+    writeFileSync(path, bytes);
+    const logs: string[] = [];
+    const lock = WriterLock.tryAcquire({ path, owner: "tui", log: (m) => logs.push(m) });
+    expect(lock?.held).toBe(true);
+    if (lock !== null) held.push(lock);
+    expect(logs[0]).toContain("SQLITE_CORRUPT");
+  });
+
+  test.skipIf(!posix || asRoot)("one that can't be opened for writing is moved aside", () => {
+    const path = damaged("");
+    chmodSync(path, 0o000);
+    const logs: string[] = [];
+    const lock = WriterLock.tryAcquire({ path, owner: "tui", log: (m) => logs.push(m) });
+    expect(lock?.held).toBe(true);
+    if (lock !== null) held.push(lock);
+    expect(existsSync(`${path}.damaged`)).toBe(true);
+    expect(take(path, "mcp")).toBeNull();
+    expect(logs).toEqual([
+      "the ingest lock's ingest.lock.db could not be used (SQLITE_CANTOPEN); moved aside to *.damaged",
+    ]);
+    chmodSync(`${path}.damaged`, 0o600);
+  });
+
+  // Critique m2: a journal SQLite can't open blocked every try, for good.
+  test.skipIf(!posix || asRoot)(
+    "a journal that can't be read, or a directory in a sidecar's or the file's place, is moved aside",
+    () => {
+      for (const [what, damage, moved] of [
+        [
+          "an unreadable journal",
+          (p: string) => chmodSync(writeAt(`${p}-journal`), 0o000),
+          "-journal",
+        ],
+        ["a journal that is a directory", (p: string) => mkdirSync(`${p}-journal`), "-journal"],
+        ["a lock file that is a directory", (p: string) => mkdirSync(p), ""],
+      ] as const) {
+        const path = lockFile();
+        mkdirSync(join(path, ".."), { recursive: true });
+        if (moved !== "") writeFileSync(path, "");
+        damage(path);
+        const logs: string[] = [];
+        const lock = WriterLock.tryAcquire({ path, owner: "tui", log: (m) => logs.push(m) });
+        expect({ what, held: lock?.held }).toEqual({ what, held: true });
+        if (lock !== null) held.push(lock);
+        expect(existsSync(`${path}${moved}.damaged`)).toBe(true);
+        expect(take(path, "mcp")).toBeNull();
+        expect(logs).toHaveLength(1);
+        expect(logs[0]).toContain(`ingest.lock.db${moved} could not be used`);
+        if (moved === "-journal" && statSync(`${path}-journal.damaged`).isFile()) {
+          chmodSync(`${path}-journal.damaged`, 0o600);
+        }
+      }
+    },
+  );
+
+  test.skipIf(!posix || asRoot)(
+    "a broken journal in a directory that can't be written is an error naming its code",
+    () => {
+      const path = lockFile();
+      mkdirSync(join(path, ".."), { recursive: true });
+      writeFileSync(path, "");
+      mkdirSync(`${path}-journal`);
+      chmodSync(join(path, ".."), 0o500);
+      try {
+        let caught: unknown = null;
+        try {
+          WriterLock.tryAcquire({ path, owner: "tui" });
+        } catch (error) {
+          caught = error;
+        }
+        expect(lockFailure(caught)).toMatch(/^cannot take the ingest lock \(SQLITE_[A-Z_]+\)$/);
+      } finally {
+        chmodSync(join(path, ".."), 0o700);
+      }
+      // Once it can be fixed, it is: the next try takes the lock.
+      expect(take(path)?.held).toBe(true);
+    },
+  );
+
+  test.skipIf(!posix || asRoot)("one that can't be fixed is still an error", () => {
+    const path = damaged("");
+    chmodSync(path, 0o000);
+    chmodSync(join(path, ".."), 0o500);
+    try {
+      expect(() => WriterLock.tryAcquire({ path, owner: "tui" })).toThrow();
+    } finally {
+      chmodSync(join(path, ".."), 0o700);
+      chmodSync(path, 0o600);
+    }
+  });
+});
+
 describe("across processes", () => {
   test("a lock another process holds is busy, and freed by the kernel when it is killed", async () => {
     const path = lockFile();
@@ -131,11 +279,13 @@ describe("across processes", () => {
   });
 
   test("16 contenders with random kill -9s never hold it at the same moment (6 rounds)", async () => {
-    // `bun test/lock/stress.ts 300` runs the full acceptance count.
+    // `bun test/lock/stress.ts 300` runs the full acceptance count. Each round runs until
+    // its 24 holds are logged and its 4 kills made, however slow the machine.
     for (let r = 0; r < 6; r++) {
-      const result = await round(16, 300, 4);
+      const result = await round(16, 300, 4, 24);
       expect(result.overlaps).toBe(0);
-      expect(result.holds).toBeGreaterThan(0);
+      expect(result.holds).toBeGreaterThanOrEqual(24);
+      expect(result.kills).toBe(4);
     }
-  }, 120_000);
+  }, 180_000);
 });

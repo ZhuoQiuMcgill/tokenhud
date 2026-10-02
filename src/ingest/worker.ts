@@ -6,7 +6,7 @@
 // With limits on, it also runs the limits schedule (src/limits/service.ts): the first
 // round after the first scan, so the UI thread never waits on the network.
 import { recordCaptureEvents } from "../limits/events.ts";
-import { LimitsService } from "../limits/service.ts";
+import { LimitsService, type LimitsServiceOptions } from "../limits/service.ts";
 import { codexSnapshotsFrom } from "../limits/snapshots.ts";
 import { StoreError } from "../store/errors.ts";
 import type { IngestMessage, IngestRequest, LimitsWorkerOptions, WorkerOptions } from "./client.ts";
@@ -32,8 +32,16 @@ const fatal = (error: unknown) => {
 process.on("uncaughtException", fatal);
 process.on("unhandledRejection", fatal);
 
+/**
+ * Tests only: fetchers and timing in place of the providers' and the 5-minute schedule. A
+ * test's Worker entry sets them before its start message arrives; nothing else does.
+ */
+export const limitsOverrides: Pick<LimitsServiceOptions, "fetchClaude" | "fetchCodex" | "timing"> =
+  {};
+
 function limitsService(live: IngestEngine, options: LimitsWorkerOptions, cachePath: string) {
   return new LimitsService({
+    ...limitsOverrides,
     limitsPath: options.limitsPath,
     ccUsageLimits: options.ccUsageLimits,
     roots: () => live.discover(),

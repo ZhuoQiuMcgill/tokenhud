@@ -580,7 +580,7 @@ class FakeTimers implements Timers {
 }
 
 describe("the session", () => {
-  test("a rewritten limits.json or a new MCP call recomputes only the Accounts view", () => {
+  test("a rewritten limits.json or a new MCP call recomputes the Accounts view and the Overview, only", () => {
     const own = makeT13Fixture();
     const mcp = mkdtempSync(join(tmpdir(), "tokenhud-t13-mcp-"));
     const timers = new FakeTimers();
@@ -592,6 +592,7 @@ describe("the session", () => {
         overridesPath: join(own.dir, "none.json"),
         mcpDir: mcp,
         limitsPath: own.limitsPath,
+        cachePath: join(own.dir, "cache.db"),
         mode: "owner",
         settings: { tz: TZ, window: "all", scope: null },
         scopeLabel: null,
@@ -606,12 +607,12 @@ describe("the session", () => {
       session.begin();
       const views = () =>
         posted.filter((m) => m.type === "views") as Extract<VmMessage, { type: "views" }>[];
-      // The roots discovered after the first frame: the Accounts view shows them.
+      // The roots are read before the first frame (T11): no second round for them.
       timers.advance(1000);
-      expect(views().map((v) => Object.keys(v.views).length)).toEqual([4, 1]);
+      expect(views().map((v) => Object.keys(v.views).length)).toEqual([4]);
       session.handle({ type: "tick" });
       timers.advance(1000);
-      expect(views()).toHaveLength(2); // nothing changed
+      expect(views()).toHaveLength(1); // nothing changed
 
       // The fetcher rewrites limits.json: the next tick notices.
       const later = new Date(Date.now() + 5000);
@@ -619,8 +620,8 @@ describe("the session", () => {
       utimesSync(own.limitsPath, later, later);
       session.handle({ type: "tick" });
       timers.advance(1000);
-      expect(views()).toHaveLength(3);
-      expect(Object.keys(views()[2]?.views ?? {})).toEqual(["accounts"]);
+      expect(views()).toHaveLength(2);
+      expect(Object.keys(views()[1]?.views ?? {})).toEqual(["overview", "accounts"]);
 
       // An MCP server records a call.
       writeFileSync(
@@ -635,8 +636,8 @@ describe("the session", () => {
       );
       session.handle({ type: "tick" });
       timers.advance(1000);
-      expect(views()).toHaveLength(4);
-      expect(Object.keys(views()[3]?.views ?? {})).toEqual(["accounts"]);
+      expect(views()).toHaveLength(3);
+      expect(Object.keys(views()[2]?.views ?? {})).toEqual(["overview", "accounts"]);
     } finally {
       session.close();
       rmSync(mcp, { recursive: true, force: true });

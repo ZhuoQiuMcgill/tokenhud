@@ -25,5 +25,11 @@ export async function runMcp(args: readonly string[]): Promise<number> {
   }
   // The single-writer lock (src/lock.ts): with it free, a stale store is refreshed by one
   // pass here; while a TUI holds it, answers come from the store as it is, with stale_s.
-  return runMcpServer({ acquireWriterLock: () => WriterLock.tryAcquire({ owner: "mcp" }) });
+  return runMcpServer({
+    acquireWriterLock: () =>
+      WriterLock.tryAcquire({
+        owner: "mcp",
+        log: (message) => process.stderr.write(`tokenhud mcp: ${message}\n`),
+      }),
+  });
 }

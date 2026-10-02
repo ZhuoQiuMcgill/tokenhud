@@ -69,7 +69,7 @@ describe("footer (gen.py footer())", () => {
       120,
       [q, help, views],
       order,
-      mcpSegs({ servers: 1, agents: 2, recent: [] }),
+      mcpSegs({ servers: 1, agents: 2, recent: [], latest: [] }),
     );
     expect(text(line)).toEqual({
       left: " 1-4 views   ? help   q quit   ",
@@ -79,7 +79,7 @@ describe("footer (gen.py footer())", () => {
   });
 
   test("hints that don't fit drop from the end of the priority list", () => {
-    const right = mcpSegs({ servers: 0, agents: 0, recent: [] });
+    const right = mcpSegs({ servers: 0, agents: 0, recent: [], latest: [] });
     expect(text(footerLine(28, [q, help, views], order, right)).left).toBe(" ? help   q quit   ");
     expect(text(footerLine(18, [q, help, views], order, right)).left).toBe(" q quit   ");
   });
@@ -87,17 +87,17 @@ describe("footer (gen.py footer())", () => {
   test("MCP: hollow dot with no server, one agent singular, nothing before the first read", () => {
     expect(mcpSegs(null)).toEqual([]);
     expect(
-      mcpSegs({ servers: 0, agents: 0, recent: [] })
+      mcpSegs({ servers: 0, agents: 0, recent: [], latest: [] })
         .map((s) => s.text)
         .join(""),
     ).toBe("MCP ○ ");
     expect(
-      mcpSegs({ servers: 1, agents: 0, recent: [] })
+      mcpSegs({ servers: 1, agents: 0, recent: [], latest: [] })
         .map((s) => s.text)
         .join(""),
     ).toBe("MCP ● ");
     expect(
-      mcpSegs({ servers: 1, agents: 1, recent: [] })
+      mcpSegs({ servers: 1, agents: 1, recent: [], latest: [] })
         .map((s) => s.text)
         .join(""),
     ).toBe("MCP ● 1 agent ");

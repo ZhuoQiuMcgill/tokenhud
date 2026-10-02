@@ -36,6 +36,8 @@ test("views on start, a reported change recomputed, a clean stop", async () => {
       storePath: fixture.storePath,
       overridesPath: join(fixture.dir, "none.json"),
       mcpDir: mcp,
+      limitsPath: join(fixture.dir, "limits.json"),
+      cachePath: join(fixture.dir, "cache.db"),
       mode: "owner",
       settings: { tz: TZ, window: "all", scope: null },
       scopeLabel: null,

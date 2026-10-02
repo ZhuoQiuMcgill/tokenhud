@@ -184,8 +184,8 @@ export class VmSession {
   #accounts: AccountInfo[] = [];
   #labels: ReadonlyMap<string, string> = new Map();
   #roots: Root[] = [];
-  /** What the Accounts view shows of the roots (none yet), to notice when it changes. */
-  #rootsKey = "[]";
+  /** The roots as the Overview's cards and the Accounts view show them, to notice changes. */
+  #rootsKey = "";
   readonly #computed = new Map<ViewId, Computed<unknown>>();
   readonly #dirty = new Set<ViewId>(VIEW_IDS);
   #dataVersion: bigint | null = null;
@@ -193,8 +193,8 @@ export class VmSession {
   #validity: unknown = null;
   #mcp = "";
   #activity: McpActivity | null = null;
-  /** limits.json's mtime when last read (0: missing). */
-  #limitsMtime = 0;
+  /** limits.json as last read: inode, mtime and size ("" while missing). */
+  #limitsStamp = "";
   readonly #wsl = isWsl();
   #scopeLabel: string | null;
   #closed = false;
@@ -235,8 +235,10 @@ export class VmSession {
 
   /**
    * The first frame's data: warm the engine over the whole store (T6: 20–50 ms at 1M rows),
-   * compute every view and post them. Root discovery, which can be slow on Windows roots,
-   * comes after.
+   * compute every view and post them. Roots, MCP activity and limits.json are read first,
+   * so that the Overview's first frame already has its limit cards and agents (discovery
+   * took about 25 ms with Windows roots under WSL); roots and activity are posted after
+   * the views.
    */
   begin(): void {
     this.#guard(() => {
@@ -245,10 +247,14 @@ export class VmSession {
       this.#dataVersion = this.#pragmaVersion();
       this.#imports = this.#importsRecord();
     });
+    this.#discover(false);
+    this.#pollMcp(false);
     this.#limitsChanged();
     this.#recompute();
-    this.#discover();
-    this.#pollMcp();
+    // Whatever the reads above marked has just been computed.
+    this.#coalescer.cancel();
+    this.#postRoots();
+    if (this.#activity !== null) this.#post({ type: "mcp", activity: this.#activity });
   }
 
   handle(request: VmRequest): void {
@@ -277,6 +283,12 @@ export class VmSession {
         break;
       case "tick":
         this.#tick();
+        break;
+      case "limits":
+        // Our ingest Worker fetched: the cards (Overview), the meters (Accounts), and the
+        // limit events it may have recorded (History, and the Overview's list).
+        this.#limitsChanged();
+        for (const id of ["overview", "accounts", "history"] as const) this.#mark(id);
         break;
       case "roots":
         this.#discover();
@@ -331,7 +343,7 @@ export class VmSession {
     }
   }
 
-  #discover(): void {
+  #discover(post = true): void {
     this.#guard(() => {
       const options = this.#start.discover;
       this.#roots = discoverRoots(this.#config, options);
@@ -344,17 +356,23 @@ export class VmSession {
         this.#applyLabels();
         this.#markAll();
       }
+      // The Overview's cards are the enabled roots; the Accounts view lists them all.
       const rootsKey = JSON.stringify(
-        this.#roots.map((r) => [r.provider, r.identity, r.path, r.enabled, r.historyOnly]),
+        this.#roots.map((r) => [r.provider, r.identity, r.path, r.label, r.enabled, r.historyOnly]),
       );
       if (rootsKey !== this.#rootsKey) {
         this.#rootsKey = rootsKey;
+        this.#mark("overview");
         this.#mark("accounts");
       }
-      this.#post({
-        type: "roots",
-        roots: rootInfos(this.#roots, this.#config, options.home),
-      });
+      if (post) this.#postRoots();
+    });
+  }
+
+  #postRoots(): void {
+    this.#post({
+      type: "roots",
+      roots: rootInfos(this.#roots, this.#config, this.#start.discover.home),
     });
   }
 
@@ -464,24 +482,29 @@ export class VmSession {
 
   /** The limits fetcher (the ingest Worker, an MCP server) rewrote limits.json. */
   #pollLimits(): void {
-    if (this.#limitsChanged()) this.#mark("accounts");
+    if (!this.#limitsChanged()) return;
+    this.#mark("overview");
+    this.#mark("accounts");
   }
 
+  /**
+   * Whether limits.json changed since last read. It is always rewritten as a new file renamed
+   * into place, so the inode tells even two writes in one millisecond apart.
+   */
   #limitsChanged(): boolean {
-    const path = this.#start.limitsPath;
-    if (path === undefined) return false;
-    let mtime = 0;
+    let stamp = "";
     try {
-      mtime = statSync(path).mtimeMs;
+      const st = statSync(this.#start.limitsPath);
+      stamp = `${st.ino}:${st.mtimeMs}:${st.size}`;
     } catch {
       // not there (yet)
     }
-    if (mtime === this.#limitsMtime) return false;
-    this.#limitsMtime = mtime;
+    if (stamp === this.#limitsStamp) return false;
+    this.#limitsStamp = stamp;
     return true;
   }
 
-  #pollMcp(): void {
+  #pollMcp(post = true): void {
     this.#guard(() => {
       const activity = readMcpActivity(this.#start.mcpDir, Date.now());
       const key = JSON.stringify(activity);
@@ -489,7 +512,9 @@ export class VmSession {
       this.#mcp = key;
       const before = this.#activity;
       this.#activity = activity;
-      this.#post({ type: "mcp", activity });
+      if (post) this.#post({ type: "mcp", activity });
+      // The Overview's agents card shows each session's latest call.
+      this.#mark("overview");
       // The Accounts view shows each account's last call, and whether a server runs.
       const shown = (a: McpActivity | null) =>
         JSON.stringify([(a?.servers ?? 0) > 0, a?.recent ?? []]);
@@ -526,22 +551,23 @@ export class VmSession {
   }
 
   /** What the Accounts view reads besides usage (T13): roots, limits, MCP activity. */
-  #accountSources(): AccountSources {
-    const { limitsPath, cachePath } = this.#start;
+  /**
+   * What the Overview's cards and agents and the Accounts view read besides usage: roots,
+   * one limits source (limits.json, Codex rollout snapshots and the store) and the MCP
+   * activity, all as of `now`.
+   */
+  #accountSources(now: number): AccountSources {
     const roots = this.#roots;
     return {
       roots,
-      limits:
-        limitsPath === undefined
-          ? null
-          : new Limits({
-              limitsPath,
-              roots: () => roots,
-              db: this.#db,
-              spend: spendFromQueries(this.#queries),
-              ...(cachePath === undefined ? {} : { snapshots: codexSnapshotsFrom(cachePath) }),
-              now: () => this.#now(),
-            }),
+      limits: new Limits({
+        limitsPath: this.#start.limitsPath,
+        roots: () => roots,
+        db: this.#db,
+        spend: spendFromQueries(this.#queries),
+        snapshots: codexSnapshotsFrom(this.#start.cachePath),
+        now: () => now,
+      }),
       mcp: this.#activity,
       wsl: this.#wsl,
       home: this.#start.discover.home,
@@ -549,16 +575,17 @@ export class VmSession {
   }
 
   #context(): ComputeContext {
+    const now = this.#now();
     return {
       q: this.#queries,
-      now: this.#now(),
+      now,
       zone: this.#zone,
       accounts: this.#accounts,
       scope: this.#settings.scope,
       window: this.#settings.window,
       limitEvents: (range) => readAccountEvents(this.#db, this.#storeAccounts, range),
       prices: this.#prices,
-      sources: this.#accountSources(),
+      sources: this.#accountSources(now),
     };
   }
 

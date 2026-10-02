@@ -68,8 +68,10 @@ export function startIngestWorker(
   options: WorkerOptions,
   onMessage: (message: IngestMessage) => void,
   onExit?: (code: number) => void,
+  /** Tests: another Worker entry (one with mocked limit fetchers). */
+  url: string = WORKER_URL,
 ): IngestWorker {
-  const worker = new Worker(WORKER_URL);
+  const worker = new Worker(url);
   let stopping = false;
   let resolveStopped: () => void = () => {};
   const stopped = new Promise<void>((resolve) => {

@@ -80,17 +80,39 @@ export interface ProjectionInput {
  * - The pace is the last 30 minutes only; a burst or a pause dominates it.
  */
 export function projectExhaustion(input: ProjectionInput): Projection {
-  const { utilization: u, capturedAt, resetsAt, windowMs, costPerHour, now } = input;
-  if (windowMs === null || !(u < 1) || now >= resetsAt || capturedAt >= resetsAt) return null;
-  const start = resetsAt - windowMs;
-  const spentToCapture = input.spent(start, capturedAt);
-  if (!(spentToCapture >= MIN_WINDOW_SPEND_USD)) return null;
-  if (!(costPerHour > 0)) return null;
-  const perDollar = Math.max(0, u) / spentToCapture;
-  if (perDollar === 0) return "safe";
-  // `now` itself included, as in the pace and T6's rolling periods.
-  const uNow = u + perDollar * (now >= capturedAt ? input.spent(capturedAt, now + 1) : 0);
-  if (uNow >= 1) return now;
-  const at = now + ((1 - uNow) / (perDollar * costPerHour)) * 3_600_000;
+  const { resetsAt, costPerHour, now } = input;
+  const trend = windowTrend(input);
+  if (trend === null || !(costPerHour > 0)) return null;
+  if (trend.perDollar === 0) return "safe";
+  if (trend.now >= 1) return now;
+  const at = now + ((1 - trend.now) / (trend.perDollar * costPerHour)) * 3_600_000;
   return at >= resetsAt ? "safe" : Math.round(at);
+}
+
+/**
+ * The window's utilisation at its reset if the current pace holds: utilisation now plus
+ * `k * pace * hours left`, with `k` and its limits as in `projectExhaustion`. **An
+ * estimate.** Null without enough data, or a zero pace.
+ */
+export function projectAtReset(input: ProjectionInput): number | null {
+  const { resetsAt, costPerHour, now } = input;
+  const trend = windowTrend(input);
+  if (trend === null || !(costPerHour > 0)) return null;
+  return trend.now + trend.perDollar * costPerHour * ((resetsAt - now) / 3_600_000);
+}
+
+/**
+ * Utilisation per dollar from the window's own history, and utilisation now; null when
+ * the window has no known length, is at 100 % or past its reset, or saw under $0.50 of
+ * spend before the capture.
+ */
+function windowTrend(input: ProjectionInput): { now: number; perDollar: number } | null {
+  const { utilization: u, capturedAt, resetsAt, windowMs, now } = input;
+  if (windowMs === null || !(u < 1) || now >= resetsAt || capturedAt >= resetsAt) return null;
+  const spentToCapture = input.spent(resetsAt - windowMs, capturedAt);
+  if (!(spentToCapture >= MIN_WINDOW_SPEND_USD)) return null;
+  const perDollar = Math.max(0, u) / spentToCapture;
+  // `now` itself included, as in the pace and T6's rolling periods.
+  const since = perDollar > 0 && now >= capturedAt ? input.spent(capturedAt, now + 1) : 0;
+  return { now: u + perDollar * since, perDollar };
 }

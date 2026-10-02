@@ -289,6 +289,16 @@ export class Controller {
       case "root":
         this.#rootEdit(command);
         return;
+      case "open": {
+        const to = VIEWS[command.view];
+        const state = to.select?.(s.viewState[command.view], command.account);
+        this.switchStartedAt = performance.now();
+        this.#set({
+          view: command.view,
+          viewState: { ...s.viewState, [command.view]: state ?? s.viewState[command.view] },
+        });
+        return;
+      }
     }
   }
 

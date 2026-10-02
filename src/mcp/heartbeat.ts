@@ -128,6 +128,8 @@ export interface McpActivity {
   agents: number;
   /** The latest calls of any server, newest first, at most 20. */
   recent: McpCall[];
+  /** Each agent session's (server's) latest call in the last 10 minutes, newest first. */
+  latest: McpCall[];
 }
 
 interface Beat {
@@ -180,11 +182,12 @@ export function readMcpActivity(
   try {
     names = readdirSync(dir).filter((n) => /^\d+\.json$/.test(n));
   } catch {
-    return { servers: 0, agents: 0, recent: [] };
+    return { servers: 0, agents: 0, recent: [], latest: [] };
   }
   let servers = 0;
   let agents = 0;
   const recent: McpCall[] = [];
+  const latest: McpCall[] = [];
   for (const name of names) {
     let beat: Beat | null;
     try {
@@ -196,9 +199,14 @@ export function readMcpActivity(
     const fresh = now - beat.updatedAt <= AGENT_WINDOW_MS;
     if (fresh && (beat.host !== host || isAlive(beat.pid))) servers++;
     const calls = beat.calls.filter((c) => now - c.at <= AGENT_WINDOW_MS);
-    if (calls.length > 0) agents++;
+    if (calls.length > 0) {
+      agents++;
+      // Calls are kept in the order made: on a tie the later one is the latest.
+      latest.push(calls.reduce((a, b) => (b.at >= a.at ? b : a)));
+    }
     recent.push(...calls);
   }
   recent.sort((a, b) => b.at - a.at);
-  return { servers, agents, recent: recent.slice(0, MAX_CALLS) };
+  latest.sort((a, b) => b.at - a.at);
+  return { servers, agents, recent: recent.slice(0, MAX_CALLS), latest };
 }

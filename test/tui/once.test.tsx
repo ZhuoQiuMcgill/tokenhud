@@ -1,26 +1,21 @@
 // `tokenhud --once` (T10 §7, AC 5): the Overview once, at a given width, from the same view
 // model and renderables as the TUI. Plain text off a TTY; truecolour ANSI on one.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { Limits, spendFromQueries } from "../../src/limits/index.ts";
 import { openStoreReader } from "../../src/store/store.ts";
 import { shareCells } from "../../src/tui/components/hbar.ts";
-import { tokens } from "../../src/tui/format.ts";
 import { renderOverview } from "../../src/tui/once.tsx";
-import { costText } from "../../src/tui/views/cells.ts";
+import { readAccountEvents } from "../../src/tui/vm/history.ts";
 import { displayAccounts, readStoreAccounts } from "../../src/tui/vm/session.ts";
-import { type OverviewVM, type Priced, SPEND_PERIODS } from "../../src/tui/vm/types.ts";
-import {
-  bundledTable,
-  type Fixture,
-  fixtureConfig,
-  fixtureViews,
-  makeFixtureStore,
-  NOW,
-} from "./fixture.ts";
+import type { OverviewVM } from "../../src/tui/vm/types.ts";
+import { bundledTable, fixtureConfig, NOW } from "./fixture.ts";
+import { MCP, makeOverviewFixture, type OverviewFixture, ROOTS } from "./overview-fixture.ts";
+import { expectOverviewWhole } from "./overview-numbers.ts";
 
 const ESC = String.fromCharCode(27);
-let fixture: Fixture;
+let fixture: OverviewFixture;
 beforeAll(() => {
-  fixture = makeFixtureStore();
+  fixture = makeOverviewFixture();
 });
 afterAll(() => fixture.remove());
 
@@ -37,6 +32,20 @@ async function once(width: number, color: boolean, config = fixtureConfig()): Pr
       color,
       now: NOW,
       systemZone: "UTC",
+      sources: (q) => ({
+        roots: ROOTS,
+        limits: new Limits({
+          limitsPath: fixture.limitsPath,
+          roots: () => ROOTS,
+          db,
+          spend: spendFromQueries(q),
+          now: () => NOW,
+        }),
+        mcp: MCP,
+        wsl: false,
+        home: "/home/fixture",
+      }),
+      limitEvents: (range) => readAccountEvents(db, readStoreAccounts(db), range),
     });
   } finally {
     db.close();
@@ -98,29 +107,15 @@ test("plain-text share bars are as long as their share", async () => {
 });
 
 // Critique m2: narrow widths drop sections and columns and use compact numbers, but never
-// cut one. Every number of the view model the Overview shows appears whole.
-describe.each([50, 60])("--once --width %i", (width) => {
+// cut one. Every number of the view model the Overview shows appears whole (T11's checker).
+describe.each([50, 60, 80, 105, 120])("--once --width %i", (width) => {
   test.each([true, false])("show_cost %p: every number appears intact", async (showCost) => {
     const config = fixtureConfig({ show_cost: showCost });
     const text = await once(width, false, config);
-    for (const line of text.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(width);
-    expect(text).not.toMatch(/[\d$%*]…|…\d/);
-    const vm = fixtureViews(fixture.storePath, config).views.overview as OverviewVM;
-    const shows = (p: Priced, what: string) => {
-      const forms = showCost ? [costText(p).text, costText(p, true).text] : [tokens(p.tokens)];
-      expect({ what, found: forms.some((f) => text.includes(f)) }).toEqual({ what, found: true });
-    };
-    for (const a of vm.accounts) {
-      shows(a.today, `${a.label} today`);
-      shows(a.last24h, `${a.label} 24h`);
-    }
-    for (const period of SPEND_PERIODS) {
-      shows(vm.spend[period], period);
-      expect(text).toContain(tokens(vm.spend[period].tokens));
-    }
-    for (const m of vm.topModels) {
-      shows(m, m.model);
-      expect(text).toContain(m.model);
+    const vm = fixture.overview() as OverviewVM;
+    expectOverviewWhole(text, vm, width, config);
+    for (const title of [" LIMITS", " SPEND", " ACTIVITY", " TOP MODELS", " LIMIT EVENTS"]) {
+      expect(text).toContain(title);
     }
     if (showCost) expect(text).toContain("unpriced");
   });
