@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ChangedEvent } from "../../src/ingest/pass.ts";
 import { rootIdentity } from "../../src/sources/roots.ts";
 import { ledgerKey } from "../../src/store/key.ts";
-import { claudeLine, cleanup, makeRoot, openEngine, tempDir } from "./helpers.ts";
+import { claudeLine, cleanup, makeRoot, openEngine, tempDir, watcherReady } from "./helpers.ts";
 
 afterEach(cleanup);
 
@@ -46,12 +46,15 @@ const labelOf = (engine: ReturnType<typeof openEngine>, identity: string) =>
 test("with no config, a live row from the Windows root keeps the imported label", async () => {
   const { users, root, file, home } = windowsRoot();
   const events: ChangedEvent[] = [];
+  let passes = 0;
   const engine = openEngine([], {
     discover: { home, env: {}, wslUsersDir: users },
     onChanged: (e) => events.push(e),
+    onPass: () => passes++,
   });
   imported(engine, root, home);
   await engine.startLive();
+  await watcherReady(join(root, "projects"), () => passes);
   const discovered = engine.roots.find((r) => r.source === "wsl");
   expect(discovered).toMatchObject({ label: "claude-win", labelExplicit: false });
   const identity = discovered?.identity as string;

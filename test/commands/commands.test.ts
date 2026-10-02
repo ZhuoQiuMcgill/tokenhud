@@ -1,9 +1,11 @@
 // `tokenhud json`, `doctor` and `import-cc-usage`, run as users run them: a fresh process
 // with XDG_CONFIG_HOME pointing at a temp dir, which holds both tokenhud's config and a copy
-// of the fixture cc-usage directory (a synthetic ledger and pricing.json).
-import { afterEach, describe, expect, test } from "bun:test";
+// of the fixture cc-usage directory (a synthetic ledger and pricing.json), and HOME at a
+// fake home, so root discovery never sees this machine's real transcripts.
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -14,6 +16,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { type JsonOptions, runJson } from "../../src/commands/json.ts";
+import { lockPath, WriterLock } from "../../src/lock.ts";
 import { loadPriceTable } from "../../src/pricing/overrides.ts";
 import type {
   JsonAccountsDocument,
@@ -21,8 +25,10 @@ import type {
   JsonModelsDocument,
   JsonUsageDocument,
 } from "../../src/query/types.ts";
+import { rootIdentity } from "../../src/sources/roots.ts";
 import { openStore } from "../../src/store/store.ts";
 import expectedLedger from "../fixtures/store/cc-usage-ledger.expected.json";
+import { claudeLine } from "../ingest/helpers.ts";
 import { cleanup, tempDir } from "../store/helpers.ts";
 
 afterEach(cleanup);
@@ -35,6 +41,10 @@ interface Env {
   cc: string;
   store: string;
   overrides: string;
+  cache: string;
+  config: string;
+  /** The fake home: `~/.claude` and `~/.codex` are discovered under it. */
+  home: string;
 }
 
 /** A config home with cc-usage's fixture files in it, and no tokenhud store yet. */
@@ -44,17 +54,37 @@ function home(): Env {
   mkdirSync(cc);
   copyFileSync(join(FIXTURES, "store", "cc-usage-ledger.sqlite3"), join(cc, "ledger.sqlite3"));
   copyFileSync(join(FIXTURES, "pricing", "cc-usage-user-pricing.json"), join(cc, "pricing.json"));
+  const fakeHome = join(xdg, "home");
+  mkdirSync(fakeHome);
   return {
     xdg,
     cc,
     store: join(xdg, "tokenhud", "tokenhud.db"),
     overrides: join(xdg, "tokenhud", "pricing.overrides.json"),
+    cache: join(xdg, "tokenhud", "cache.db"),
+    config: join(xdg, "tokenhud", "config.json"),
+    home: fakeHome,
   };
+}
+
+/** The environment a command runs in: this one, with the config home, the fake home and no provider overrides. */
+function processEnv(env: Env): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {
+    ...process.env,
+    XDG_CONFIG_HOME: env.xdg,
+    TZ: "America/Toronto",
+    HOME: env.home,
+    USERPROFILE: env.home,
+    TOKENHUD_WSL_USERS: "",
+  };
+  delete out.CLAUDE_CONFIG_DIR;
+  delete out.CODEX_HOME;
+  return out;
 }
 
 function run(env: Env, ...args: string[]) {
   const proc = Bun.spawnSync([process.execPath, CLI, ...args], {
-    env: { ...process.env, XDG_CONFIG_HOME: env.xdg, TZ: "America/Toronto" },
+    env: processEnv(env),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -318,6 +348,7 @@ describe("json", () => {
       cache_read: 0.5,
       cache_write: 6.25,
       long_context: null,
+      estimated: false,
     });
     expect(models.models.find((m) => m.model === "claude-mystery-1")?.status).toBe("unpriced");
 
@@ -386,19 +417,20 @@ describe("json", () => {
   });
 });
 
-describe("doctor", () => {
-  // Paths doctor may print: tokenhud's config files and cc-usage's directory.
-  function onlyConfigPaths(env: Env, text: string): void {
-    for (const line of text.split("\n")) {
-      if (!line.includes(env.xdg)) continue;
-      expect(
-        [env.store, env.overrides, env.cc].some((p) => line.includes(p)),
-        `unexpected path in: ${line}`,
-      ).toBe(true);
-    }
-    expect(text).not.toMatch(/[\\/]\.claude|[\\/]\.codex|\.jsonl|credentials/);
+// Paths doctor may print: tokenhud's config files (the store and its backups, the
+// overrides, the cache) and cc-usage's directory.
+function onlyConfigPaths(env: Env, text: string): void {
+  for (const line of text.split("\n")) {
+    if (!line.includes(env.xdg)) continue;
+    expect(
+      [env.store, env.overrides, env.cache, env.cc].some((p) => line.includes(p)),
+      `unexpected path in: ${line}`,
+    ).toBe(true);
   }
+  expect(text).not.toMatch(/[\\/]\.claude|[\\/]\.codex|\.jsonl|credentials/);
+}
 
+describe("doctor", () => {
   test("on an empty config home", () => {
     const env = home();
     const out = run(env, "doctor");
@@ -483,5 +515,247 @@ describe("doctor", () => {
   test("bad arguments exit 2", () => {
     expect(run(home(), "doctor", "--bogus").code).toBe(2);
     expect(run(home(), "doctor", "--help").stdout).toContain("tokenhud doctor [--json]");
+  });
+});
+
+/** A transcript in the fake home's default Claude root (`~/.claude`); returns its path. */
+function transcript(env: Env, lines: string): string {
+  const dir = join(env.home, ".claude", "projects", "proj");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "s.jsonl");
+  appendFileSync(file, lines);
+  return file;
+}
+
+describe("json --refresh and the configured time zone", () => {
+  test("--refresh reads what the transcripts added; without it nothing is ingested", () => {
+    const env = home();
+    transcript(env, claudeLine("1", "1", 1000, 100));
+    expect(json<JsonUsageDocument>(env, "usage").totals.records).toBe(0);
+    expect(existsSync(env.store)).toBe(false);
+    const after = json<JsonUsageDocument>(env, "usage", "--refresh");
+    expect(after.totals.records).toBe(1);
+    expect(after.warnings).toEqual([]);
+    transcript(env, claudeLine("2", "2", 500));
+    expect(json<JsonUsageDocument>(env, "usage", "--refresh").totals.tokens.input).toBe(1500);
+    // A refresh imports nothing and creates no config; the TUI's first run does that.
+    expect(existsSync(env.config)).toBe(false);
+    const store = openStore(env.store);
+    try {
+      expect(store.meta.imports).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("the config's time_zone applies to calendar periods; --tz overrides it", () => {
+    const env = home();
+    mkdirSync(join(env.xdg, "tokenhud"));
+    writeFileSync(env.config, JSON.stringify({ time_zone: "Asia/Kolkata" }));
+    expect(json<JsonUsageDocument>(env, "usage", "--period", "today").period.tz).toBe(
+      "Asia/Kolkata",
+    );
+    expect(
+      json<JsonUsageDocument>(env, "usage", "--period", "today", "--tz", "UTC").period.tz,
+    ).toBe("UTC");
+    writeFileSync(env.config, JSON.stringify({ time_zone: "system" }));
+    expect(json<JsonUsageDocument>(env, "usage", "--period", "today").period.tz).toBe(
+      "America/Toronto", // the system's: TZ
+    );
+  });
+
+  test("--refresh is skipped while another process holds T10's ingest lock", () => {
+    const env = home();
+    transcript(env, claudeLine("1", "1", 1000, 100));
+    const lock = WriterLock.tryAcquire({
+      owner: "tui",
+      path: lockPath({ XDG_CONFIG_HOME: env.xdg }, env.home),
+    });
+    expect(lock).not.toBeNull();
+    try {
+      const doc = json<JsonUsageDocument>(env, "usage", "--refresh");
+      expect(doc.totals.records).toBe(0);
+      expect(doc.warnings).toEqual([
+        "not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
+      ]);
+    } finally {
+      lock?.release();
+    }
+    expect(json<JsonUsageDocument>(env, "usage", "--refresh").totals.records).toBe(1);
+  });
+
+  test("--refresh runs under the ingest lock, and is skipped while another process holds it", async () => {
+    const env = home();
+    transcript(env, claudeLine("1", "1", 1000, 100));
+    const processEnvironment = { XDG_CONFIG_HOME: env.xdg, TOKENHUD_WSL_USERS: "" };
+    const capture = async (acquireWriterLock: NonNullable<JsonOptions["acquireWriterLock"]>) => {
+      const written: string[] = [];
+      const spy = spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+        written.push(String(chunk));
+        return true;
+      });
+      let code: number;
+      try {
+        code = await runJson(["usage", "--refresh"], processEnvironment, {
+          home: env.home,
+          acquireWriterLock,
+        });
+      } finally {
+        spy.mockRestore();
+      }
+      expect(code).toBe(0);
+      return JSON.parse(written.join("")) as JsonUsageDocument;
+    };
+    const held = await capture(() => null);
+    expect(held.totals.records).toBe(0);
+    expect(held.warnings).toEqual([
+      "not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
+    ]);
+    let released = 0;
+    const ours = await capture(() => ({ heartbeat: () => true, release: () => void released++ }));
+    expect(ours.totals.records).toBe(1);
+    expect(ours.warnings).toEqual([]);
+    expect(released).toBe(1);
+  });
+});
+
+describe("import-cc-usage while recovery is pending", () => {
+  test("does not import: queued files may hold tombstones the import would undo", () => {
+    const env = home();
+    const store = openStore(env.store);
+    store.updateRecovery({ addPending: [{ file: "tokenhud.db.bak", why: "missing" }] });
+    store.close();
+    const out = run(env, "import-cc-usage");
+    expect(out.code).toBe(1);
+    expect(out.stdout).toContain("usage       not imported: the store is still recovering");
+    const after = openStore(env.store);
+    try {
+      expect(after.meta.imports).toEqual([]);
+      expect(after.rowCounts().size).toBe(0);
+    } finally {
+      after.close();
+    }
+  });
+});
+
+describe("import-cc-usage: config", () => {
+  test("creates tokenhud's config from cc-usage's, only while tokenhud has none", () => {
+    const env = home();
+    copyFileSync(join(FIXTURES, "config", "cc-usage-config.json"), join(env.cc, "config.json"));
+    const before = hashes(env.cc);
+    const first = run(env, "import-cc-usage");
+    expect(first.code).toBe(0);
+    expect(first.stdout).toContain("config      created");
+    expect(first.stdout).toContain("4 root(s), 1 disabled, theme light");
+    const config = JSON.parse(readFileSync(env.config, "utf8"));
+    expect(config).toMatchObject({
+      theme: "light",
+      default_window: "this_week",
+      show_cost: false,
+      account_scope: "all",
+      time_zone: "system",
+      disabled_roots: ["/home/example/.claude-old"],
+    });
+    expect(config.claude_roots.map((r: { label?: string }) => r.label)).toEqual([
+      "work",
+      "win",
+      undefined,
+    ]);
+    // A second run leaves tokenhud's own config, edited since, as it is.
+    writeFileSync(env.config, JSON.stringify({ ...config, theme: "dark" }));
+    const second = run(env, "import-cc-usage");
+    expect(second.stdout).toContain("config      tokenhud already has one");
+    expect(JSON.parse(readFileSync(env.config, "utf8")).theme).toBe("dark");
+    expect(hashes(env.cc)).toEqual(before);
+  });
+
+  test("without a cc-usage config there is nothing to import and nothing is written", () => {
+    const env = home();
+    const out = run(env, "import-cc-usage");
+    expect(out.stdout).toContain("config      no cc-usage config; nothing to import");
+    expect(existsSync(env.config)).toBe(false);
+  });
+});
+
+describe("doctor: backups, recovery and sources", () => {
+  test("shows the backup, the recovery queue and each root", () => {
+    const env = home();
+    transcript(env, claudeLine("1", "1", 1000, 100));
+    mkdirSync(join(env.xdg, "tokenhud"));
+    // The default Claude root is history-only; the Codex root has no transcripts.
+    writeFileSync(
+      env.config,
+      JSON.stringify({ history_only_roots: [rootIdentity(join(env.home, ".claude"), env.home)] }),
+    );
+    json(env, "usage", "--refresh"); // one ingest pass: the store, the cache and a backup
+    const report = JSON.parse(run(env, "doctor", "--json").stdout);
+    expect(report.store.backup.path).toBe(`${env.store}.bak`);
+    expect(report.store.backup.at).toBeString();
+    expect(report.store.backup.age_hours).toBeLessThan(1);
+    expect(report.store.backup.previous_at).toBeNull();
+    expect(report.store.recovery).toEqual({ pending: [], merged_lineages: 0, last_report: null });
+    const roots = report.sources.roots as Array<Record<string, unknown>>;
+    expect(roots.map((r) => [r.label, r.provider, r.found_by, r.mode])).toEqual([
+      ["personal", "claude", "auto", "watched"],
+      ["codex", "codex", "auto", "watched"],
+    ]);
+    expect(roots[0]).toMatchObject({ enabled: true, history_only: true, transcripts: 1 });
+    expect(roots[0]?.last_ingest).toBeString();
+    expect(roots[1]).toMatchObject({ transcripts: 0 });
+    expect(report.sources.cache).toEqual({ path: env.cache, exists: true });
+    const out = run(env, "doctor").stdout;
+    for (const text of [
+      "recovery      none pending",
+      "Sources (transcript roots, one account each)",
+      "personal      claude · history only · watched · 1 transcripts · last ingest",
+      "codex         codex · watched · 0 transcripts · last ingest",
+    ]) {
+      expect(out).toContain(text);
+    }
+    expect(out).toMatch(/backup {8}\d{4}-\d\d-\d\d \d\d:\d\d, 0(\.\d)? h ago/);
+    onlyConfigPaths(env, out);
+  });
+
+  // test_ledger_info_reports_an_unfinished_recovery
+  test("reports an unfinished recovery", () => {
+    const env = home();
+    const store = openStore(env.store);
+    store.updateRecovery({
+      addPending: [{ file: "tokenhud.db.corrupt-20260101-000000", why: "damaged" }],
+    });
+    store.close();
+    const out = run(env, "doctor");
+    expect(out.code).toBe(0);
+    const flat = out.stdout.split(/\s+/).join(" ");
+    expect(flat).toContain(
+      "recovering tokenhud.db.corrupt-20260101-000000 (damaged): not merged yet",
+    );
+    expect(flat).toContain("a store recovery is not finished");
+    const report = JSON.parse(run(env, "doctor", "--json").stdout);
+    expect(report.store.recovery.pending).toEqual([
+      { file: "tokenhud.db.corrupt-20260101-000000", why: "damaged" },
+    ]);
+  });
+
+  test("after a recovery, shows its report", () => {
+    const env = home();
+    transcript(env, claudeLine("1", "1", 1000, 100));
+    mkdirSync(join(env.xdg, "tokenhud"));
+    writeFileSync(env.store, "this is not a database, just text long enough to have a header");
+    const damaged = run(env, "doctor");
+    expect(damaged.code).toBe(1);
+    expect(damaged.stdout).toContain("moves it aside (never deletes it) and recovers it");
+    expect(JSON.parse(run(env, "doctor", "--json").stdout).store.damaged).toBe(true);
+
+    json(env, "usage", "--refresh"); // the pass moves it aside, recovers, re-reads
+    const report = JSON.parse(run(env, "doctor", "--json").stdout);
+    expect(report.store.rows).toBe(1);
+    expect(report.store.recovery.last_report.summary).toContain(
+      "the usage store was damaged and moved to",
+    );
+    expect(report.store.recovery.last_report.still_pending).toEqual([]);
+    const out = run(env, "doctor").stdout;
+    expect(out).toContain("last recovery");
+    onlyConfigPaths(env, out);
   });
 });

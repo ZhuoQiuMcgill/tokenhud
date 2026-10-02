@@ -1,7 +1,9 @@
-// `tokenhud doctor [--json]`: what the store holds, how much of it is priced, and what is
-// still only in cc-usage. Read-only throughout: the store through a read-only connection,
-// cc-usage's ledger through a private snapshot copy. It prints config paths (the store,
-// the overrides file, cc-usage's directory), never a transcript, prompt or credential path.
+// `tokenhud doctor [--json]`: what the store holds, whether it is backed up and recovered,
+// how much of it is priced, what is still only in cc-usage, and which transcript roots
+// tokenhud follows. Read-only throughout: the store through a read-only connection, the
+// cursor cache likewise, cc-usage's ledger through a private snapshot copy. It prints
+// config paths (the store, its backup, the overrides file, the cache, cc-usage's
+// directory), never a transcript, prompt or credential path; roots go by their labels.
 
 import type { Database } from "bun:sqlite";
 import {
@@ -16,7 +18,9 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { configPath, loadConfig } from "../config.ts";
+import { type Config, configPath, loadConfig } from "../config.ts";
+import { cachePath, readCacheSummary } from "../ingest/cursors.ts";
+import { transcriptDirs } from "../ingest/engine.ts";
 import { detectInstall } from "../mcp/install.ts";
 import { ccUsageDir, pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable, readOverrides } from "../pricing/overrides.ts";
@@ -25,8 +29,15 @@ import { bundledPricing } from "../pricing/table.ts";
 import { UsageQueries } from "../query/engine.ts";
 import { JSON_SCHEMA, type Totals } from "../query/types.ts";
 import { Zone } from "../query/tz.ts";
-import { discoverClaudeRoots } from "../sources/roots.ts";
-import { StoreError } from "../store/errors.ts";
+import {
+  discoverClaudeRoots,
+  discoverCodexRoots,
+  isWsl,
+  onWindowsDrive,
+  type RootSource,
+} from "../sources/roots.ts";
+import { backupPaths } from "../store/durability.ts";
+import { StoreCorrupt, StoreError } from "../store/errors.ts";
 import { ImportSourceError, readCcUsageKeys } from "../store/import-cc-usage.ts";
 import { rollupCountsAgree, rollupSchemaIntact } from "../store/schema.ts";
 import { emptyStoreDatabase, type ImportRecord, openStoreReader } from "../store/store.ts";
@@ -37,9 +48,10 @@ type Env = Readonly<Record<string, string | undefined>>;
 export const DOCTOR_HELP = `Usage:
   tokenhud doctor [--json]
 
-Reports on the store (rows, accounts, imports, rollup health), pricing (overrides,
-unpriced models, priced coverage), cc-usage (rows not imported yet) and, per Claude
-account, whether the tokenhud plugin or MCP server is installed. Read-only.`;
+Reports on the store (rows, accounts, imports, rollup health, backup age, recovery),
+pricing (overrides, unpriced models, priced coverage), cc-usage (rows not imported yet),
+the transcript roots tokenhud follows and, per Claude account, whether the tokenhud plugin
+or MCP server is installed. Read-only.`;
 
 export interface DoctorAccount {
   id: number;
@@ -58,6 +70,8 @@ export interface DoctorReport {
     exists: boolean;
     /** Why the store could not be read, if it couldn't. */
     error: string | null;
+    /** The store is damaged: the next ingest moves it aside and recovers it. */
+    damaged: boolean;
     /** The database plus its WAL. */
     size_bytes: number | null;
     schema_version: number | null;
@@ -76,6 +90,19 @@ export interface DoctorReport {
     /** The quick check: triggers as defined and row counts agree. Null without a store. */
     rollups: { triggers_intact: boolean; counts_agree: boolean } | null;
     long_context_index: boolean;
+    /** The daily backup (`<store>.bak`) and the one before it; times in the report's zone. */
+    backup: {
+      path: string;
+      at: string | null;
+      age_hours: number | null;
+      previous_at: string | null;
+    };
+    /** Recovery (src/store/durability.ts): files still to merge, lineages merged, the last report. */
+    recovery: {
+      pending: Array<{ file: string; why: string }>;
+      merged_lineages: number;
+      last_report: { at: string; summary: string; still_pending: string[] } | null;
+    };
   };
   pricing: {
     /** The bundled table's sources and the date each was last checked. */
@@ -104,6 +131,24 @@ export interface DoctorReport {
    * off, or null) and a user-scope MCP server running `tokenhud mcp`, read from that config
    * dir's settings files.
    */
+  /**
+   * Every discovered transcript root (each is one account) and how tokenhud follows it:
+   * watched (fs.watch), polled (a Windows drive seen from WSL) or off (disabled); how many
+   * of its transcripts the cursor cache tracks, and when an ingest pass last covered it.
+   */
+  sources: {
+    cache: { path: string; exists: boolean };
+    roots: Array<{
+      label: string;
+      provider: string;
+      found_by: RootSource;
+      enabled: boolean;
+      history_only: boolean;
+      mode: "watched" | "polled" | "off";
+      transcripts: number | null;
+      last_ingest: string | null;
+    }>;
+  };
   claude_code: {
     /** `tokenhud` resolves on PATH: the plugin and `claude mcp add` start it from there. */
     tokenhud_on_path: boolean;
@@ -144,7 +189,11 @@ function sweepScratch(dir: string, now: number): void {
 function storeFacts(
   db: Database,
   path: string,
-): Omit<DoctorReport["store"], "accounts" | "first_seen" | "last_seen" | "error"> {
+  zone: Zone,
+): Omit<
+  DoctorReport["store"],
+  "accounts" | "first_seen" | "last_seen" | "error" | "damaged" | "backup"
+> {
   const count = (sql: string) => Number(db.query<{ n: bigint }, []>(sql).get()?.n ?? 0n);
   const meta = new Map(
     db
@@ -180,6 +229,80 @@ function storeFacts(
       count(
         "SELECT count(*) AS n FROM sqlite_master WHERE type = 'index' AND name = 'usage_long'",
       ) > 0,
+    recovery: {
+      pending: parseJsonList(meta.get("pending")).flatMap((e) =>
+        isRecord(e) && typeof e.file === "string"
+          ? [{ file: e.file, why: typeof e.why === "string" ? e.why : "held" }]
+          : [],
+      ),
+      merged_lineages: parseJsonList(meta.get("merged")).length,
+      last_report: lastRecovery(parseJsonValue(meta.get("recovery_report")), zone),
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The parts of a stored `RecoveryReport` the doctor shows, or null. */
+function lastRecovery(raw: unknown, zone: Zone): DoctorReport["store"]["recovery"]["last_report"] {
+  if (!isRecord(raw) || typeof raw.at !== "number" || typeof raw.summary !== "string") return null;
+  const pending = Array.isArray(raw.stillPending) ? raw.stillPending.map(String) : [];
+  return { at: zone.iso(raw.at), summary: raw.summary, still_pending: pending };
+}
+
+/** The backup slots beside the store, by their modification times. */
+function backupFacts(path: string, now: number, zone: Zone): DoctorReport["store"]["backup"] {
+  const { bak, prev } = backupPaths(path);
+  const mtime = (file: string) => {
+    try {
+      return statSync(file).mtimeMs;
+    } catch {
+      return null;
+    }
+  };
+  const at = mtime(bak);
+  const previous = mtime(prev);
+  return {
+    path: bak,
+    at: at === null ? null : zone.iso(at),
+    age_hours: at === null ? null : Math.round((now - at) / 360_000) / 10,
+    previous_at: previous === null ? null : zone.iso(previous),
+  };
+}
+
+/** Every discovered root, with what the cursor cache knows of it. Reads the cache read-only. */
+function sourcesSection(
+  env: Env,
+  home: string,
+  config: Config,
+  zone: Zone,
+): DoctorReport["sources"] {
+  const discover = { home, env };
+  const claude = discoverClaudeRoots(config, discover);
+  const roots = [...claude, ...discoverCodexRoots(config, discover, claude)];
+  const cache = cachePath(env, home);
+  const summary = readCacheSummary(
+    cache,
+    roots.map((r) => ({ identity: r.identity, dirs: transcriptDirs(r) })),
+  );
+  const wsl = isWsl();
+  return {
+    cache: { path: cache, exists: existsSync(cache) },
+    roots: roots.map((r) => {
+      const last = summary?.lastPass.get(r.identity);
+      return {
+        label: r.label,
+        provider: r.provider,
+        found_by: r.source,
+        enabled: r.enabled,
+        history_only: r.historyOnly,
+        mode: !r.enabled ? "off" : wsl && onWindowsDrive(r) ? "polled" : "watched",
+        transcripts: summary?.cursors.get(r.identity) ?? null,
+        last_ingest: last === undefined ? null : zone.iso(last),
+      };
+    }),
   };
 }
 
@@ -283,7 +406,7 @@ function gather(q: UsageQueries, db: Database | null, path: string, zone: Zone):
   const empty = totals.range.to <= totals.range.from;
   return {
     totals,
-    facts: storeFacts(db, path),
+    facts: storeFacts(db, path, zone),
     accounts,
     extent: empty
       ? { first: null, last: null }
@@ -292,8 +415,8 @@ function gather(q: UsageQueries, db: Database | null, path: string, zone: Zone):
 }
 
 /** Each enabled Claude account's tokenhud install. Reads settings files only. */
-function claudeCodeSection(env: Env, home: string): DoctorReport["claude_code"] {
-  const roots = discoverClaudeRoots(loadConfig(configPath(env, home)), { home, env });
+function claudeCodeSection(env: Env, home: string, config: Config): DoctorReport["claude_code"] {
+  const roots = discoverClaudeRoots(config, { home, env });
   const path = env.PATH ?? env.Path;
   const found = Bun.which("tokenhud", path === undefined ? {} : { PATH: path });
   return {
@@ -311,23 +434,26 @@ export function doctorReport(
   now: number = Date.now(),
   home: string = homedir(),
 ): DoctorReport {
-  const path = storePath(env);
-  const zone = Zone.system();
-  const overridesPath = pricingOverridesPath(env);
+  const path = storePath(env, home);
+  const config = loadConfig(configPath(env, home));
+  const zone = Zone.configured(config.time_zone);
+  const overridesPath = pricingOverridesPath(env, home);
   const { table, warnings } = loadPriceTable(overridesPath);
   let db: Database | null = null;
   let error: string | null = null;
+  let damaged = false;
   try {
     db = openStoreReader(path);
   } catch (e) {
     if (!(e instanceof StoreError)) throw e;
     error = e.message;
+    damaged = e instanceof StoreCorrupt;
   }
   try {
     const queryDb = db ?? emptyStoreDatabase();
     let gathered: Gathered;
     try {
-      const q = new UsageQueries(queryDb, table, { now: () => now });
+      const q = new UsageQueries(queryDb, table, { tz: zone.name, now: () => now });
       // One snapshot, so the counts agree with each other while the TUI writes.
       gathered = q.snapshot(() => gather(q, db, path, zone));
     } finally {
@@ -348,6 +474,7 @@ export function doctorReport(
         path,
         exists: facts !== null || error !== null,
         error,
+        damaged,
         size_bytes: facts?.size_bytes ?? null,
         schema_version: facts?.schema_version ?? null,
         key_scheme: facts?.key_scheme ?? null,
@@ -362,6 +489,8 @@ export function doctorReport(
         migration_report: facts?.migration_report ?? null,
         rollups: facts?.rollups ?? null,
         long_context_index: facts?.long_context_index ?? false,
+        backup: backupFacts(path, now, zone),
+        recovery: facts?.recovery ?? { pending: [], merged_lineages: 0, last_report: null },
       },
       pricing: {
         bundled: { ...bundledPricing().sources },
@@ -381,7 +510,8 @@ export function doctorReport(
         unpriced_tier: pick("unpriced-tier"),
       },
       cc_usage: ccUsageSection(env, db, imports),
-      claude_code: claudeCodeSection(env, home),
+      sources: sourcesSection(env, home, config, zone),
+      claude_code: claudeCodeSection(env, home, config),
     };
   } finally {
     db?.close();
@@ -419,6 +549,11 @@ export function renderDoctor(r: DoctorReport): string {
   line("path", shortPath(s.path));
   if (s.error !== null) {
     line("status", `unreadable: ${s.error}`);
+    if (s.damaged) {
+      more("the next tokenhud start moves it aside (never deletes it) and recovers it");
+      more("from the backups and the transcripts");
+    }
+    renderBackup(s.backup, line, more);
   } else if (!s.exists) {
     line("status", "no store yet: run tokenhud, or tokenhud import-cc-usage");
   } else {
@@ -464,6 +599,21 @@ export function renderDoctor(r: DoctorReport): string {
       "long context",
       s.long_context_index ? "indexed" : "not indexed yet (the next tokenhud start adds it)",
     );
+    renderBackup(s.backup, line, more);
+    const rec = s.recovery;
+    if (rec.pending.length === 0) line("recovery", "none pending");
+    rec.pending.forEach((p, i) => {
+      (i === 0 ? (v: string) => line("recovery", v) : more)(
+        `recovering ${p.file} (${p.why}): not merged yet`,
+      );
+    });
+    if (rec.pending.length > 0) {
+      more("a store recovery is not finished: tokenhud retries it on every full ingest");
+      more("pass, and takes no backup until it is done");
+    }
+    if (rec.last_report !== null) {
+      line("last recovery", `${when(rec.last_report.at)}: ${rec.last_report.summary}`);
+    }
   }
 
   const p = r.pricing;
@@ -517,6 +667,24 @@ export function renderDoctor(r: DoctorReport): string {
     );
   }
 
+  const src = r.sources;
+  out.push("", "Sources (transcript roots, one account each)");
+  if (src.roots.length === 0) line("roots", "none found");
+  for (const root of src.roots) {
+    const parts = [root.provider];
+    if (root.history_only) parts.push("history only");
+    if (root.mode === "off") parts.push("disabled");
+    else {
+      parts.push(root.mode === "polled" ? "polled (Windows side)" : "watched");
+      parts.push(root.transcripts === null ? "not read yet" : `${n(root.transcripts)} transcripts`);
+      parts.push(
+        root.last_ingest === null ? "never ingested" : `last ingest ${when(root.last_ingest)}`,
+      );
+    }
+    line(root.label, parts.join(" · "));
+  }
+  line("cache", `${shortPath(src.cache.path)}${src.cache.exists ? "" : " (none yet)"}`);
+
   out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");
   const cc = r.claude_code;
   if (!cc.tokenhud_on_path) {
@@ -541,6 +709,21 @@ export function renderDoctor(r: DoctorReport): string {
     more('"Use with Claude Code"');
   }
   return out.join("\n");
+}
+
+function renderBackup(
+  b: DoctorReport["store"]["backup"],
+  line: (label: string, value: string) => void,
+  more: (value: string) => void,
+): void {
+  if (b.at === null) {
+    line("backup", "none yet (tokenhud takes one daily while it runs)");
+    return;
+  }
+  const age =
+    (b.age_hours ?? 0) >= 48 ? `${Math.round((b.age_hours ?? 0) / 24)} days` : `${b.age_hours} h`;
+  line("backup", `${when(b.at)}, ${age} ago (${shortPath(b.path)})`);
+  if (b.previous_at !== null) more(`previous ${when(b.previous_at)}`);
 }
 
 export function runDoctor(args: readonly string[], env: Env = process.env): number {

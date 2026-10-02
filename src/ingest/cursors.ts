@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { closeSync, mkdirSync, openSync, readSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { configDir } from "../paths.ts";
 import type { CodexLimitSnapshot, CodexLimitWindow } from "../sources/codex.ts";
 
@@ -14,12 +14,22 @@ import type { CodexLimitSnapshot, CodexLimitWindow } from "../sources/codex.ts";
  *
  * It also keeps the newest Codex rate-limit snapshot found in each Codex account's
  * rollouts (`codex_limit_snapshots`, numbers only), which a re-read recreates.
+ *
+ * Cursors are only valid for the store they were written against: they say "the store
+ * already holds everything up to here". So the cache records that store's lineage
+ * (`store_id`), and `bind` drops every cursor when the store is a different one (it was
+ * recovered from a backup, or replaced by a fresh one), which makes the next pass read
+ * every transcript again and backfill it. It also notes when each root was last ingested
+ * (`root_pass`), for `doctor`.
  */
 
 /** "TkHC": marks a tokenhud cursor cache, so a mistyped --cache path is never deleted. */
 const APPLICATION_ID = 0x546b4843;
-/** v2 added `codex_limit_snapshots`; a v1 cache keeps its cursors. */
-const VERSION = 2;
+/**
+ * v2 added `codex_limit_snapshots`; v3 added `cache_meta` and `root_pass`. An older cache
+ * keeps what it has.
+ */
+const VERSION = 3;
 const SQLITE_MAGIC = "SQLite format 3\0";
 const HEADER_BYTES = 100;
 const BUSY_TIMEOUT_MS = 2000;
@@ -73,6 +83,12 @@ const LIMITS_SCHEMA = `CREATE TABLE codex_limit_snapshots (
   captured_at REAL NOT NULL,
   rate_limits TEXT NOT NULL
 )`;
+
+const CACHE_META_SCHEMA =
+  "CREATE TABLE cache_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID";
+/** When a pass last covered each root: account identity -> epoch ms. */
+const ROOT_PASS_SCHEMA =
+  "CREATE TABLE root_pass (identity TEXT PRIMARY KEY, at REAL NOT NULL) WITHOUT ROWID";
 
 type Bucket = { used_percentage: number; resets_at: number; window_minutes?: number };
 
@@ -145,13 +161,24 @@ function prepare(db: Database): void {
     db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version ?? 0,
   );
   if (version !== VERSION) {
+    // A version this build doesn't know (none, or a newer tokenhud's) is rebuilt whole.
+    const known = version >= 1 && version < VERSION;
     db.exec("BEGIN IMMEDIATE");
-    if (version !== 1) {
+    if (!known) {
       db.exec("DROP TABLE IF EXISTS cursor");
       db.exec(CURSOR_SCHEMA);
     }
-    db.exec("DROP TABLE IF EXISTS codex_limit_snapshots");
-    db.exec(LIMITS_SCHEMA);
+    if (!known || version < 2) {
+      db.exec("DROP TABLE IF EXISTS codex_limit_snapshots");
+      db.exec(LIMITS_SCHEMA);
+    }
+    for (const [table, sql] of [
+      ["cache_meta", CACHE_META_SCHEMA],
+      ["root_pass", ROOT_PASS_SCHEMA],
+    ]) {
+      db.exec(`DROP TABLE IF EXISTS ${table}`);
+      db.exec(sql as string);
+    }
     db.exec(`PRAGMA application_id = ${APPLICATION_ID}`);
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec("COMMIT");
@@ -184,6 +211,8 @@ export class CursorCache {
           prepare(db);
           db.query("SELECT count(*) FROM cursor").get();
           db.query("SELECT count(*) FROM codex_limit_snapshots").get();
+          db.query("SELECT count(*) FROM cache_meta").get();
+          db.query("SELECT count(*) FROM root_pass").get();
           const note: CacheOpenNote =
             attempt === 1 ? "rebuilt" : owner === "new" ? "created" : "opened";
           return new CursorCache(db, note);
@@ -247,6 +276,50 @@ export class CursorCache {
     })();
   }
 
+  /**
+   * Ties the cursors to the store with lineage `storeId`. When they were written against
+   * another store (or none is recorded), every cursor is dropped, so the next pass reads
+   * every transcript from the start into this store. Returns whether cursors were dropped.
+   */
+  bind(storeId: string | null): boolean {
+    const db = this.#db;
+    try {
+      const bound =
+        db.query<{ v: string }, []>("SELECT v FROM cache_meta WHERE k = 'store_id'").get()?.v ??
+        null;
+      if (bound !== null && bound === storeId) return false;
+      let dropped = 0;
+      db.transaction(() => {
+        dropped = db.query("DELETE FROM cursor").run().changes;
+        if (storeId === null) db.query("DELETE FROM cache_meta WHERE k = 'store_id'").run();
+        else {
+          db.query(
+            "INSERT INTO cache_meta (k, v) VALUES ('store_id', ?1) ON CONFLICT (k) DO UPDATE SET v = excluded.v",
+          ).run(storeId);
+        }
+      })();
+      return dropped > 0;
+    } catch {
+      // An unusable cache reads as no cursors (`all`): every pass reads everything.
+      return false;
+    }
+  }
+
+  /** Records that a pass covered the roots `identities` at `at` (epoch ms). Best effort. */
+  notePass(identities: Iterable<string>, at: number): void {
+    const db = this.#db;
+    try {
+      const put = db.query(
+        "INSERT INTO root_pass (identity, at) VALUES (?1, ?2) ON CONFLICT (identity) DO UPDATE SET at = excluded.at",
+      );
+      db.transaction(() => {
+        for (const identity of identities) put.run(identity, at);
+      })();
+    } catch {
+      // only doctor reads it
+    }
+  }
+
   /** The stored Codex rate-limit snapshot of each account identity; none when unreadable. */
   codexLimitSnapshots(): Map<string, CodexLimitSnapshot> {
     const out = new Map<string, CodexLimitSnapshot>();
@@ -296,5 +369,56 @@ export class CursorCache {
 
   close(): void {
     this.#db.close();
+  }
+}
+
+/** What `doctor` shows of a cursor cache. */
+export interface CacheSummary {
+  /** Cursors (tracked transcripts) per root, by account identity. */
+  cursors: Map<string, number>;
+  /** When a pass last covered each root, epoch ms, by account identity. */
+  lastPass: Map<string, number>;
+}
+
+/**
+ * Reads the cache at `path` without writing it, for `doctor`: per root (identity, and
+ * the directories its transcripts live in), how many transcripts have a cursor, and when
+ * a pass last covered it. Null when there is no cache or it cannot be read.
+ */
+export function readCacheSummary(
+  path: string,
+  roots: readonly { identity: string; dirs: readonly string[] }[],
+): CacheSummary | null {
+  if (ownedOrNew(path) !== "ours") return null;
+  let db: Database | undefined;
+  try {
+    db = new Database(path, { readonly: true, strict: true });
+    const count = db.query<{ n: number }, [string]>(
+      "SELECT count(*) AS n FROM cursor WHERE substr(path, 1, length(?1)) = ?1",
+    );
+    const cursors = new Map<string, number>();
+    for (const root of roots) {
+      let n = 0;
+      for (const dir of root.dirs) n += count.get(`${dir}${sep}`)?.n ?? 0;
+      cursors.set(root.identity, n);
+    }
+    const lastPass = new Map<string, number>();
+    const hasPasses =
+      db
+        .query<{ n: number }, []>(
+          "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'root_pass'",
+        )
+        .get()?.n === 1;
+    if (hasPasses) {
+      for (const r of db
+        .query<{ identity: string; at: number }, []>("SELECT identity, at FROM root_pass")
+        .all())
+        lastPass.set(r.identity, r.at);
+    }
+    return { cursors, lastPass };
+  } catch {
+    return null;
+  } finally {
+    db?.close();
   }
 }

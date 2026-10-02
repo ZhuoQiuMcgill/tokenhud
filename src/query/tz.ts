@@ -56,6 +56,19 @@ export class Zone {
     return Zone.of(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }
 
+  /**
+   * The zone a config's `time_zone` names: "system" (the default) or an IANA name. A name
+   * Intl does not know (config validation keeps those out) falls back to the system's.
+   */
+  static configured(timeZone: string): Zone {
+    if (timeZone === "system") return Zone.system();
+    try {
+      return Zone.of(timeZone);
+    } catch {
+      return Zone.system();
+    }
+  }
+
   /** Milliseconds to add to UTC to get the local wall-clock time at instant `t`. */
   offset(t: number): number {
     const day = Math.floor(t / DAY_MS);

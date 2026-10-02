@@ -123,7 +123,7 @@ export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
   const scratch = store.newScratchDir();
   let source: Database | undefined;
   try {
-    const copy = snapshot(ledgerPath, scratch);
+    const copy = snapshotLedger(ledgerPath, scratch);
     if (copy === null) {
       return {
         status: "deferred",
@@ -178,7 +178,7 @@ export function importCcUsage(store: Store, ledgerPath: string): ImportOutcome {
 export function readCcUsageKeys(ledgerPath: string, scratch: string): bigint[] | null {
   let source: Database | undefined;
   try {
-    const copy = snapshot(ledgerPath, scratch);
+    const copy = snapshotLedger(ledgerPath, scratch);
     if (copy === null) return null;
     source = openChecked(copy, ledgerPath);
     const db = source;
@@ -254,9 +254,10 @@ function sameBytes(a: string, b: string): boolean {
 /**
  * A consistent copy of the ledger (and WAL) in `scratch`, or null if cc-usage kept
  * changing it through every attempt. See step 2 of the module comment for why two
- * byte-identical consecutive copies are a consistent snapshot.
+ * byte-identical consecutive copies are a consistent snapshot. Exported for the parity
+ * harness (scripts/parity.ts), which reads the very copy it imports.
  */
-function snapshot(ledgerPath: string, scratch: string): string | null {
+export function snapshotLedger(ledgerPath: string, scratch: string): string | null {
   let isFile: boolean;
   try {
     isFile = statSync(ledgerPath).isFile();

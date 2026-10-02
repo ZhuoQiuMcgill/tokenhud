@@ -7,15 +7,19 @@
 //   An edit to a model that tokenhud prices with dated periods or a fast card is skipped
 //   with a warning: an override replaces the whole entry, so cc-usage's one flat card would
 //   reprice all of that model's history and drop its fast price.
-// - Config (labels, roots, theme) needs tokenhud's config file, which a later task adds.
+// - Config: cc-usage's config.json (root paths with their labels, disabled roots, theme,
+//   show-cost, refresh, window) becomes tokenhud's config.json, only while tokenhud has none,
+//   exactly as the first run of the TUI does it (`ensureConfig`). An existing tokenhud config
+//   is never touched.
 //
 // cc-usage's files are only read: the ledger through a private snapshot copy, pricing.json
-// with one read.
+// and config.json with one read each.
 
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
+import { configPath, ensureConfig } from "../config.ts";
 import { ccUsageDir, pricingOverridesPath, storePath } from "../paths.ts";
 import ccUsageBundled from "../pricing/cc-usage-v2.6.1-pricing.json";
 import { normalizeModel, OFFICIAL_ALIASES } from "../pricing/normalize.ts";
@@ -31,9 +35,10 @@ type Env = Readonly<Record<string, string | undefined>>;
 export const IMPORT_HELP = `Usage:
   tokenhud import-cc-usage [--from DIR]
 
-Imports cc-usage's usage history and price edits into tokenhud. Safe to run again: rows
-already imported are skipped, and existing tokenhud price overrides are kept. An edit to a
-model tokenhud prices with dated or fast prices is skipped, with a warning.
+Imports cc-usage's usage history, price edits and config into tokenhud. Safe to run again:
+rows already imported are skipped, existing tokenhud price overrides are kept, and the config
+is imported only while tokenhud has none. An edit to a model tokenhud prices with dated or
+fast prices is skipped, with a warning.
 
 Options:
   --from DIR   cc-usage's config directory (default: $XDG_CONFIG_HOME/cc-usage or
@@ -195,7 +200,17 @@ export function runImportCcUsage(args: readonly string[], env: Env = process.env
   let store: ReturnType<typeof openStore> | undefined;
   try {
     store = openStore(storePath(env));
-    const outcome = importCcUsage(store, join(dir, "ledger.sqlite3"));
+    // Files still queued for recovery may hold an earlier import and the tombstones of
+    // replayed Codex rows: importing first would bring those rows back.
+    const outcome =
+      store.pendingRecovery().length > 0
+        ? {
+            status: "deferred" as const,
+            warning:
+              "the store is still recovering its history; run tokenhud, which finishes " +
+              "the recovery, then import again",
+          }
+        : importCcUsage(store, join(dir, "ledger.sqlite3"));
     if (outcome.status === "deferred") {
       say(`  usage       not imported: ${outcome.warning}`);
       code = 1;
@@ -255,6 +270,30 @@ export function runImportCcUsage(args: readonly string[], env: Env = process.env
     say(`  pricing     not imported: ${(error as Error).message}`);
     code = 1;
   }
-  say("  config      not imported: tokenhud has no config file yet");
+  code = Math.max(code, importConfig(env, join(dir, "config.json"), say));
   return code;
+}
+
+/** cc-usage's config.json, imported only while tokenhud has no config. Returns an exit code. */
+function importConfig(env: Env, ccConfig: string, say: (line: string) => void): number {
+  const path = configPath(env);
+  if (existsSync(path)) {
+    say(`  config      tokenhud already has one (${shortPath(path)}); kept as it is`);
+    return 0;
+  }
+  const start = ensureConfig(path, ccConfig);
+  if (!start.imported) {
+    say("  config      no cc-usage config; nothing to import");
+    return 0;
+  }
+  const roots = start.config.claude_roots.length + start.config.codex_roots.length;
+  if (start.saveError !== null) {
+    say(`  config      not saved: ${start.saveError}`);
+    return 1;
+  }
+  say(
+    `  config      created ${shortPath(path)} from cc-usage's: ${roots} root(s), ` +
+      `${start.config.disabled_roots.length} disabled, theme ${start.config.theme}`,
+  );
+  return 0;
 }

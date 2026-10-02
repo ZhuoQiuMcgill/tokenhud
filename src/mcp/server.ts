@@ -298,7 +298,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     return cached.roots;
   };
 
-  const zone = options.zone ?? Zone.system();
+  const zone = options.zone ?? Zone.configured(config.time_zone);
   const { table, warnings } = loadPriceTable(pricingOverridesPath(env, home));
   // The warnings quote the file's path and contents: they stay in the log.
   for (const warning of warnings) log(`price overrides: ${warning}`);

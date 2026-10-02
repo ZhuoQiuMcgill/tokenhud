@@ -66,6 +66,8 @@ function start(workerOptions: WorkerOptions): void {
     return;
   }
   const live = engine;
+  // Recovered history first: it may carry the record of an earlier cc-usage import.
+  live.recover();
   const imported = live.importIfFirstRun();
   if (imported?.status === "imported") post({ type: "imported", rows: imported.inserted });
   if (limitsOptions) limits = limitsService(live, limitsOptions, options.cachePath);

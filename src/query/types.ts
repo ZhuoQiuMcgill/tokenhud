@@ -30,7 +30,7 @@ export interface PriceCoverage {
   readonly unpricedTokens: number;
   /** Tokens of a priced model at a tier (or long context) it has no price for. */
   readonly unpricedTierTokens: number;
-  /** The part of `pricedTokens` priced from an estimated card (none until T5 adds one). */
+  /** The part of `pricedTokens` priced from an estimated card (an alias such as codex-auto-review). */
   readonly estimatedTokens: number;
   /** pricedTokens / all tokens; 1 when there are none. */
   readonly pricedShare: number;
@@ -81,6 +81,8 @@ export interface DisplayRates {
     readonly inputMultiplier: number;
     readonly outputMultiplier: number;
   } | null;
+  /** The rates are another model's, standing in for this one (an estimated alias). */
+  readonly estimated: boolean;
 }
 
 /**
@@ -220,6 +222,7 @@ export interface JsonDisplayRates {
   cache_read: number;
   cache_write: number;
   long_context: { threshold: number; input_multiplier: number; output_multiplier: number } | null;
+  estimated: boolean;
 }
 
 export interface JsonModelGroup extends JsonUsage {

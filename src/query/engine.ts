@@ -98,7 +98,10 @@ const RECORDS = 4;
 const COST = 5;
 const UNPRICED = 6;
 const UNPRICED_TIER = 7;
-const MEASURES = 8;
+/** The part of COST, and of the priced tokens, priced from an estimated card (an alias). */
+const EST_COST = 8;
+const EST_TOKENS = 9;
+const MEASURES = 10;
 
 /** One UTC day of priced roll_hour buckets, in (hour, acct, model, tier) order. */
 interface Chunk {
@@ -724,12 +727,9 @@ export class UsageQueries {
     model: number,
     tier: number,
     at: number,
-  ): Priced {
-    return priceGroup(
-      sums,
-      candidates,
-      this.#prices.rates(this.#modelNameOf(model), tierName(tier), at),
-    );
+  ): Priced & { estimated: boolean } {
+    const card = this.#prices.rates(this.#modelNameOf(model), tierName(tier), at);
+    return { ...priceGroup(sums, candidates, card), estimated: isEstimated(card) };
   }
 
   // ── the hour cache ─────────────────────────────────────────────────────────────
@@ -826,7 +826,7 @@ export class UsageQueries {
       chunk.acct[n] = acct;
       chunk.model[n] = this.#modelKeyOfStoreId(model);
       chunk.tier[n] = Math.min(tier, 1);
-      store(chunk.values, n * MEASURES, sums, num(r[11]), priced);
+      store(chunk.values, n * MEASURES, sums, num(r[11]), priced, priced.estimated);
       n++;
     }
     return n === length ? chunk : { ...chunk, length: n };
@@ -941,10 +941,8 @@ export class UsageQueries {
         ephemeral1h: r[9] === null ? null : num(r[9]),
       };
       const tokens = row.input + row.output + row.cacheRead + row.cacheCreation;
-      const cost = computeCost(
-        row,
-        this.#prices.rates(this.#modelNameOf(model), tierName(tier), ts),
-      );
+      const card = this.#prices.rates(this.#modelNameOf(model), tierName(tier), ts);
+      const cost = computeCost(row, card);
       out.ts[i] = ts;
       out.acct[i] = num(r[1]);
       out.model[i] = this.#modelKeyOfStoreId(model);
@@ -959,6 +957,7 @@ export class UsageQueries {
           unpricedTokens: cost === "unpriced" ? tokens : 0,
           unpricedTierTokens: cost === "unpriced-tier" ? tokens : 0,
         },
+        isEstimated(card),
       );
     }
     return out;
@@ -1044,12 +1043,18 @@ function addInto(into: Float64Array, at: number, from: Float64Array, start: numb
     into[at + k] = (into[at + k] as number) + (from[start + k] as number);
 }
 
+/** Whether a card came through an estimated alias (`Rates.estimated`, e.g. codex-auto-review). */
+function isEstimated(card: Rates | string): boolean {
+  return typeof card !== "string" && card.estimated === true;
+}
+
 function store(
   values: Float64Array,
   at: number,
   sums: Pick<Sums, "inp" | "outp" | "cr" | "cc">,
   records: number,
   priced: Priced,
+  estimated: boolean,
 ): void {
   values[at + INP] = sums.inp;
   values[at + OUTP] = sums.outp;
@@ -1059,6 +1064,11 @@ function store(
   values[at + COST] = priced.cost;
   values[at + UNPRICED] = priced.unpricedTokens;
   values[at + UNPRICED_TIER] = priced.unpricedTierTokens;
+  if (estimated) {
+    values[at + EST_COST] = priced.cost;
+    values[at + EST_TOKENS] =
+      sums.inp + sums.outp + sums.cr + sums.cc - priced.unpricedTokens - priced.unpricedTierTokens;
+  }
 }
 
 function tokensAt(values: Float64Array, at: number): number {
@@ -1085,12 +1095,12 @@ function usageOf(values: Float64Array, at: number): Usage {
     },
     records: values[at + RECORDS] as number,
     cost: values[at + COST] as number,
-    estimatedCost: 0,
+    estimatedCost: values[at + EST_COST] as number,
     coverage: {
       pricedTokens: priced,
       unpricedTokens: unpriced,
       unpricedTierTokens: unpricedTier,
-      estimatedTokens: 0,
+      estimatedTokens: values[at + EST_TOKENS] as number,
       pricedShare: total > 0 ? priced / total : 1,
     },
   };
@@ -1121,6 +1131,7 @@ function displayRates(card: Rates | string): DisplayRates | null {
     cacheRead: cacheReadRate(card),
     cacheWrite: card.cache_write ?? card.input * EPHEMERAL_5M_MULT,
     longContext,
+    estimated: isEstimated(card),
   };
 }
 

@@ -1,12 +1,23 @@
 // `tokenhud json usage|models|accounts`: the query layer's answers as stable JSON for
-// scripts and agents. It reads the store as it is (no ingest) through a read-only
-// connection, so it never waits on or disturbs the TUI's writes.
+// scripts and agents. It reads the store as it is through a read-only connection, so it
+// never waits on or disturbs the TUI's writes. With --refresh it first runs one
+// incremental ingest pass, under the single-writer ingest lock.
 //
 // Exit 0 with the document on stdout; 2 for bad arguments and 1 for a store problem, each
 // with a JSON error object on stderr.
 
 import type { Database } from "bun:sqlite";
+import { homedir } from "node:os";
 import { parseArgs } from "node:util";
+import { configPath, loadConfig } from "../config.ts";
+import { cachePath } from "../ingest/cursors.ts";
+import { IngestEngine } from "../ingest/engine.ts";
+import { lockPath, WriterLock } from "../lock.ts";
+import {
+  type AcquireWriterLock,
+  LOCK_HEARTBEAT_MS,
+  type WriterLockHandle,
+} from "../mcp/freshness.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import { UsageQueries } from "../query/engine.ts";
@@ -36,9 +47,9 @@ const GROUPS: readonly GroupBy[] = ["model", "account", "day", "week", "month"];
 const PROVIDERS = ["claude", "codex"];
 
 export const JSON_HELP = `Usage:
-  tokenhud json usage    [--period P] [--group-by G] [--account A]... [--provider X]... [--tz ZONE]
-  tokenhud json models   [--period P] [--account A]... [--provider X]... [--tz ZONE]
-  tokenhud json accounts [--period P] [--tz ZONE]
+  tokenhud json usage    [--period P] [--group-by G] [--account A]... [--provider X]... [--tz ZONE] [--refresh]
+  tokenhud json models   [--period P] [--account A]... [--provider X]... [--tz ZONE] [--refresh]
+  tokenhud json accounts [--period P] [--tz ZONE] [--refresh]
 
 Options:
   --period P       today, this_week, this_month, all (default), 1h, 5h, 24h, or custom
@@ -47,10 +58,13 @@ Options:
   --group-by G     model, account, day, week or month (usage only)
   --account A      an account label or id; repeat for several
   --provider X     claude or codex; repeat for both
-  --tz ZONE        IANA time zone for calendar periods (default: the system's)
+  --tz ZONE        IANA time zone for calendar periods (default: the config's time_zone,
+                   else the system's)
+  --refresh        first read what the transcripts added since the last ingest (one pass,
+                   skipped while another tokenhud process keeps the store current)
 
-Prints one JSON document (schema ${JSON_SCHEMA}) from the store as it is; nothing is ingested.
-Exit codes: 0 ok, 1 store error, 2 bad arguments (errors are JSON on stderr).`;
+Prints one JSON document (schema ${JSON_SCHEMA}) from the store. Without --refresh nothing is
+ingested. Exit codes: 0 ok, 1 store error, 2 bad arguments (errors are JSON on stderr).`;
 
 export class BadArgument extends Error {}
 
@@ -114,6 +128,7 @@ interface Parsed {
   accounts: string[];
   providers: string[];
   tz: string | undefined;
+  refresh: boolean;
 }
 
 function parse(args: readonly string[]): Parsed | "help" {
@@ -129,6 +144,7 @@ function parse(args: readonly string[]): Parsed | "help" {
       account: { type: "string", multiple: true },
       provider: { type: "string", multiple: true },
       tz: { type: "string" },
+      refresh: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -185,10 +201,71 @@ function parse(args: readonly string[]): Parsed | "help" {
     accounts,
     providers,
     tz: values.tz,
+    refresh: values.refresh === true,
   };
 }
 
-export function runJson(args: readonly string[], env: Env = process.env): number {
+export interface JsonOptions {
+  home?: string;
+  /** Takes the single-writer ingest lock for --refresh; tests pass their own. */
+  acquireWriterLock?: AcquireWriterLock;
+}
+
+/**
+ * --refresh: one incremental ingest pass into the store, under the writer lock. Returns
+ * why the store was not refreshed (as document warnings), or nothing. History import and
+ * config creation stay with the TUI and `tokenhud import-cc-usage`.
+ */
+async function refresh(env: Env, home: string, options: JsonOptions): Promise<string[]> {
+  const acquire =
+    options.acquireWriterLock ??
+    (() => WriterLock.tryAcquire({ owner: "cli", path: lockPath(env, home) }));
+  let held: WriterLockHandle | null;
+  try {
+    held = acquire();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? (error as Error).name;
+    return [`not refreshed: cannot take the ingest lock (${code})`];
+  }
+  if (held === null) {
+    return [
+      "not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
+    ];
+  }
+  const lock = held;
+  const beat = setInterval(() => lock.heartbeat(), LOCK_HEARTBEAT_MS);
+  const problems: string[] = [];
+  try {
+    const engine = IngestEngine.open({
+      storePath: storePath(env, home),
+      cachePath: cachePath(env, home),
+      config: loadConfig(configPath(env, home)),
+      discover: { home, env },
+      importLedger: null,
+      log: (level, message) => {
+        if (level !== "info") problems.push(`refresh: ${message}`);
+      },
+    });
+    try {
+      await engine.fullPass();
+    } finally {
+      engine.close();
+    }
+  } catch (error) {
+    if (!(error instanceof StoreError)) throw error;
+    problems.push(`not refreshed: ${error.message}`);
+  } finally {
+    clearInterval(beat);
+    lock.release();
+  }
+  return problems;
+}
+
+export async function runJson(
+  args: readonly string[],
+  env: Env = process.env,
+  options: JsonOptions = {},
+): Promise<number> {
   let parsed: Parsed | "help";
   try {
     parsed = parse(args);
@@ -207,13 +284,19 @@ export function runJson(args: readonly string[], env: Env = process.env): number
     return 0;
   }
 
+  const home = options.home ?? homedir();
+  const refreshed = parsed.refresh ? await refresh(env, home, options) : [];
   const now = Date.now();
   let db: Database | null = null;
   try {
-    db = openStoreReader(storePath(env)) ?? emptyStoreDatabase();
-    const { table, warnings } = loadPriceTable(pricingOverridesPath(env));
-    const zone = parsed.tz === undefined ? Zone.system() : Zone.of(parsed.tz);
-    const queries = new UsageQueries(db, table, { tz: zone.name, now: () => now });
+    db = openStoreReader(storePath(env, home)) ?? emptyStoreDatabase();
+    const priced = loadPriceTable(pricingOverridesPath(env, home));
+    const warnings = [...priced.warnings, ...refreshed];
+    const zone =
+      parsed.tz === undefined
+        ? Zone.configured(loadConfig(configPath(env, home)).time_zone)
+        : Zone.of(parsed.tz);
+    const queries = new UsageQueries(db, priced.table, { tz: zone.name, now: () => now });
     let period: Period;
     if (parsed.period === "custom") {
       const since = parseBound("--since", parsed.since ?? "", zone, false);

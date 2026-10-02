@@ -15,7 +15,7 @@ export class StoreBusy extends StoreError {
   override name = "StoreBusy";
 }
 
-/** The file is not a readable SQLite database. Recovery (a later task) moves it aside. */
+/** The file is not a readable SQLite database. Recovery (durability.ts) moves it aside. */
 export class StoreCorrupt extends StoreError {
   override name = "StoreCorrupt";
 }

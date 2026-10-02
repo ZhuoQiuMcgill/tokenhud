@@ -91,6 +91,7 @@ function jsonRates(rates: DisplayRates | null): JsonDisplayRates | null {
             input_multiplier: rates.longContext.inputMultiplier,
             output_multiplier: rates.longContext.outputMultiplier,
           },
+    estimated: rates.estimated,
   };
 }
 
