@@ -3,8 +3,8 @@
 //   `tokenhud --help`, its options are in that command's --help, and a `tokenhud json`
 //   query is one json's help lists;
 // - every TOKENHUD_* variable is read somewhere in src/ or the installers;
-// - the keys in the README's "Keys" section are keys the TUI binds, and every key the TUI's
-//   footer and help show is documented there.
+// - every key the README names (its "Keys" tables and inline code in its prose) is one the
+//   TUI binds, and every key the TUI's footer and help show is in the "Keys" tables.
 //
 //   bun scripts/check-docs.ts      # prints the problems, exit 1 if any
 //
@@ -99,7 +99,10 @@ function codeOf(text: string): Array<{ line: number; code: string }> {
   return out;
 }
 
-const STOP = new Set(["|", "||", "&&", ";", "--", "#", ">", "2>&1"]);
+/** Words that end a command line: shell operators, a comment, and `--` (after which comes
+ * another program's command, as in `claude mcp add … -- tokenhud mcp`). */
+const STOP = new Set(["|", "||", "&&", ";", "--", ">", "2>&1"]);
+const stops = (word: string) => STOP.has(word) || word.startsWith("#");
 
 /** Problems with one `tokenhud` command line (the words after `tokenhud`). */
 export function checkInvocation(words: string[], spec: CliSpec): string[] {
@@ -108,44 +111,70 @@ export function checkInvocation(words: string[], spec: CliSpec): string[] {
   let query: string | null = null;
   for (let i = 0; i < words.length; i++) {
     let word = words[i] as string;
-    if (STOP.has(word) || word.startsWith("#")) break;
+    if (stops(word)) break;
     // Usage notation: [--check], <query>, A..., …
     word = word.replace(/^\[+|\]+$|\.\.\.$|…$/g, "");
-    if (word === "" || /^<.*>$/.test(word) || word === "|") continue;
+    if (word === "" || /^<.*>$/.test(word)) continue;
+    const name = command === null ? "tokenhud" : `tokenhud ${command}`;
     const help = command === null ? spec.top : (spec.commands.get(command) as Help);
     if (word.startsWith("-")) {
-      const name = word.split("=")[0] as string;
-      const takesValue = help.options.get(name);
-      if (takesValue === undefined) {
-        problems.push(`${command === null ? "tokenhud" : `tokenhud ${command}`} has no ${name}`);
-      } else if (takesValue && !word.includes("=")) {
-        i++;
-      }
+      const option = word.split("=")[0] as string;
+      const takesValue = help.options.get(option);
+      if (takesValue === undefined) problems.push(`${name} has no ${option}`);
+      else if (takesValue && !word.includes("=")) i++;
     } else if (command === null) {
       if (!spec.commands.has(word)) {
         problems.push(`there is no command 'tokenhud ${word}'`);
         break;
       }
       command = word;
-    } else if (query === null && (spec.commands.get(command) as Help).queries.size > 0) {
-      if (!(spec.commands.get(command) as Help).queries.has(word)) {
-        problems.push(`there is no 'tokenhud ${command} ${word}'`);
-      }
+    } else if (query === null && help.queries.size > 0) {
+      if (!help.queries.has(word)) problems.push(`there is no 'tokenhud ${command} ${word}'`);
       query = word;
+    } else {
+      // Every value an option takes was skipped above, so this is a stray argument.
+      problems.push(`${query === null ? name : `${name} ${query}`} takes no argument '${word}'`);
     }
   }
   return problems;
 }
 
-/** Every `tokenhud` command line in a markdown text. */
+/**
+ * Every `tokenhud` command line in a markdown text: each `tokenhud` word in a command and
+ * the words after it, up to the end of that command. Paths, packages and URLs
+ * (tokenhud.db, tokenhud@latest, ZhuoQiuMcgill/tokenhud) are not the word.
+ */
 export function invocations(text: string): Array<{ line: number; words: string[] }> {
   const out: Array<{ line: number; words: string[] }> = [];
   for (const { line, code } of codeOf(text)) {
-    // A command, not a path, package or URL: tokenhud.db, tokenhud@latest, /tokenhud.
-    for (const m of code.matchAll(/(?:^|[\s($])tokenhud(?=\s|$)([^\n]*)/g)) {
-      out.push({ line, words: (m[1] as string).trim().split(/\s+/).filter(Boolean) });
+    const words = code.trim().split(/\s+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      if (words[i]?.startsWith("#")) break;
+      if (words[i]?.replace(/^\$?\(/, "") !== "tokenhud") continue;
+      let end = i + 1;
+      while (end < words.length && !stops(words[end] as string)) end++;
+      out.push({ line, words: words.slice(i + 1, end) });
+      i = end - 1;
     }
   }
+  return out;
+}
+
+/** A code span that names a key: a letter, digit or `?`, a named key, arrows, or `d/w/m`. */
+const KEY_LIKE =
+  /^(?:[a-zA-Z0-9?/]|esc|enter|tab|space|backspace|Ctrl-[A-Z]|[↑↓←→]+|[↑↓←→]\/[↑↓←→]|\d-\d|[a-zA-Z](?:\/[a-zA-Z])+)$/;
+
+/** The keys named in a markdown text's prose (inline code outside code blocks). */
+export function proseKeys(text: string): Array<{ line: number; key: string }> {
+  const out: Array<{ line: number; key: string }> = [];
+  let fenced = false;
+  text.split("\n").forEach((line, i) => {
+    if (/^\s*```/.test(line)) fenced = !fenced;
+    if (fenced) return;
+    for (const m of line.matchAll(/`([^`]+)`/g)) {
+      if (KEY_LIKE.test(m[1] as string)) out.push({ line: i + 1, key: m[1] as string });
+    }
+  });
   return out;
 }
 
@@ -244,8 +273,9 @@ export function checkDocs(): string[] {
   const readme = readFileSync(join(root, "README.md"), "utf8");
   const documented = documentedKeys(readme);
   if (documented.length === 0) problems.push("README.md: no keys documented under ## Keys");
-  for (const { line, key } of documented) {
-    if (!keys.bound.has(key)) problems.push(`README.md:${line}: the TUI binds no key '${key}'`);
+  for (const { line, key } of [...documented, ...proseKeys(readme)]) {
+    const problem = `README.md:${line}: the TUI binds no key '${key}'`;
+    if (!keys.bound.has(key) && !problems.includes(problem)) problems.push(problem);
   }
   const listed = new Set(documented.map((d) => d.key));
   for (const key of keys.shown) {

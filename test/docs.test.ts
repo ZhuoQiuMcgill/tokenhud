@@ -5,6 +5,7 @@ import {
   cliSpec,
   documentedKeys,
   invocations,
+  proseKeys,
 } from "../scripts/check-docs.ts";
 
 describe("the user docs", () => {
@@ -31,11 +32,31 @@ describe("the docs checker", () => {
     expect(check("tokenhud json sessions")).toEqual(["there is no 'tokenhud json sessions'"]);
     expect(check("tokenhud update --force")).toEqual(["tokenhud update has no --force"]);
     expect(check("tokenhud --twice")).toEqual(["tokenhud has no --twice"]);
+    expect(check("tokenhud doctor extra")).toEqual(["tokenhud doctor takes no argument 'extra'"]);
+    expect(check("tokenhud json usage today")).toEqual([
+      "tokenhud json usage takes no argument 'today'",
+    ]);
+  });
+
+  test("checks every tokenhud on a line, the one after `--` too", () => {
+    expect(check("claude mcp add -s user tokenhud -- tokenhud mcpp")).toEqual([
+      "there is no command 'tokenhud mcpp'",
+    ]);
+    expect(check("tokenhud doctor && tokenhud frob")).toEqual([
+      "there is no command 'tokenhud frob'",
+    ]);
+    expect(check("tokenhud doctor # then tokenhud frob")).toEqual([]);
   });
 
   test("leaves paths, packages and URLs alone", () => {
     expect(invocations("`~/.config/tokenhud/tokenhud.db` `npm i -g tokenhud@latest`")).toEqual([]);
     expect(invocations("`claude plugin marketplace add ZhuoQiuMcgill/tokenhud`")).toEqual([]);
+  });
+
+  test("finds keys named in prose, not other inline code", () => {
+    const md =
+      "Press `z` or `Ctrl-X`, then `↑/↓`; `*` marks totals; see `tokenhud doctor`.\n```sh\n`q`\n```";
+    expect(proseKeys(md).map((k) => k.key)).toEqual(["z", "Ctrl-X", "↑/↓"]);
   });
 
   test("reads keys from the first column of the Keys section's tables only", () => {
