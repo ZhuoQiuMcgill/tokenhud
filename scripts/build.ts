@@ -153,7 +153,11 @@ async function buildRelease(): Promise<void> {
 // ── smoke test ───────────────────────────────────────────────────────────────────────
 
 const MUSL_IMAGE = "tokenhud-smoke-musl:alpine3.22";
-const FIXTURE_LABELS = ["smoke-claude", "smoke-codex"];
+/**
+ * The fixture's Codex model, as the Overview's top models (the last 24 h) name it: there
+ * whatever the time of day, since the store's usage is minutes old.
+ */
+const FIXTURE_MODEL = "gpt-5.5";
 
 let muslImage: boolean | null = null;
 /** Builds, once, an Alpine image with the C++ runtime that Bun's musl builds link against. */
@@ -328,8 +332,8 @@ async function smokeOne(t: ReleaseTarget, wrap: Wrap, dir: string): Promise<stri
   const problems: string[] = [];
   if (once.code !== 0) problems.push(`--once: exit ${once.code}`);
   if (!header.startsWith(" tokenhud ")) problems.push(`--once: header ${JSON.stringify(header)}`);
-  if (!FIXTURE_LABELS.some((label) => once.stdout.includes(label))) {
-    problems.push("--once: the fixture store's accounts are not on screen");
+  if (!once.stdout.includes(FIXTURE_MODEL)) {
+    problems.push("--once: the fixture store's usage is not on screen");
   }
   if (problems.length > 0) problems.push(firstLines(once.stderr));
   return problems;
