@@ -4,21 +4,21 @@ exports[`105×50 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- LIMITS                                     pace = spend rate over the last 30 min · times are estimates 
+ LIMITS      pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
  ╭─ personal · claude ─────────────────────────────╮  ╭─ work · claude (47m old) ──────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  78%  1h48m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  3h55m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  27%  4d06h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   9%  2d11h │ 
- │ pace $1.3/h → hits 100% at 12:59                │  │ pace $0/h   → idle                             │ 
+ │ pace $1.3/h (30m) → hits 100% at 12:59          │  │ pace $0/h (30m) → idle                         │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
  ╭─ old-laptop · claude ───────────────────────────╮  ╭─ codex · codex ────────────────────────────────╮ 
  │ not signed in here                              │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8%  4h31m │ 
  │                                                 │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  83% 19h05m │ 
- │ pace $0/h   → idle                              │  │ pace $0.04/h → week ends ~89%                  │ 
+ │ pace $0/h (30m) → idle                          │  │ avg $0.08/h this week → week ends ~94%         │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
  ╭─ codex-win · codex ─────────────────────────────╮  ╭─ agents · MCP ─────────────────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● demo-app        work  limits             <1m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  personal  should_wait     3m │ 
- │ pace $0.04/h → safe until reset                 │  │                                                │ 
+ │ pace $0.04/h (30m) → safe until reset           │  │                                                │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
                                                                                                          
  SPEND                                                                           * not all tokens priced 
@@ -220,16 +220,16 @@ exports[`120×45 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- LIMITS                                                    pace = spend rate over the last 30 min · times are estimates 
+ LIMITS                     pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
  ╭─ personal · claude ────────────────╮  ╭─ work · claude (47m old) ──────────╮  ╭─ old-laptop · claude ──────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━  78%  1h48m │  │ 5h   ━━━━━━━━━━━━━━━━━  12%  3h55m │  │ not signed in here                 │ 
  │ week ━━━━━━━━━━━━━━━━━  27%  4d06h │  │ week ━━━━━━━━━━━━━━━━━   9%  2d11h │  │                                    │ 
- │ pace $1.3/h → hits 100% at 12:59   │  │ pace $0/h   → idle                 │  │ pace $0/h   → idle                 │ 
+ │ pace $1.3/h (30m) → 100% at 12:59  │  │ pace $0/h (30m) → idle             │  │ pace $0/h (30m) → idle             │ 
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯ 
  ╭─ codex · codex ────────────────────╮  ╭─ codex-win · codex ────────────────╮  ╭─ agents · MCP ─────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● demo-app        limits       <1m │ 
  │ week ━━━━━━━━━━━━━━━━━  83% 19h05m │  │ week ━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  should_wait   3m │ 
- │ pace $0.04/h → week ends ~89%      │  │ pace $0.04/h → safe until reset    │  │                                    │ 
+ │ avg $0.08/h this week → wk ~94%    │  │ pace $0.04/h (30m) → safe          │  │                                    │ 
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯ 
                                                                                                                         
  SPEND                                                                                          * not all tokens priced 
@@ -416,17 +416,17 @@ exports[`80×24 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2   3   4                 all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- LIMITS            pace = spend rate over the last 30 min · times are estimates 
+ LIMITS                 pace = last 30 min · avg = this week so far · estimates 
  ● personal · claude    5h ━━━━━━━━  78%  1h48m  week ━━━━━━━━  27%  4d06h      
-   pace $1.3/h → hits 100% at 12:59                                             
+   pace $1.3/h (30m) → hits 100% at 12:59                                       
  ● work · claude        5h ━━━━━━━━  12%  3h55m  week ━━━━━━━━   9%  2d11h      
-   pace $0/h   → idle  (47m old)                                                
+   pace $0/h (30m) → idle  (47m old)                                            
  ○ old-laptop · claude  not signed in here                                      
-   pace $0/h   → idle                                                           
+   pace $0/h (30m) → idle                                                       
  ● codex · codex        5h ━━━━━━━━   8%  4h31m  week ━━━━━━━━  83% 19h05m      
-   pace $0.04/h → week ends ~89%                                                
+   avg $0.08/h this week → week ends ~94%                                       
  ● codex-win · codex    5h ━━━━━━━━  44%  2h10m  week ━━━━━━━━  58%  1d03h      
-   pace $0.04/h → safe until reset                                              
+   pace $0.04/h (30m) → safe until reset                                        
  ◆ MCP  demo-app        work  limits                                         <1m
  ◆ MCP  claude session  personal  should_wait                                 3m
                                                                                 
@@ -528,16 +528,16 @@ exports[`160×50 view 1 (overview) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- LIMITS                                                                                            pace = spend rate over the last 30 min · times are estimates 
+ LIMITS                                                             pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
  ╭─ personal · claude ──────────────────────────────╮  ╭─ work · claude (47m old) ───────────────────────╮  ╭─ old-laptop · claude ───────────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  78%  1h48m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  3h55m │  │ not signed in here                              │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  27%  4d06h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   9%  2d11h │  │                                                 │ 
- │ pace $1.3/h → hits 100% at 12:59                 │  │ pace $0/h   → idle                              │  │ pace $0/h   → idle                              │ 
+ │ pace $1.3/h (30m) → hits 100% at 12:59           │  │ pace $0/h (30m) → idle                          │  │ pace $0/h (30m) → idle                          │ 
  ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯ 
  ╭─ codex · codex ──────────────────────────────────╮  ╭─ codex-win · codex ─────────────────────────────╮  ╭─ agents · MCP ──────────────────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● demo-app        work  limits              <1m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  83% 19h05m │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  personal  should_wait      3m │ 
- │ pace $0.04/h → week ends ~89%                    │  │ pace $0.04/h → safe until reset                 │  │                                                 │ 
+ │ avg $0.08/h this week → week ends ~94%           │  │ pace $0.04/h (30m) → safe until reset           │  │                                                 │ 
  ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯ 
                                                                                                                                                                 
  SPEND                                                                                                                                  * not all tokens priced 
@@ -746,15 +746,15 @@ exports[`narrow 50×20 view 1 (overview): every number whole 1`] = `
                                                   
  LIMITS            pace = last 30 min · estimates 
  ● personal    5h  78%  1h48m  week  27%  4d06h   
-   pace $1.3/h → hits 100% at 12:59               
+   pace $1.3/h (30m) → hits 100% at 12:59         
  ● work        5h  12%  3h55m  week   9%  2d11h   
-   pace $0/h   → idle  (47m old)                  
+   pace $0/h (30m) → idle  (47m old)              
  ○ old-laptop  not signed in here                 
-   pace $0/h   → idle                             
+   pace $0/h (30m) → idle                         
  ● codex       5h   8%  4h31m  week  83% 19h05m   
-   pace $0.04/h → week ends ~89%                  
+   avg $0.08/h this week → week ends ~94%         
  ● codex-win   5h  44%  2h10m  week  58%  1d03h   
-   pace $0.04/h → safe until reset                
+   pace $0.04/h (30m) → safe until reset          
  ◆ MCP  demo-app        work  limits           <1m
  ◆ MCP  claude session  personal  should_wait   3m
                                                   
@@ -842,15 +842,15 @@ exports[`narrow 60×20 view 1 (overview): every number whole 1`] = `
                                                             
  LIMITS                      pace = last 30 min · estimates 
  ● personal · claude    5h  78%  1h48m  week  27%  4d06h    
-   pace $1.3/h → hits 100% at 12:59                         
+   pace $1.3/h (30m) → hits 100% at 12:59                   
  ● work · claude        5h  12%  3h55m  week   9%  2d11h    
-   pace $0/h   → idle  (47m old)                            
+   pace $0/h (30m) → idle  (47m old)                        
  ○ old-laptop · claude  not signed in here                  
-   pace $0/h   → idle                                       
+   pace $0/h (30m) → idle                                   
  ● codex · codex        5h   8%  4h31m  week  83% 19h05m    
-   pace $0.04/h → week ends ~89%                            
+   avg $0.08/h this week → week ends ~94%                   
  ● codex-win · codex    5h  44%  2h10m  week  58%  1d03h    
-   pace $0.04/h → safe until reset                          
+   pace $0.04/h (30m) → safe until reset                    
  ◆ MCP  demo-app        work  limits                     <1m
  ◆ MCP  claude session  personal  should_wait             3m
                                                             
@@ -936,16 +936,16 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 "[head/bg/b] tokenhud [-/bg] [head/tab/b] 1 Overview [-/bg] [dim/bg] 2 [mute/bg]History [-/bg] [dim/bg] 3 [mute/bg]Models [-/bg] [dim/bg] 4 [mute/bg]Accounts [-/bg] [-/bg]                         [dim/bg]scope [fg/bg]all accounts ▾[live/bg]   ● [dim/bg]live · 5s 
 [border/bg]────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 [-/bg]                                                                                                                        
-[head/bg/b] LIMITS[-/bg]                                                    [dim/bg]pace = spend rate over the last 30 min · times are estimates 
+[head/bg/b] LIMITS[-/bg]                     [dim/bg]pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
 [-/bg] [border/bg]╭─ [head/bg/b]personal · claude[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]work · claude[dim/bg] (47m old)[border/bg] ──────────╮[-/bg]  [border/bg]╭─ [head/bg/b]old-laptop · claude[border/bg] ──────────────╮[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]5h   [cost|mid/bg]━━━━━━━━━━━━━[empty/bg]━━━━[cost|mid/bg/b]  78%[dim/bg]  1h48m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━[empty/bg]━━━━━━━━━━━━━━━[low/bg/b]  12%[dim/bg]  3h55m[border/bg] │[-/bg]  [border/bg]│ [dim/bg]not signed in here[-/bg]                [border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]week [low/bg]━━━━━[empty/bg]━━━━━━━━━━━━[low/bg/b]  27%[dim/bg]  4d06h[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [low/bg]━━[empty/bg]━━━━━━━━━━━━━━━[low/bg/b]   9%[dim/bg]  2d11h[border/bg] │[-/bg]  [border/bg]│ [-/bg]                                  [border/bg] │[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h [dim/bg]→ [high/bg/b]hits 100% at 12:59[-/bg]  [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h[dim/bg] (30m) → [high/bg/b]100% at 12:59[-/bg] [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h[dim/bg] (30m) → idle[-/bg]            [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h[dim/bg] (30m) → idle[-/bg]            [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg] 
 [-/bg] [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [live/bg/b]agents · MCP[border/bg] ─────────────────────╮[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━[empty/bg]━━━━━━━━━━━━━━━━[low/bg/b]   8%[dim/bg]  4h31m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━[empty/bg]━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]demo-app        limits       [dim/bg]<1m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]week [high/bg]━━━━━━━━━━━━━━[empty/bg]━━━[high/bg/b]  83%[dim/bg] 19h05m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [cost|mid/bg]━━━━━━━━━━[empty/bg]━━━━━━━[cost|mid/bg/b]  58%[dim/bg]  1d03h[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  should_wait   [dim/bg]3m[border/bg] │[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [cost|mid/bg]week ends ~89%[-/bg]     [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [mute/bg]safe until reset[-/bg]   [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                  [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]avg [cost|mid/bg]$0.08/h[dim/bg] this week → [cost|mid/bg]wk ~94%[-/bg]   [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h[dim/bg] (30m) → [mute/bg]safe[-/bg]         [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                  [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg] 
 [-/bg]                                                                                                                        
 [head/bg/b] SPEND[-/bg]                                                                                          [dim/bg]* not all tokens priced 
@@ -984,21 +984,21 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 "[head/bg/b] tokenhud [-/bg] [head/tab/b] 1 Overview [-/bg] [dim/bg] 2 [mute/bg]History [-/bg] [dim/bg] 3 [mute/bg]Models [-/bg] [dim/bg] 4 [mute/bg]Accounts [-/bg] [-/bg]          [dim/bg]scope [fg/bg]all accounts ▾[live/bg]   ● [dim/bg]live · 5s 
 [border/bg]─────────────────────────────────────────────────────────────────────────────────────────────────────────
 [-/bg]                                                                                                         
-[head/bg/b] LIMITS[-/bg]                                     [dim/bg]pace = spend rate over the last 30 min · times are estimates 
+[head/bg/b] LIMITS[-/bg]      [dim/bg]pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
 [-/bg] [border/bg]╭─ [head/bg/b]personal · claude[border/bg] ─────────────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]work · claude[dim/bg] (47m old)[border/bg] ──────────────────────╮[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]5h   [cost|mid/bg]━━━━━━━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━[cost|mid/bg/b]  78%[dim/bg]  1h48m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]  12%[dim/bg]  3h55m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]week [low/bg]━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]  27%[dim/bg]  4d06h[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [low/bg]━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]   9%[dim/bg]  2d11h[border/bg] │[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h [dim/bg]→ [high/bg/b]hits 100% at 12:59[-/bg]               [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                            [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h[dim/bg] (30m) → [high/bg/b]hits 100% at 12:59[-/bg]         [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h[dim/bg] (30m) → idle[-/bg]                        [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
 [-/bg] [border/bg]╭─ [head/bg/b]old-laptop · claude[border/bg] ───────────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ────────────────────────────────╮[-/bg] 
 [-/bg] [border/bg]│ [dim/bg]not signed in here[-/bg]                             [border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━[rule|empty/bg]━━━━━━━━━━━━━━━━━━━━━━━━━━━[low/bg/b]   8%[dim/bg]  4h31m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [-/bg]                                               [border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [high/bg]━━━━━━━━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━[high/bg/b]  83%[dim/bg] 19h05m[border/bg] │[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                             [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [cost|mid/bg]week ends ~89%[-/bg]                 [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h[dim/bg] (30m) → idle[-/bg]                         [border/bg] │[-/bg]  [border/bg]│ [mute/bg]avg [cost|mid/bg]$0.08/h[dim/bg] this week → [cost|mid/bg]week ends ~94%[-/bg]        [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
 [-/bg] [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ─────────────────────────────╮[-/bg]  [border/bg]╭─ [live/bg/b]agents · MCP[border/bg] ─────────────────────────────────╮[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]demo-app        [mute/bg]work  [fg/bg]limits             [dim/bg]<1m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]week [cost|mid/bg]━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━[cost|mid/bg/b]  58%[dim/bg]  1d03h[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  [mute/bg]personal  [fg/bg]should_wait     [dim/bg]3m[border/bg] │[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [mute/bg]safe until reset[-/bg]                [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                              [border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h[dim/bg] (30m) → [mute/bg]safe until reset[-/bg]          [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                              [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
 [-/bg]                                                                                                         
 [head/bg/b] SPEND[-/bg]                                                                           [dim/bg]* not all tokens priced 

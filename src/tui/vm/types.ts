@@ -2,6 +2,7 @@
 // crosses postMessage: the UI thread renders it and never queries the store (T6 critic Q1).
 
 import type { Config, Window } from "../../config.ts";
+import type { PaceBasis } from "../../limits/derive.ts";
 import type { GroupSource } from "../../limits/groups.ts";
 import type { McpActivity } from "../../mcp/heartbeat.ts";
 import type { PriceStatus } from "../../query/types.ts";
@@ -58,15 +59,21 @@ export interface LimitMeter {
 /**
  * What the pace means for an account's limits, all **estimates** (T8): an account-wide
  * window at 100 % now (`full`, until the last of them resets), one projected to reach it
- * (`hits`), a weekly window projected to end high but under 100 % (`week`, its projected
- * share), all projected to last (`safe`), no spend (`idle`), or too little data (`unknown`).
+ * (`hits`; for the weekly window, whose time is only good to a part of a day, `rough` says
+ * when as `~Sun evening`), a weekly window projected to end high but under 100 % (`week`,
+ * its projected share), no spend in the last 30 minutes (`idle`, with the fullest window
+ * when one is at 80 % or more), all projected to last (`safe`), or too little data
+ * (`unknown`).
  */
 export type Verdict =
   | { readonly kind: "full"; readonly until: number }
-  | { readonly kind: "hits"; readonly at: number }
+  | { readonly kind: "hits"; readonly at: number; readonly rough: string | null }
   | { readonly kind: "week"; readonly utilization: number }
+  | {
+      readonly kind: "idle";
+      readonly high: { readonly window: "5h" | "week"; readonly utilization: number } | null;
+    }
   | { readonly kind: "safe" }
-  | { readonly kind: "idle" }
   | { readonly kind: "unknown" };
 
 /**
@@ -90,8 +97,11 @@ export interface LimitCard {
   /** The account-wide 5-hour and weekly windows; null when the limits have none. */
   readonly fiveHour: LimitMeter | null;
   readonly week: LimitMeter | null;
-  /** Spend per hour over the last 30 minutes. */
-  readonly pace: { readonly cost: number; readonly tokens: number };
+  /**
+   * The pace the verdict comes from (T18), per hour: a weekly window's average since it
+   * began when the verdict is that window's (`window_avg`), else the last 30 minutes.
+   */
+  readonly pace: { readonly cost: number; readonly tokens: number; readonly basis: PaceBasis };
   readonly verdict: Verdict;
   /** When the limits were captured (epoch ms); null when none ever were. */
   readonly capturedAt: number | null;

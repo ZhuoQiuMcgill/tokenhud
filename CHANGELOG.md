@@ -51,9 +51,11 @@ release candidate 0.1.0-rc.1 has all of it.
   ChatGPT) account, such as `~/.claude` and its Windows-side twin under WSL, share one
   limits card, one fetch, and a pace summed over all of them; history stays per root.
   tokenhud finds them when their limits reset together and their use moves together, and
-  re-checks every 30 minutes that they still do; settings link or unlink them by hand
-  (`same_account`, `separate_accounts` in `config.json`). MCP answers for the shared
-  account from either root, and `tokenhud doctor` lists the groups.
+  re-checks every 30 minutes that they still do, and at once when a credential file
+  changes; settings link or unlink them by hand (`same_account`, `separate_accounts` in
+  `config.json`). MCP answers for the shared account from either root, and re-checks it
+  too; finding new links is left to the TUI's 5-minute limits fetches. `tokenhud doctor`
+  lists the groups.
 - **Pricing**: a bundled price table with effective dates, fast and priority tiers, long
   context, and estimated prices for `codex-auto-review`; your own overrides in
   `pricing.overrides.json`, which never hide later corrections to the bundled prices.
@@ -97,6 +99,19 @@ release candidate 0.1.0-rc.1 has all of it.
   other views do, and its filter finds a model by name or id; Accounts counts `requests`,
   as Models does; the Overview's agents card names each session's project (the name of
   its directory, never the path) where it said "claude session".
+
+### Fixed since 0.1.0-rc.1
+
+- **Weekly projections no longer carry a 30-minute burst over the whole week.** A weekly
+  window is projected at its average pace since it began, idle time and nights included
+  (after its first 6 hours; until then, the last 30 minutes'); the 5-hour window keeps the
+  30-minute pace. Two agents working at once for half an hour no longer say a weekly limit
+  runs out tonight. A weekly window's time shows as a part of a day, never to the minute
+  (`100% ~Sun evening`, `~tomorrow morning`), and each card's pace says which it is:
+  `pace $X/h (30m)` or `avg $X/h this week`. MCP's `limits` and `should_wait` report
+  `pace_basis` (`30m` or `window_avg`) with each window's pace and projection.
+- **An idle card with a nearly full window says so**: `idle · week 83%`, in red, instead of
+  a plain `idle` that read as fine.
 
 ### For contributors
 

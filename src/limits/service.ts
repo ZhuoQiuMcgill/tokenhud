@@ -43,8 +43,9 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
  *
  * - **Cadence:** each account is fetched every 5 minutes.
  * - **On demand:** `refresh(account, maxAgeS)` fetches only when the account's data is
- *   older than `maxAgeS`. Requests for an account already being fetched join that fetch,
- *   and a Claude account is fetched at most once per 30 s.
+ *   older than `maxAgeS`, and then only that account (a group's verification aside, below):
+ *   never a partner. Requests for an account already being fetched join that fetch, and a
+ *   Claude account is fetched at most once per 30 s.
  * - **Back-off:** consecutive failures wait 30 s, 1, 2, 4 ... minutes, up to 30 minutes,
  *   before the next attempt (on demand too).
  * - **History-only accounts** (`signed_in: false`): an account in `history_only_roots` is
@@ -70,12 +71,19 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
  *   lease and the in-flight request are the group's. Each fetch's capture is kept under the
  *   member it came from; readers take the group's freshest, and limit events are recorded
  *   once for the group.
- * - **Keeping auto-detection fresh:** right after a group's fetch, under its lease, each
- *   other member is fetched too every 30 minutes, every one at once when a member's
- *   credential file changed (stat only), and a signed-out one when its re-check is due.
- *   Right after a root's fetch, a root on its own whose resets agree with it and whose
- *   capture is over 60 s old is fetched too. After every round and on-demand refresh,
- *   auto-detection compares the roots' captures and records the groups in limits.json.
+ * - **Keeping a group verified**, in rounds and on demand alike: right after a group's
+ *   fetch, under its lease, each other member is fetched too every 30 minutes, every one at
+ *   once when a member's credential file changed (stat only), and a signed-out one when its
+ *   re-check is due; then auto-detection runs over the group. A credential change makes the
+ *   group due at once. A round also fetches a group for its verification alone, and is
+ *   timed to the end of the 30 s gap when that is all that holds it back: rounds paced by
+ *   `next_at` alone could keep landing in the gap of an MCP server's steady cadence.
+ * - **Finding new groups**, in scheduled rounds only (T18: an MCP server polling an account
+ *   every 10 s mirrored each of its fetches onto the account's partner, 104 requests an
+ *   hour for an idle pair). Right after a root's fetch, a root on its own whose resets
+ *   agree with it is fetched too, unless its capture was taken back to back with the
+ *   root's. After every round, auto-detection compares the roots' captures and records the
+ *   groups in limits.json.
  * Nothing here throws to the caller.
  */
 
@@ -103,6 +111,13 @@ export const DEFAULT_LIMITS_TIMING: LimitsTiming = {
 
 /** The shortest wait between scheduled rounds. */
 const MIN_ROUND_DELAY_MS = 1_000;
+/**
+ * A partner's capture this close to the root's (seconds) is as good as fetched back to
+ * back. Further apart, even within T16's 60 s, a capture an MCP server took a minute
+ * earlier lets a tick of use read as a mismatch, and keeps two roots of an account in use
+ * from ever linking.
+ */
+const BACK_TO_BACK_S = 10;
 /** `stop()` returns within this, whatever is still running (it has been aborted). */
 const STOP_WAIT_MS = 1_500;
 
@@ -358,7 +373,18 @@ export class LimitsService {
     const now = this.#now();
     let next = now + this.#timing.intervalMs;
     for (const unit of round.units) {
-      const at = this.#nextAt(unit, (id) => file.status[id]);
+      const reads = new Map(
+        unit.members.map((root): [string, Read] => [
+          root.identity,
+          {
+            prior: null,
+            before: "",
+            status: file.status[root.identity] ?? initialStatus(),
+            current: null,
+          },
+        ]),
+      );
+      const at = this.#nextAt(unit, reads);
       if (at !== null) next = Math.min(next, at);
     }
     return Math.max(MIN_ROUND_DELAY_MS, next - now);
@@ -367,7 +393,8 @@ export class LimitsService {
   /**
    * On demand: fetches each matching account (identity or label; all when null) whose data
    * is older than `maxAgeS`, within the back-off and rate limits. A root on an account with
-   * others is fetched as their group, and its data is the group's.
+   * others is fetched as their group, and its data is the group's; the group is verified as
+   * in a round. No partner is fetched: finding new groups is the scheduled rounds' work.
    */
   async refresh(account: string | null, maxAgeS: number): Promise<RefreshOutcome[]> {
     const round = this.#survey();
@@ -380,7 +407,6 @@ export class LimitsService {
     const outcomes = (
       await Promise.all(units.map((unit) => this.#process(unit, mode, round)))
     ).flat();
-    if (units.length > 0) this.#detect(round.roots);
     const byId = new Map(outcomes.map((o) => [o.account, o]));
     return wanted.flatMap((root) => byId.get(root.identity) ?? []);
   }
@@ -454,11 +480,22 @@ export class LimitsService {
     return last.next_at > this.#now() ? last.next_at : null;
   }
 
-  /** When the unit's next scheduled fetch is due; null when no member is fetched. */
-  #nextAt(unit: Unit, status: (identity: string) => AccountStatus | undefined): number | null {
+  /**
+   * When the unit's next scheduled fetch is due; null when no member is fetched. A group
+   * with a member due for verification, held back only by Claude's 30 s gap after its first
+   * member's last fetch (an on-demand one, say), is due when that gap ends.
+   */
+  #nextAt(unit: Unit, reads: ReadonlyMap<string, Read>): number | null {
+    const status = (id: string) => reads.get(id)?.status;
     const first = this.#signedIn(unit, status)[0];
     if (first === undefined) return null;
-    const at = status(first.identity)?.next_at ?? null;
+    let at = status(first.identity)?.next_at ?? null;
+    const last = status(first.identity)?.last_attempt_at ?? null;
+    if (unit.members.length > 1 && first.provider === "claude" && last !== null) {
+      const gapEnd = last + this.#timing.claudeMinGapMs;
+      const verify = this.#verifiers(unit, first, reads, this.#changed(unit, reads));
+      if (gapEnd > this.#now() && verify.length > 0) at = Math.min(at ?? gapEnd, gapEnd);
+    }
     const held = this.#heldUntil(unit, status);
     return held === null ? at : Math.max(at ?? held, held);
   }
@@ -526,10 +563,12 @@ export class LimitsService {
    * The members to ask, in order, when the unit is due; none when it isn't. The first
    * signed-in member decides whether the unit is due, against the unit's freshest capture.
    * A group is due at once, too, when a member's credential file changed and that member
-   * can be asked now (`#askable`): its one immediate verification. The others stand in
-   * when the first fails for a reason of its own, unless their back-off or Claude's 30 s
-   * gap holds them back. A unit with no member signed in re-checks the first one due for
-   * it (daily, or when its credential file changes).
+   * can be asked now (`#askable`): its one immediate verification. In a scheduled round it
+   * is also due when another member is due for verification (`#verifiers`): on-demand
+   * fetches move the group's schedule, and must not starve it. Either way the first member
+   * must be askable now. The others stand in when the first fails for a reason of its own,
+   * unless their back-off or Claude's 30 s gap holds them back. A unit with no member signed
+   * in re-checks the first one due for it (daily, or when its credential file changes).
    */
   #plan(unit: Unit, reads: ReadonlyMap<string, Read>, mode: Mode): Root[] {
     const read = (root: Root) => reads.get(root.identity) as Read;
@@ -543,18 +582,27 @@ export class LimitsService {
       return recheck === undefined ? [] : [recheck];
     }
     if (this.#heldUntil(unit, status) !== null) return [];
-    const changed =
+    const changed = this.#changed(unit, reads);
+    const switched =
       unit.members.length > 1 &&
       unit.members.some(
-        (root) =>
-          this.#credentialsChanged(root, read(root).status) &&
-          this.#askable(root, read(root).status),
+        (root) => changed.has(root.identity) && this.#askable(root, read(root).status),
       );
-    const due =
-      (changed && this.#mayStandIn(first, read(first).status)) ||
-      this.#due(first, read(first).status, current, mode);
-    if (!due) return [];
+    const verify =
+      (switched ||
+        (mode.kind === "scheduled" && this.#verifiers(unit, first, reads, changed).length > 0)) &&
+      this.#mayStandIn(first, read(first).status);
+    if (!verify && !this.#due(first, read(first).status, current, mode)) return [];
     return [first, ...others.filter((root) => this.#mayStandIn(root, read(root).status))];
+  }
+
+  /** The unit's members whose credential file changed since their own last fetch. */
+  #changed(unit: Unit, reads: ReadonlyMap<string, Read>): Set<string> {
+    return new Set(
+      unit.members
+        .filter((root) => this.#credentialsChanged(root, (reads.get(root.identity) as Read).status))
+        .map((root) => root.identity),
+    );
   }
 
   /**
@@ -621,26 +669,22 @@ export class LimitsService {
    * (`.limits-leases/<key>.lease` beside limits.json), so one process at a time fetches an
    * account; the holder decides again on the file as it is then and records the attempt
    * before fetching, so a process that comes after it within 30 s does not fetch. A
-   * process that cannot get the lease serves what limits.json holds. A capture fetched
-   * here is followed, back to back, by the fetches that let auto-detection compare it:
-   * the group's members due for verification, and unlinked partners (`#partners`).
+   * process that cannot get the lease serves what limits.json holds. A capture fetched here
+   * is followed, back to back, by the fetches that let auto-detection compare it: the
+   * group's members due for verification (then, on demand, detection over the group), and
+   * in a scheduled round unlinked partners (`#partners`).
    */
   async #run(unit: Unit, mode: Mode, round: Round): Promise<RefreshOutcome[]> {
     let reads = this.#readUnit(unit);
     let fetched = false;
+    let verified = false;
     let by: { root: Root; capture: Capture; changed: boolean } | null = null;
     if (!this.#stopped && this.#plan(unit, reads, mode).length > 0) {
       const lease = this.#lease(unit.key);
       if (lease !== null) {
         try {
           reads = this.#readUnit(unit);
-          const changed = new Set(
-            unit.members
-              .filter((root) =>
-                this.#credentialsChanged(root, (reads.get(root.identity) as Read).status),
-              )
-              .map((root) => root.identity),
-          );
+          const changed = this.#changed(unit, reads);
           for (const root of this.#plan(unit, reads, mode)) {
             fetched = true;
             const attempt = await this.#ask(root, reads.get(root.identity) as Read);
@@ -658,6 +702,7 @@ export class LimitsService {
           if (by !== null) {
             for (const root of this.#verifiers(unit, by.root, reads, changed)) {
               if (this.#stopped) break;
+              verified = true;
               await this.#ask(root, reads.get(root.identity) as Read);
             }
           }
@@ -681,6 +726,9 @@ export class LimitsService {
       this.#saveAll(updates);
       this.#o.onChanged?.([...updates.keys()]);
     }
+    // A round runs detection over every root after its fetches; on demand, over the group
+    // just verified, so that a member now on another account shows apart at once.
+    if (verified && mode.kind === "demand") this.#detect(unit.members);
     const currents = unit.members.map((root) => (reads.get(root.identity) as Read).current);
     const capture = freshest(currents);
     if (capture !== null && (newData || mode.kind === "scheduled")) {
@@ -692,16 +740,18 @@ export class LimitsService {
         unit.members.filter((root) => root !== owner),
       );
     }
-    if (by !== null && !this.#stopped) await this.#partners(by, unit, round);
+    if (by !== null && mode.kind === "scheduled" && !this.#stopped) {
+      await this.#partners(by, unit, round);
+    }
     const error = groupError(unit.members, (id) => reads.get(id)?.status, capture);
     return unit.members.map((root) => ({ account: root.identity, fetched, error }));
   }
 
   /**
    * Fetches, right after `by.root` gave `by.capture`, each root that may be on its account
-   * and whose own capture is too far from it to compare utilisation: a root of the same
-   * provider on its own (in no group), not kept apart in config, signed in, whose last
-   * capture's resets agree with `by.capture`. A root proven different (two disagreeing
+   * and whose own capture wasn't taken back to back with it (`BACK_TO_BACK_S`): a root of
+   * the same provider on its own (in no group), not kept apart in config, signed in, whose
+   * last capture's resets agree with `by.capture`. A root proven different (two disagreeing
    * pairs) is left alone until either root shows a new window instance or either's
    * credential file changed (`by.changed`: before its fetch). Each is fetched under its own
    * lease, within its back-off and Claude's 30 s gap; a successful fetch also moves its
@@ -722,7 +772,9 @@ export class LimitsService {
       const read = this.#read(root);
       if (read.current === null || !this.#fetchable(root, read.status)) continue;
       const c = compareCaptures(capture, read.current);
-      if (c.shared === 0 || !c.resetsAgree || c.close || !this.#mayStandIn(root, read.status)) {
+      const apart = Math.abs(capture.captured_at - read.current.captured_at);
+      if (c.shared === 0 || !c.resetsAgree || apart <= BACK_TO_BACK_S) continue;
+      if (!this.#mayStandIn(root, read.status)) {
         continue;
       }
       const state = pairs[key];

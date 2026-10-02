@@ -9,7 +9,14 @@ import {
   orderedBuckets,
   windowMinutes,
 } from "./capture.ts";
-import { PACE_MINUTES, type Projection, projectExhaustion, type SpendSource } from "./derive.ts";
+import {
+  PACE_MINUTES,
+  type PaceBasis,
+  type Projection,
+  projectExhaustion,
+  type SpendSource,
+  windowPace,
+} from "./derive.ts";
 import { type LimitEvent, readLimitEvents } from "./events.ts";
 import {
   type AccountGroup,
@@ -32,7 +39,7 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
  */
 
 export { limitsPath } from "./cache.ts";
-export { type SpendSource, spendFromQueries } from "./derive.ts";
+export { type PaceBasis, type SpendSource, spendFromQueries } from "./derive.ts";
 export type { LimitEvent, LimitEventKind } from "./events.ts";
 export {
   type AccountGroup,
@@ -62,14 +69,20 @@ export interface LimitWindow {
   /** The window's length in seconds (5 h, 7 d), or null when unknown. */
   window_s: number | null;
   /**
-   * The account's spend pace, USD per hour over the last 30 minutes (every root on the
-   * account together); null without a store.
+   * The spend pace this window projects from, USD per hour, every root on the account
+   * together (`windowPace`): the last 30 minutes, or for a weekly window its average since
+   * it began. Null without a store.
    */
   pace_cost_per_h: number | null;
+  /** The same pace in tokens per hour; null without a store. */
+  pace_tokens_per_h: number | null;
+  /** Which pace that is: "30m" or "window_avg"; null without a store. */
+  pace_basis: PaceBasis | null;
   /**
    * **An estimate** (label it so wherever it is shown): when the window reaches 100 % at
-   * the current pace, "safe" when that is after the reset, null ("—") without enough data.
-   * See `projectExhaustion` for the formula and its limits.
+   * its pace, "safe" when that is after the reset, null ("—") without enough data. A
+   * weekly window's is good to about a part of a day. See `projectExhaustion` for the
+   * formula and its limits.
    */
   projected_exhaustion_at: Projection;
   /** Seconds since the window was captured. */
@@ -120,7 +133,7 @@ export interface AccountLimits {
   error: string | null;
   /**
    * Spend over the last 30 minutes, per hour, of every root on the account together; null
-   * without a store.
+   * without a store. A weekly window projects from its own pace (`LimitWindow`).
    */
   pace: { cost_per_h: number; tokens_per_h: number } | null;
 }
@@ -203,29 +216,35 @@ export class Limits {
     const accts = (group?.members ?? [root])
       .map((member) => this.#storeAccount(member))
       .filter((id): id is number => id !== null);
-    const known = accts.length > 0 && spend !== null;
-    const pace = known ? spend.pace(accts, PACE_MINUTES) : null;
+    const pace = accts.length > 0 && spend !== null ? spend.pace(accts, PACE_MINUTES) : null;
     const capturedAt = capture === null ? 0 : capture.captured_at * 1000;
     const windows = orderedBuckets(capture).map(([kind, bucket]): LimitWindow => {
       const resetsAt = bucket.resets_at * 1000;
       const minutes = windowMinutes(kind, bucket);
+      const windowMs = minutes === null ? null : minutes * 60_000;
       const utilization = now >= resetsAt ? 0 : bucket.used_percentage / 100;
+      const rate =
+        pace === null || spend === null
+          ? null
+          : windowPace(windowMs, resetsAt, now, pace, (from) => spend.rate(accts, from, now));
       return {
         kind,
         label: bucketLabel(kind, bucket),
         utilization,
         resets_at: resetsAt,
         window_s: minutes === null ? null : minutes * 60,
-        pace_cost_per_h: pace === null ? null : pace.costPerHour,
+        pace_cost_per_h: rate?.costPerHour ?? null,
+        pace_tokens_per_h: rate?.tokensPerHour ?? null,
+        pace_basis: rate?.basis ?? null,
         projected_exhaustion_at:
-          !known || pace === null
+          rate === null || spend === null
             ? null
             : projectExhaustion({
                 utilization,
                 capturedAt,
                 resetsAt,
-                windowMs: minutes === null ? null : minutes * 60_000,
-                costPerHour: pace.costPerHour,
+                windowMs,
+                costPerHour: rate.costPerHour,
                 now,
                 spent: (from, to) => spend.cost(accts, from, to),
               }),

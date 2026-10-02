@@ -29,11 +29,20 @@ function win(kind: string, label: string, over: Partial<LimitWindow>): LimitWind
     resets_at: NOW + HOUR,
     window_s: kind === "session" ? 5 * 3600 : 7 * 86400,
     pace_cost_per_h: 3.5,
+    pace_tokens_per_h: 1000,
+    pace_basis: kind === "session" ? "30m" : "window_avg",
     projected_exhaustion_at: "safe",
     stale_s: 30,
     ...over,
   };
 }
+
+/** What `should_wait` reports of the `win` default 5-hour window it names (T18). */
+const SESSION_PACE = {
+  pace_cost_per_h: 3.5,
+  pace_basis: "30m",
+  projected_exhaustion_at: "safe",
+} as const;
 
 const session = (over: Partial<LimitWindow>) => win("session", "5-HOUR", over);
 const weekly = (over: Partial<LimitWindow>) => win("weekly_all", "WEEKLY", over);
@@ -65,6 +74,7 @@ describe("should_wait", () => {
       window: "5-HOUR",
       utilization: 0.95,
       resets_at: "2026-10-01T15:38:00.000Z",
+      ...SESSION_PACE,
       wait_s: 38 * 60 + 30,
     });
   });
@@ -124,6 +134,7 @@ describe("should_wait", () => {
       window: "5-HOUR",
       utilization: 0.95,
       resets_at: "2026-10-01T15:38:00.000Z",
+      ...SESSION_PACE,
       wait_s: 0,
     });
     expect(
@@ -147,6 +158,8 @@ describe("should_wait", () => {
       window: "5-HOUR",
       utilization: 0.7,
       resets_at: "2026-10-01T15:38:00.000Z",
+      ...SESSION_PACE,
+      projected_exhaustion_at: "2026-10-01T15:08:00.000Z",
       wait_s: 38 * 60 + 30,
     });
     const later = (p: LimitWindow["projected_exhaustion_at"]) =>
@@ -163,6 +176,36 @@ describe("should_wait", () => {
     expect(later(NOW + 10 * MIN)).toBe(false);
     expect(later("safe")).toBe(false);
     expect(later(null)).toBe(false);
+  });
+
+  test("a weekly window projected to run out says when coarsely, never to the minute (T18)", () => {
+    // Its pace is the week's average: the instant is good to about a part of a day.
+    const limits = account([
+      session({ utilization: 0.4, resets_at: NOW + 3 * HOUR }),
+      weekly({
+        utilization: 0.88,
+        resets_at: NOW + 3 * DAY,
+        pace_cost_per_h: 16.2963,
+        projected_exhaustion_at: NOW + 7 * MIN,
+      }),
+    ]);
+    expect(shouldWait(limits, {}, NOW, UTC, noSpend)).toEqual({
+      wait: true,
+      reason:
+        "WEEKLY is at 88% and is projected (an estimate) to run out ~this afternoon; it resets at Oct 4 15:00 (in 3d)",
+      window: "WEEKLY",
+      utilization: 0.88,
+      resets_at: "2026-10-04T15:00:00.000Z",
+      pace_cost_per_h: 16.3,
+      pace_basis: "window_avg",
+      projected_exhaustion_at: "2026-10-01T15:07:00.000Z",
+      wait_s: 3 * 86400 + 30,
+    });
+  });
+
+  test("no verdict window, no pace: unavailable limits carry none", () => {
+    const verdict = shouldWait(account([], { as_of: null }), {}, NOW, UTC, noSpend);
+    expect(Object.keys(verdict)).toEqual(["wait", "reason", "utilization", "wait_s"]);
   });
 
   describe("estimated_cost", () => {
@@ -192,6 +235,7 @@ describe("should_wait", () => {
         window: "5-HOUR",
         utilization: 0.5,
         resets_at: "2026-10-01T17:00:00.000Z",
+        ...SESSION_PACE,
         wait_s: 2 * 3600 + 30,
       });
     });
@@ -309,6 +353,7 @@ describe("model-scoped windows", () => {
       window: "5-HOUR",
       utilization: 0.95,
       resets_at: "2026-10-01T15:40:00.000Z",
+      ...SESSION_PACE,
       wait_s: 40 * 60 + 30,
     });
   });
@@ -411,6 +456,7 @@ describe("limitsView", () => {
           utilization: 0.23,
           resets_at: "2026-10-01T11:38:00.000-04:00",
           pace_cost_per_h: 36.02,
+          pace_basis: "30m",
           projected_exhaustion_at: "2026-10-01T13:00:00.000-04:00",
           stale_s: 30,
         },
@@ -420,6 +466,7 @@ describe("limitsView", () => {
           utilization: 0.12,
           resets_at: "2026-10-04T11:00:00.000-04:00",
           pace_cost_per_h: 3.5,
+          pace_basis: "window_avg",
           projected_exhaustion_at: "safe",
           stale_s: 30,
         },

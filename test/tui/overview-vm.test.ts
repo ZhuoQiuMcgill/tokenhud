@@ -5,9 +5,12 @@
 // its stated rules.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { saveLimitsCache } from "../../src/limits/cache.ts";
+import type { SpendSource } from "../../src/limits/derive.ts";
+import type { AccountLimits, LimitWindow } from "../../src/limits/index.ts";
+import { Zone } from "../../src/query/tz.ts";
 import type { UsageRow } from "../../src/store/store.ts";
-import { ACTIVITY, activityRange } from "../../src/tui/vm/overview.ts";
-import type { LimitCard, OverviewVM } from "../../src/tui/vm/types.ts";
+import { ACTIVITY, activityRange, limitCard } from "../../src/tui/vm/overview.ts";
+import type { AccountInfo, LimitCard, OverviewVM } from "../../src/tui/vm/types.ts";
 import { guard } from "../guard.ts";
 import { bundledTable, FIXTURE_ACCOUNTS, NOW } from "./fixture.ts";
 import {
@@ -158,13 +161,23 @@ describe("limit cards", () => {
     expect(card("work").capturedAt).toBe(NOW - 47 * MIN);
   });
 
-  test("the pace is the last 30 minutes' spend, per hour", () => {
+  test("the pace is the verdict's: a weekly window's average, else the last 30 minutes", () => {
     for (const c of vm.cards ?? []) {
+      if (c.label === "codex") continue;
+      expect(c.pace.basis).toBe("30m");
       const want = oracle(NOW - 30 * MIN, NOW + 1, of(c.label));
       close(c.pace.cost, want.cost * 2);
       expect(c.pace.tokens).toBe(want.tokens * 2);
     }
     expect(card("personal").pace.cost).toBeGreaterThan(1);
+    // codex's verdict is its week's (T18): the spend since that window began, 148 h 55 min
+    // ago, per hour.
+    const codex = card("codex").pace;
+    const start = NOW + 1145 * MIN - 7 * 24 * HOUR;
+    const want = oracle(start, NOW + 1, of("codex"));
+    expect(codex.basis).toBe("window_avg");
+    close(codex.cost, want.cost / ((NOW - start) / HOUR));
+    close(codex.tokens, want.tokens / ((NOW - start) / HOUR));
   });
 
   test("personal hits 100 % at the earlier of its windows' projections, worked by hand", () => {
@@ -179,13 +192,18 @@ describe("limit cards", () => {
     expect(fiveHour).toBeLessThan(NOW + 108 * MIN);
     const verdict = card("personal").verdict;
     expect(verdict.kind).toBe("hits");
-    // The weekly window's projection, if any, comes later than the 5-hour one.
-    if (verdict.kind === "hits") expect(Math.abs(verdict.at - fiveHour)).toBeLessThan(1);
+    // The weekly window's projection, if any, comes later than the 5-hour one, whose time
+    // is shown to the minute.
+    if (verdict.kind === "hits") {
+      expect(Math.abs(verdict.at - fiveHour)).toBeLessThan(1);
+      expect(verdict.rough).toBeNull();
+    }
   });
 
   test("codex's week ends high but under 100 %: its projected share, worked by hand", () => {
     const capture = NOW - MIN;
     const resets = NOW + 1145 * MIN;
+    // At the week's average pace (checked above).
     const pace = card("codex").pace.cost;
     const k = 0.83 / spent("codex", resets - 7 * 24 * HOUR, capture);
     const end = 0.83 + k * spent("codex", capture, NOW + 1) + k * pace * ((resets - NOW) / HOUR);
@@ -198,10 +216,10 @@ describe("limit cards", () => {
 
   test("codex-win lasts to its resets; work and the history-only account are idle", () => {
     expect(card("codex-win").verdict).toEqual({ kind: "safe" });
-    expect(card("work").verdict).toEqual({ kind: "idle" });
+    expect(card("work").verdict).toEqual({ kind: "idle", high: null });
     const old = card("old-laptop");
     expect(old.signedIn).toBe(false);
-    expect(old.verdict).toEqual({ kind: "idle" });
+    expect(old.verdict).toEqual({ kind: "idle", high: null });
     expect([old.fiveHour, old.week, old.capturedAt]).toEqual([null, null, null]);
   });
 
@@ -245,6 +263,153 @@ describe("limit cards", () => {
     } finally {
       saveLimitsCache({ providers: { ...CAPTURES }, status: {} }, fx.limitsPath);
     }
+  });
+});
+
+describe("a card's verdict and pace, window by window (T18)", () => {
+  // The user's case, synthetic and rounded (test/limits/derive.test.ts works it through
+  // T8), at made-up times: Thu Oct 1, 15:00 in Toronto; the week began 54 hours before, Tue
+  // 09:00, and resets the next Tuesday at 09:00.
+  const now = Date.parse("2026-10-01T19:00:00Z");
+  const reset = Date.parse("2026-10-06T13:00:00Z");
+  const toronto = Zone.of("America/Toronto");
+  const acct: AccountInfo = {
+    id: 7,
+    label: "burst-like",
+    provider: "claude",
+    identity: "00000000000000000000000000000007",
+    historyOnly: false,
+  };
+  const byIdentity = new Map([[acct.identity, acct]]);
+  /** USD spent at each instant: $820 the day after the week began, and a $60 burst just now. */
+  const spendOf = (spends: readonly (readonly [number, number])[]): SpendSource => ({
+    pace: () => ({ costPerHour: 0, tokensPerHour: 0 }),
+    rate: () => ({ costPerHour: 0, tokensPerHour: 0 }),
+    cost: (_, from, to) =>
+      spends.filter(([t]) => t >= from && t < to).reduce((sum, [, usd]) => sum + usd, 0),
+  });
+  const BURST = spendOf([
+    [Date.parse("2026-09-30T00:00:00Z"), 820],
+    [now - 25 * MIN, 20],
+    [now - 15 * MIN, 20],
+    [now - 5 * MIN, 20],
+  ]);
+  const five = (over: Partial<LimitWindow> = {}): LimitWindow => ({
+    kind: "session",
+    label: "5-HOUR",
+    utilization: 0.3,
+    resets_at: now + 2 * HOUR,
+    window_s: 5 * 3600,
+    pace_cost_per_h: 120,
+    pace_tokens_per_h: 4_800_000,
+    pace_basis: "30m",
+    projected_exhaustion_at: "safe",
+    stale_s: 60,
+    ...over,
+  });
+  const week = (over: Partial<LimitWindow> = {}): LimitWindow => ({
+    kind: "weekly_all",
+    label: "WEEKLY",
+    utilization: 0.48,
+    resets_at: reset,
+    window_s: 7 * 24 * 3600,
+    pace_cost_per_h: 880 / 54,
+    pace_tokens_per_h: (880 * 40_000) / 54,
+    pace_basis: "window_avg",
+    projected_exhaustion_at: Date.parse("2026-10-04T05:30:00Z"),
+    stale_s: 60,
+    ...over,
+  });
+  const limits = (windows: LimitWindow[], pace = 120): AccountLimits => ({
+    account: { id: acct.identity, label: acct.label, provider: "claude", signed_in: true },
+    group: null,
+    windows,
+    as_of: now - MIN,
+    source: "api",
+    error: null,
+    pace: { cost_per_h: pace, tokens_per_h: pace * 40_000 },
+  });
+  const cardOf = (l: AccountLimits, spend = BURST) => limitCard(l, byIdentity, spend, now, toronto);
+
+  test("the week's 100 % at its average pace, as a part of a day: ~Sat night", () => {
+    const c = cardOf(limits([five(), week()]));
+    expect(c.verdict).toEqual({
+      kind: "hits",
+      at: Date.parse("2026-10-04T05:30:00Z"),
+      // Sun 01:30 in Toronto: Saturday night.
+      rough: "~Sat night",
+    });
+    // The pace shown is the one the verdict comes from: the week's average, not the burst's.
+    expect(c.pace).toEqual({
+      cost: 880 / 54,
+      tokens: (880 * 40_000) / 54,
+      basis: "window_avg",
+    });
+  });
+
+  test("the 5-hour window filling first: its 30-minute pace, and a time to the minute", () => {
+    const c = cardOf(limits([five({ projected_exhaustion_at: now + 70 * MIN }), week()]));
+    expect(c.verdict).toEqual({ kind: "hits", at: now + 70 * MIN, rough: null });
+    expect(c.pace).toEqual({ cost: 120, tokens: 4_800_000, basis: "30m" });
+  });
+
+  test("a weekly window under 6 hours old: the 30-minute pace, the time still coarse", () => {
+    const young = week({
+      resets_at: now - 5 * HOUR + 7 * 24 * HOUR,
+      pace_cost_per_h: 120,
+      pace_tokens_per_h: 4_800_000,
+      pace_basis: "30m",
+      // Fri 07:10 in Toronto.
+      projected_exhaustion_at: now + (16 * 60 + 10) * MIN,
+    });
+    const c = cardOf(limits([five(), young]));
+    expect(c.verdict).toEqual({ kind: "hits", at: now + 970 * MIN, rough: "~tomorrow morning" });
+    expect(c.pace.basis).toBe("30m");
+  });
+
+  test("a quiet half hour no longer hides where the week is heading", () => {
+    // Nothing in the last 30 minutes, but $6 an hour on average this week: 0.48 + (0.48 /
+    // 880) * 6 * 114 h to the reset = 85.3 %.
+    const quiet = spendOf([[Date.parse("2026-09-30T00:00:00Z"), 880]]);
+    const c = cardOf(
+      limits(
+        [
+          five({ projected_exhaustion_at: null, pace_cost_per_h: 0 }),
+          week({ pace_cost_per_h: 6, projected_exhaustion_at: "safe" }),
+        ],
+        0,
+      ),
+      quiet,
+    );
+    expect(c.verdict.kind).toBe("week");
+    if (c.verdict.kind === "week") close(c.verdict.utilization, 0.48 + (0.48 / 880) * 6 * 114, 12);
+    expect(c.pace.basis).toBe("window_avg");
+  });
+
+  test("idle with a window at 80 % or more names the fullest; otherwise just idle", () => {
+    // Used elsewhere: 83 % on the meter, $0.30 on this machine, too little to project.
+    const elsewhere = spendOf([[Date.parse("2026-09-30T00:00:00Z"), 0.3]]);
+    const idle = (fiveHour: number, weekly: number) =>
+      cardOf(
+        limits(
+          [
+            five({ utilization: fiveHour, projected_exhaustion_at: null, pace_cost_per_h: 0 }),
+            week({ utilization: weekly, projected_exhaustion_at: null, pace_cost_per_h: 0.01 }),
+          ],
+          0,
+        ),
+        elsewhere,
+      );
+    expect(idle(0.3, 0.83).verdict).toEqual({
+      kind: "idle",
+      high: { window: "week", utilization: 0.83 },
+    });
+    expect(idle(0.85, 0.83).verdict).toEqual({
+      kind: "idle",
+      high: { window: "5h", utilization: 0.85 },
+    });
+    expect(idle(0.3, 0.79).verdict).toEqual({ kind: "idle", high: null });
+    expect(idle(0.3, 0.83).pace).toEqual({ cost: 0, tokens: 0, basis: "30m" });
   });
 });
 

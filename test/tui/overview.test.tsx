@@ -10,7 +10,7 @@ import { Controller, initialState, type Ports } from "../../src/tui/controller.t
 import { theme } from "../../src/tui/theme.ts";
 import type { AccountsState } from "../../src/tui/views/accounts.tsx";
 import { fitLabels, listedEvents, type OverviewState } from "../../src/tui/views/overview.tsx";
-import type { AccountInfo, OverviewVM, ViewModels } from "../../src/tui/vm/types.ts";
+import type { AccountInfo, LimitCard, OverviewVM, ViewModels } from "../../src/tui/vm/types.ts";
 import { guard } from "../guard.ts";
 import { fixtureConfig, NOW, TZ } from "./fixture.ts";
 import { MCP, makeOverviewFixture, type OverviewFixture } from "./overview-fixture.ts";
@@ -127,8 +127,9 @@ describe("what each size keeps (limits first)", () => {
     const old = lines.findIndex((l) => l.includes("old-laptop · claude"));
     expect(lines[old + 1]).toContain("not signed in here");
     expect(text).toContain("work · claude (47m old)");
-    expect(text).toContain("hits 100% at 12:59");
-    expect(text).toContain("week ends ~89%");
+    expect(text).toContain("pace $1.3/h (30m) → hits 100% at 12:59");
+    // codex's week at its average since the window began (T18).
+    expect(text).toContain("avg $0.08/h this week → week ends ~94%");
     expect(text).toContain("safe until reset");
   });
 
@@ -325,12 +326,84 @@ describe("top models' names", () => {
   });
 });
 
+// T18: each card's pace line names its pace, a weekly window's time is a part of a day,
+// and an idle card names a window at 80 % or more. The cards are made by hand here (the view
+// model's rules are tested in overview-vm.test.ts) to show every form at the user's sizes.
+describe("which pace, and how precise (T18)", () => {
+  const HOUR = 3_600_000;
+  const vm = (): OverviewVM => {
+    const base = views.overview as OverviewVM;
+    const [personal, work, old, codex, win] = base.cards ?? [];
+    const avg = (cost: number) => ({ cost, tokens: cost * 40_000, basis: "window_avg" as const });
+    const cards: LimitCard[] = [
+      // As the fixture has it: the 5-hour window first, to the minute.
+      personal as LimitCard,
+      // NOW is Tue 11:40 in Toronto: 56 h on is Thu 19:40.
+      {
+        ...(work as LimitCard),
+        pace: avg(16.3),
+        verdict: { kind: "hits", at: NOW + 56 * HOUR, rough: "~Thu evening" },
+      },
+      old as LimitCard,
+      {
+        ...(codex as LimitCard),
+        pace: { cost: 0, tokens: 0, basis: "30m" },
+        verdict: { kind: "idle", high: { window: "week", utilization: 0.83 } },
+      },
+      // 20 h on is Wed 07:40.
+      {
+        ...(win as LimitCard),
+        pace: avg(6.2),
+        verdict: { kind: "hits", at: NOW + 20 * HOUR, rough: "~tomorrow morning" },
+      },
+    ];
+    return { ...base, cards };
+  };
+  const draw = (width: number, height: number, show = true) =>
+    frame(width, height, controller(fixtureConfig({ show_cost: show }), { overview: vm() }));
+
+  test.each([
+    [105, 50],
+    [120, 45],
+    [80, 24],
+  ] as const)("%i×%i: snapshot, and every number whole", async (width, height) => {
+    for (const show of [true, false]) {
+      const { text } = await draw(width, height, show);
+      expectOverviewWhole(text, vm(), width, fixtureConfig({ show_cost: show }));
+      if (show) expect(text).toMatchSnapshot();
+    }
+  });
+
+  test("105×50: the basis on every card; a weekly time never in minutes", async () => {
+    const { text } = await draw(105, 50);
+    expect(text).toContain("pace $1.3/h (30m) → hits 100% at 12:59");
+    expect(text).toContain("avg $16/h this week → hits 100% ~Thu evening");
+    expect(text).toContain("pace $0/h (30m) → idle · week 83%");
+    expect(text).toContain("avg $6.2/h this week → 100% ~tomorrow morning");
+    expect(text).not.toMatch(/~\S* ?\d\d:\d\d/);
+  });
+
+  test("120×45, three cards to a row: the verdict shortens, then the basis goes before the number", async () => {
+    const { text } = await draw(120, 45);
+    expect(text).toContain("pace $1.3/h (30m) → 100% at 12:59");
+    expect(text).toContain("avg $16/h → 100% ~Thu evening");
+    expect(text).toContain("pace $0/h (30m) → idle · week 83%");
+    expect(text).toContain("$6.2/h → 100% ~tomorrow morning");
+  });
+
+  test("an idle card's full window is in the alarm colour", async () => {
+    const { setup } = await draw(120, 45);
+    expect(roles(setup.captureSpans(), theme("dark"))).toContain("[high/bg]idle · week 83%");
+  });
+});
+
 describe("colours", () => {
   test("cards at 120×45 in the dark theme, by role", async () => {
     const { setup } = await frame(120, 45);
     const out = roles(setup.captureSpans(), theme("dark")).split("\n");
-    // The projection is the alarm colour; the stale age and history-only line are dim.
-    expect(out.join("\n")).toContain("[high/bg/b]hits 100% at 12:59");
+    // The projection is the alarm colour; the stale age and history-only line are dim. Three
+    // cards to a row keep the pace's basis and shorten the verdict.
+    expect(out.join("\n")).toContain("[dim/bg] (30m) → [high/bg/b]100% at 12:59");
     expect(out.join("\n")).toContain("[dim/bg] (47m old)");
     expect(out.join("\n")).toContain("[dim/bg]not signed in here");
     expect(out.slice(3, 15).join("\n")).toMatchSnapshot();

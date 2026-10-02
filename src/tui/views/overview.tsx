@@ -148,19 +148,42 @@ function paceText(card: LimitCard, showCost: boolean): string {
   return `${amount}/h`;
 }
 
-/** The verdict, long (`hits 100% at 16:20`) or short (`100% at 16:20`), and its colour. */
+/**
+ * The pace and, while it fits, which pace it is (T18): `pace $1.3/h (30m)` for the last 30
+ * minutes, `avg $16/h this week` for a weekly window's average. Narrower, the basis goes
+ * (`pace $1.3/h`, `avg $16/h`), then the word (`$16/h`); the number never does.
+ */
+function paceSegs(card: LimitCard, showCost: boolean, form: 0 | 1 | 2): Seg[] {
+  const amount = paceText(card, showCost);
+  if (form === 2) return [seg(`${amount} `, "cost")];
+  const avg = card.pace.basis === "window_avg";
+  const lead = seg(avg ? "avg " : "pace ", "mute");
+  if (form === 1) return [lead, seg(`${amount} `, "cost")];
+  return [lead, seg(amount, "cost"), seg(avg ? " this week " : " (30m) ", "dim")];
+}
+
+/**
+ * The verdict, long (`hits 100% at 16:20`) or short (`100% at 16:20`), and its colour. A
+ * weekly window's time is only good to a part of a day, and says so: `100% ~Sun evening`
+ * (T18).
+ */
 function verdictSeg(v: Verdict, short: boolean, asOf: number, tz: string): Seg {
   switch (v.kind) {
     case "full":
       return seg(`${short ? "" : "at "}100% until ${when(v.until, asOf, tz)}`, "high", true);
-    case "hits":
-      return seg(`${short ? "" : "hits "}100% at ${when(v.at, asOf, tz)}`, "high", true);
+    case "hits": {
+      const at = v.rough ?? `at ${when(v.at, asOf, tz)}`;
+      return seg(`${short ? "" : "hits "}100% ${at}`, "high", true);
+    }
     case "week":
       return seg(`${short ? "wk" : "week ends"} ~${pct(v.utilization)}`, "mid");
     case "safe":
       return seg(short ? "safe" : "safe until reset", "mute");
     case "idle":
-      return seg("idle", "dim");
+      // Nothing spent lately, but a window nearly full is no reason to relax.
+      return v.high === null
+        ? seg("idle", "dim")
+        : seg(`idle · ${v.high.window} ${pct(v.high.utilization)}`, "high");
     case "unknown":
       return seg(short ? "—" : "no estimate yet", "dim");
   }
@@ -265,23 +288,14 @@ function meterLine(name: string, m: LimitMeter | null, width: number, asOf: numb
 }
 
 function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line {
-  const pace = paceText(card, ctx.showCost);
-  const verdict = (short: boolean) => verdictSeg(card.verdict, short, asOf, ctx.tz);
-  return firstFit(
-    [
-      {
-        left: [
-          seg("pace ", "mute"),
-          seg(`${pace.padEnd(6)} `, "cost"),
-          seg("→ ", "dim"),
-          verdict(false),
-        ],
-      },
-      { left: [seg("pace ", "mute"), seg(`${pace} `, "cost"), seg("→ ", "dim"), verdict(true)] },
-      { left: [seg(`${pace} `, "cost"), seg("→ ", "dim"), verdict(true)] },
+  const line = (form: 0 | 1 | 2, short: boolean): Line => ({
+    left: [
+      ...paceSegs(card, ctx.showCost, form),
+      seg("→ ", "dim"),
+      verdictSeg(card.verdict, short, asOf, ctx.tz),
     ],
-    width,
-  );
+  });
+  return firstFit([line(0, false), line(0, true), line(1, true), line(2, true)], width);
 }
 
 function cardBody(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line[] {
@@ -445,7 +459,8 @@ function compactLines(
 
 function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): Section {
   const note = [
-    "pace = spend rate over the last 30 min · times are estimates",
+    "pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates",
+    "pace = last 30 min · avg = this week so far · estimates",
     "pace = last 30 min · estimates",
   ].find((n) => textWidth(" LIMITS") + 2 + textWidth(`${n} `) <= ctx.width);
   const title = sectionLine("LIMITS", note);

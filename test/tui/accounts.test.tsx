@@ -167,6 +167,8 @@ describe("weekly slots", () => {
     resets_at: NOW + 2 * DAY,
     window_s: WEEK / 1000,
     pace_cost_per_h: null,
+    pace_tokens_per_h: null,
+    pace_basis: null,
     projected_exhaustion_at: null,
     stale_s: 0,
     ...over,

@@ -312,7 +312,7 @@ const SHOTS: readonly Shot[] = [
         section: "limits",
         locate: (s) => tight(s, "limits"),
         name: "Limits",
-        text: "A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder that pace is measured over the last 30 minutes and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.",
+        text: "A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder of the two paces, `pace (30m)` over the last 30 minutes and `avg` over the week so far, and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.",
       },
       {
         section: "limits",
@@ -391,17 +391,17 @@ const SHOTS: readonly Shot[] = [
       },
       {
         section: "limits",
-        locate: (s) => s.find(/pace \S+/, card(s, /work · claude/)),
+        locate: (s) => s.find(/(pace|avg) \S+( \(30m\)| this week)?/, card(s, /work · claude/)),
         badge: "bl",
         name: "Pace",
-        text: "What this account spent in the last 30 minutes at API prices, as dollars per hour (tokens per hour with costs hidden). `$0/h`: nothing in the last 30 minutes.",
+        text: "The spend pace the verdict comes from, at API prices, as dollars per hour (tokens per hour with costs hidden). `pace` with `(30m)` is what the account spent in the last 30 minutes: `$6.8/h` here, and `$0/h` for nothing in that time. `avg` with `this week` is a weekly window's average since it began, idle time and nights included: the pace a weekly verdict comes from. Where a card is narrow, `(30m)` or `this week` goes first, then the word; the number stays.",
       },
       {
         section: "limits",
         locate: (s) => s.find(/→ .*\S/, card(s, /work · claude/)),
         badge: "br",
         name: "Verdict",
-        text: "What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `hits 100% at 12:13`, the time the first window fills at this pace (with the day when it isn't today); `idle`, nothing spent in 30 minutes; `week ends ~89%`, the weekly window is on course to end its week at 80 % or more; `safe until reset`, both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.",
+        text: "What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `100% at 12:13` (`hits 100% at …` on a wider card), the time the 5-hour window fills at its pace, with the day when it isn't today; `100% ~tonight`, the part of the day the weekly window fills at its average (or tomorrow morning, Sunday evening and so on; never to the minute, which a week's average can't tell); `wk ~94%` (`week ends ~…` on a wider card), the weekly window is on course to end its week at 80 % or more; `idle`, nothing spent in 30 minutes, or `idle · week N%` when a window is at 80 % or more all the same; `safe` (`safe until …` on a wider card), both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.",
       },
       {
         section: "limits",

@@ -4,11 +4,11 @@ exports[`105×50 Overview: one card titled with both labels 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- LIMITS                                     pace = spend rate over the last 30 min · times are estimates 
+ LIMITS      pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
  ╭─ personal-like + win-like · claude ─────────────╮  ╭─ work-like · claude ───────────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  64%  1h35m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  4h00m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  31%  2d22h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  40%  2d22h │ 
- │ pace $1.4/h → hits 100% at 12:10                │  │ pace $0/h   → idle                             │ 
+ │ pace $1.4/h (30m) → hits 100% at 12:10          │  │ pace $0/h (30m) → idle                         │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
                                                                                                          
  SPEND                                                                                                   
@@ -274,11 +274,11 @@ exports[`120×45 Overview: one card titled with both labels 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- LIMITS                                                    pace = spend rate over the last 30 min · times are estimates 
+ LIMITS                     pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
  ╭─ personal-like + win-like ─────────╮  ╭─ work-like · claude ───────────────╮                                         
  │ 5h   ━━━━━━━━━━━━━━━━━  64%  1h35m │  │ 5h   ━━━━━━━━━━━━━━━━━  12%  4h00m │                                         
  │ week ━━━━━━━━━━━━━━━━━  31%  2d22h │  │ week ━━━━━━━━━━━━━━━━━  40%  2d22h │                                         
- │ pace $1.4/h → hits 100% at 12:10   │  │ pace $0/h   → idle                 │                                         
+ │ pace $1.4/h (30m) → 100% at 12:10  │  │ pace $0/h (30m) → idle             │                                         
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯                                         
                                                                                                                         
  SPEND                                                                                                                  

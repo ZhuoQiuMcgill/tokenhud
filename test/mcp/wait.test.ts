@@ -18,6 +18,8 @@ function win(kind: string, label: string, utilization: number, resetsAt: number)
     resets_at: resetsAt,
     window_s: kind === "session" ? 18_000 : 604_800,
     pace_cost_per_h: 0,
+    pace_tokens_per_h: 0,
+    pace_basis: kind === "session" ? "30m" : "window_avg",
     projected_exhaustion_at: "safe",
     stale_s: 0,
   };

@@ -197,7 +197,7 @@ How close each account is to its limits, and what your usage is costing right no
 ![The Overview with seven numbered boxes: header, limits cards, MCP agents, spend, activity chart, top models, limit events](docs-public/images/overview.png)
 
 1. 🟥 **Header.** The four views, the one you are on highlighted. On the right, the account scope: `all accounts`, or the one account that every number in every view is narrowed to. Then the status dot. `● live · 5s` (teal): this tokenhud reads new transcript lines as Claude Code and Codex write them, and refreshes its clock-driven numbers every 5 seconds (the refresh interval setting). `● stale` (amber): it isn't reading transcripts itself, because another tokenhud is (this one shows what that one stores), or it is still starting, or reading failed. `● error` (red): the numbers have stopped updating while tokenhud restarts the part that computes them.
-2. 🟧 **Limits.** A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder that pace is measured over the last 30 minutes and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.
+2. 🟧 **Limits.** A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder of the two paces, `pace (30m)` over the last 30 minutes and `avg` over the week so far, and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.
 3. 🟨 **Agents.** Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: its project (the name of the directory the session runs in, never its path; `claude session` when the server doesn't say), the account the call was about, the tool, and how long ago. A narrow card leaves out the account, then the project. With no recent calls, it says how many servers are running.
 4. 🟩 **Spend.** What your usage would cost at the providers' API prices (not what your subscription costs), and its tokens: input, output, cache reads and cache writes together. `1h` and `5h` are the last 60 minutes and the last 5 hours (shown on screens 120 columns wide or more). `today`, `this week` and `this month` start at local midnight, on Monday and on the 1st. `all-time` is everything tokenhud has stored, including usage whose transcripts are gone. For `*` and `≈`, see [Glyphs and colours](#glyphs-and-colours).
 5. 🟦 **Activity.** Cost over the last 24 hours, one bar per time slot. The tabs on the right switch to the last 5 hours or 7 days (`a`/`d`; the one shown is in brackets), and `t` switches to tokens. The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.
@@ -213,30 +213,42 @@ How close each account is to its limits, and what your usage is costing right no
 1. 🟥 **Account.** The account's label and its provider, `claude` or `codex`. The label comes from the account's config directory (`~/.claude-work` is `work`) unless you renamed it.
 2. 🟧 **Meters.** The `5h` row is the 5-hour window, the `week` row the weekly one. Each bar is how much of that limit is used: blue below 50 %, amber from 50 %, red-orange from 80 %. A model's own weekly limit isn't on the card; the Accounts view lists it.
 3. 🟨 **Used, and time to reset.** `84%` is the share of the 5-hour limit used, as the provider reported it the last time tokenhud fetched the limits; `1h52m` is the time left until that window resets. On the weekly row, `41%` used and `5d21h` (5 days 21 hours) to go. Once a window has reset, the card reads 0 % and `—` until the next fetch.
-4. 🟩 **Pace.** What this account spent in the last 30 minutes at API prices, as dollars per hour (tokens per hour with costs hidden). `$0/h`: nothing in the last 30 minutes.
-5. 🟦 **Verdict.** What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `hits 100% at 12:13`, the time the first window fills at this pace (with the day when it isn't today); `idle`, nothing spent in 30 minutes; `week ends ~89%`, the weekly window is on course to end its week at 80 % or more; `safe until reset`, both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.
+4. 🟩 **Pace.** The spend pace the verdict comes from, at API prices, as dollars per hour (tokens per hour with costs hidden). `pace` with `(30m)` is what the account spent in the last 30 minutes: `$6.8/h` here, and `$0/h` for nothing in that time. `avg` with `this week` is a weekly window's average since it began, idle time and nights included: the pace a weekly verdict comes from. Where a card is narrow, `(30m)` or `this week` goes first, then the word; the number stays.
+5. 🟦 **Verdict.** What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `100% at 12:13` (`hits 100% at …` on a wider card), the time the 5-hour window fills at its pace, with the day when it isn't today; `100% ~tonight`, the part of the day the weekly window fills at its average (or tomorrow morning, Sunday evening and so on; never to the minute, which a week's average can't tell); `wk ~94%` (`week ends ~…` on a wider card), the weekly window is on course to end its week at 80 % or more; `idle`, nothing spent in 30 minutes, or `idle · week N%` when a window is at 80 % or more all the same; `safe` (`safe until …` on a wider card), both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.
 6. 🟪 **Stale limits.** The limits were fetched more than 15 minutes ago: `(52m old)` says how long ago, and the card shows them as they were then.
 7. 🟫 **Not signed in here.** A history-only account: one you marked history only, or one that isn't signed in on this machine (it runs on another computer now, say). Its limits can't be read here, so it has no meters, but its usage history stays. See [Accounts](#accounts).
 <!-- /shots:overview-card -->
 
 #### How the projection works
 
-The pace is what the account spent, at API prices, in the last 30 minutes, times two. For
-each of the account's windows, tokenhud estimates how much of the limit a dollar uses: the
-window's use when the limits were last fetched, divided by what the account had spent in
-that window by then (at least $0.50, or there is no estimate). It adds what was spent since
-that fetch, and works out how long the rest of the window lasts at the current pace. If that
-ends before the window resets, the card says when (`hits 100% at …`); if after, the window is
-safe. For the weekly window it also works out where the week would end at that pace: that is
-the `week ends ~N%` figure, shown from 80 %. Treat it as a rough guide:
+Each window is projected at a pace of its own, at API prices:
+
+- **The 5-hour window:** what the account spent in the last 30 minutes, times two
+  (`pace … (30m)` on the card).
+- **A weekly window:** its average since it began, what the account has spent in it so far
+  over the hours since it opened, nights and idle time included (`avg … this week`). Half an
+  hour is too little of a week: two agents working at once for 30 minutes would otherwise
+  say the week runs out tonight. In a weekly window's first 6 hours there is too little to
+  average, and the 30-minute pace stands in.
+
+For each window, tokenhud estimates how much of the limit a dollar uses: the window's use
+when the limits were last fetched, divided by what the account had spent in that window by
+then (at least $0.50, or there is no estimate). It adds what was spent since that fetch, and
+works out how long the rest of the window lasts at its pace. If that ends before the window
+resets, the card says when: to the minute for the 5-hour window (`100% at 12:13`), and to a
+part of the day for a weekly one (`100% ~tonight`; or tomorrow morning, Sunday evening and
+so on), as precise as a week's average can be. If after, the window is safe. For the weekly window it
+also works out where the week would end at its pace: that is the `week ends ~N%` figure,
+shown from 80 %. Treat it as a rough guide:
 
 - tokenhud sees only the transcripts on this machine. Use of the same subscription elsewhere
   (another computer, claude.ai) fills the meter without showing up here, which makes the
   estimate too early.
 - API prices stand in for the provider's own accounting, which isn't published, so a change
   in models or in cache use changes the estimate.
-- The pace covers only the last 30 minutes, so a burst or a break dominates it. For a weekly
-  window days from its reset, that can swing the estimate a long way.
+- A burst or a break dominates the 30-minute pace, and so the 5-hour estimate. The weekly
+  average is slow to follow a change of habit instead: a busy day after a quiet week shows
+  late.
 
 ### History screen
 
@@ -298,7 +310,8 @@ its last 30 days.
   `unpriced`: none of its tokens has a price. See [Pricing](#pricing).
 - `≈` before a cost: part of it is priced from an estimate (`codex-auto-review`, priced as
   the model OpenAI said serves it).
-- `~` in `week ends ~89%`: a projection. Every time on a limits card is an estimate too.
+- `~` in `wk ~94%` or `100% ~tonight`: a projection, the second to a part of the day.
+  Every time on a limits card is an estimate too.
 - **Grey (dim) text** is secondary: labels, notes, and what is old or inactive, such as a
   limits card's `(52m old)`, an inactive account's `○`, or a window past its reset.
 - **Dots**: teal `●` is live (the header) or an MCP server running (the footer); amber `●`
@@ -348,6 +361,10 @@ directories on an idle account show apart until it is used. Once they are linked
 other directory is still fetched every 30 minutes, and once more right away when its
 credential file changes. If a reset differs, the two show apart straight away, and a second
 difference in a row unlinks them; a difference in use alone is checked again next round.
+These checks ride on the account's own fetches, the TUI's and the MCP server's alike.
+Finding two directories on one account in the first place is left to the fetches the TUI
+makes every 5 minutes: the MCP server fetches only the account it is asked about, so an
+agent asking often adds no fetches of a directory not linked to it.
 
 An account's menu (`enter` on it, in the Accounts view or in settings under Accounts) links
 it to another by hand ("Same account as…") and unlinks it ("Unlink"). These are saved as
@@ -401,8 +418,8 @@ plugin: `claude mcp add -s user tokenhud -- cmd /c tokenhud mcp`. The standalone
 
 | Tool | What it does |
 |---|---|
-| `limits` | The account's limit windows (5-hour, weekly, per model): utilization from 0 to 1, reset time, spend pace, and when the window would run out at that pace (an estimate). Fetches fresh limits when the cached ones are over 60 s old. For a directory that shares its subscription account with others, the windows and pace are the account's, and `shared_with` names the others. |
-| `should_wait` | `wait: true` when a window is at 90 % or more (`min_headroom`, default 0.1), when `estimated_cost` (USD) would take it there, or when it is projected to run out within 10 minutes, before its reset. The 5-hour and weekly windows always count; a per-model window (such as a model's weekly limit) counts only when `model` names that model, and is otherwise just mentioned. Returns a short reason and `wait_s`: until the reset, plus 30 s. |
+| `limits` | The account's limit windows (5-hour, weekly, per model): utilization from 0 to 1, reset time, the spend pace each window is projected at (`pace_basis`: `30m`, the last 30 minutes, or for a weekly window `window_avg`, its average since it began), and when the window would run out at that pace (an estimate, a weekly window's good to a part of a day). Fetches fresh limits when the cached ones are over 60 s old. For a directory that shares its subscription account with others, the windows and pace are the account's, and `shared_with` names the others. |
+| `should_wait` | `wait: true` when a window is at 90 % or more (`min_headroom`, default 0.1), when `estimated_cost` (USD) would take it there, or when it is projected to run out within 10 minutes, before its reset. The 5-hour and weekly windows always count; a per-model window (such as a model's weekly limit) counts only when `model` names that model, and is otherwise just mentioned. Returns a short reason, the window it is about with its pace and projection as `limits` gives them, and `wait_s`: until the reset, plus 30 s. |
 | `wait_for_reset` | Waits until the window `should_wait` binds on (for the same `model`) resets, or its utilization drops under `until_utilization_below`, for at most `max_wait_s` (5 hours or less). Sends progress every 30 s, re-checks the limits every 5 minutes, and stops at once when the call is cancelled. |
 | `usage` | Tokens and API-equivalent cost for a period, optionally by model, account, day, week or month (at most 500 groups per call), as `tokenhud json usage` prints them ([schema](docs-public/JSON.md)), plus `stale_s`, the age of the store's data. |
 | `accounts` | The accounts on this machine, from cached data only: whether their limits can be read here (`signed_in`, null until first checked), their last usage, which one this session runs on, and `group`, the same id for every directory on one subscription account. |
