@@ -17,7 +17,7 @@ import { IngestEngine } from "../../src/ingest/engine.ts";
 import { rootIdentity } from "../../src/sources/roots.ts";
 import { ledgerKey } from "../../src/store/key.ts";
 import { openStoreReader } from "../../src/store/store.ts";
-import { initialSettings, type SettingsState, settingsKey } from "../../src/tui/settings.ts";
+import { Controller, initialState } from "../../src/tui/controller.ts";
 import {
   configuredLabels,
   discoverRoots,
@@ -105,32 +105,45 @@ function imported(e: IngestEngine, identity: string, label: string): void {
 const storeLabel = (e: IngestEngine, identity: string) =>
   [...e.store.accounts().values()].find((a) => a.identity === identity)?.label;
 
-/** The settings screen: Accounts, the root labelled `from`, `l`, a new label, Enter. */
+/**
+ * The settings screen, as the shell drives it: Accounts, the root labelled `from`, its action
+ * menu's Rename (the root has no store account in the shell yet: Disable, then Rename), a
+ * new label, Enter.
+ */
 function renameInSettings(p: Place, config: Config, from: string, to: string): Config {
   const roots = rootInfos(discoverRoots(config, { home: p.home, env: p.env }), config, p.home);
   const pick = roots.findIndex((r) => r.label === from);
   expect(pick).toBeGreaterThanOrEqual(0);
+  let out = config;
+  const c = new Controller(
+    initialState(config, "owner"),
+    {
+      saveConfig: (saved) => {
+        out = saved;
+      },
+      vmSettings() {},
+      vmConfig() {},
+      vmRoots() {},
+      accountsEdited() {},
+      quit() {},
+    },
+    "UTC",
+  );
+  c.vmMessage({ type: "roots", roots });
   const keys = [
+    "x",
     "end",
     "return",
     ...Array(pick).fill("down"),
-    "l",
+    "return",
+    "down",
+    "return",
     ...Array(from.length).fill("backspace"),
     ...to,
     "return",
   ];
-  let state: SettingsState | null = initialSettings();
-  let out = config;
-  for (const name of keys) {
-    const r = settingsKey(
-      state as SettingsState,
-      { name, sequence: name.length === 1 ? name : "" },
-      { config: out, roots, zones: ["system"], systemZone: "UTC" },
-    );
-    state = r.state;
-    if (r.config) out = r.config;
-  }
-  expect(state).toMatchObject({ screen: "accounts", message: null });
+  for (const name of keys) c.key({ name, sequence: name.length === 1 ? name : "", ctrl: false });
+  expect(c.getState().settings).toMatchObject({ screen: "accounts", message: null });
   return out;
 }
 

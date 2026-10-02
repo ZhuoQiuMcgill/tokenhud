@@ -22,7 +22,8 @@ import {
   tokens,
   truncate,
 } from "../format.ts";
-import { sectionLine } from "../frame.ts";
+import { sectionLine, type Tab, tabsHeader } from "../frame.ts";
+import { GLOBAL_KEYS, type Keymap, moveKey } from "../keys.ts";
 import { cardsPerRow, splitWidth } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
 import type {
@@ -42,11 +43,11 @@ import { costNote, costText } from "./cells.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
 export interface OverviewState {
-  /** The activity chart's span (`←/→`). */
+  /** The activity chart's span: its tab (`a`/`d`). */
   readonly window: ActivityWindow;
-  /** Chart and rank by tokens even while costs show (`t`, `↑/↓`). */
+  /** Chart and rank by tokens even while costs show (`t`). */
   readonly tokens: boolean;
-  /** The selected limits card (`tab`), by position; null for none (Enter opens the first). */
+  /** The selected limits card (`w`/`s`), by position; null for none (Enter opens the first). */
   readonly card: number | null;
 }
 
@@ -72,6 +73,9 @@ const SPEND_LABELS: Readonly<Record<SpendColumn, string>> = {
   this_month: "this month",
   all: "all-time",
 };
+const WINDOW_TABS: readonly Tab[] = ACTIVITY_WINDOWS.map((w) => ({ label: w }));
+/** The activity chart's section (and, wide, the top models beside it). */
+const ACTIVITY = "activity";
 const ticks = (texts: readonly string[]): XLabel[] =>
   texts.map((text, i) => ({ at: i / (texts.length - 1), text }));
 const X_LABELS: Readonly<Record<ActivityWindow, readonly XLabel[]>> = {
@@ -446,7 +450,7 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
       cards === null
         ? "reading limits…"
         : ctx.scope === null
-          ? "no enabled accounts: add one in settings (s)"
+          ? `no enabled accounts: add one in settings (${GLOBAL_KEYS.settings.show})`
           : "no limits for this account";
     const lines = [title, { left: [seg(`  ${text}`, "dim")] }];
     return {
@@ -728,16 +732,24 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
   const at = when(series.from + peak * bucketMs, vm.asOf, ctx.tz);
   const note =
     peakValue > 0 ? `peak ${costs ? money(peakValue) : tokens(peakValue)} at ${at}` : undefined;
-  const metric = costs ? "cost" : "tokens";
-  const full = `ACTIVITY · ${metric} per ${per(bucketMs / 60_000)} · ${state.window}`;
-  const fits = (title: string, withNote?: string) =>
-    textWidth(` ${title}`) + (withNote === undefined ? 0 : textWidth(withNote) + 2) <= chartWidth;
-  const titleNote = !beside && note !== undefined && fits(full, note) ? note : undefined;
-  const title = fits(full, titleNote) ? full : `ACTIVITY · ${state.window}`;
+  // The title, then the window's tab strip flush right; narrow, the title gives way first.
+  const metric = `ACTIVITY · ${costs ? "cost" : "tokens"} per ${per(bucketMs / 60_000)}`;
+  const header = tabsHeader(
+    [
+      ...(beside || note === undefined
+        ? []
+        : [[seg(` ${metric}`, "head", true), seg(` · ${note}`, "dim")]]),
+      [seg(` ${metric}`, "head", true)],
+      [seg(" ACTIVITY", "head", true)],
+    ],
+    WINDOW_TABS,
+    ACTIVITY_WINDOWS.indexOf(state.window),
+    chartWidth,
+  );
   const topRows = Math.max(1, models.length);
   const chart = (height: number) => (
     <box flexDirection="column" width={chartWidth} height={height} flexShrink={0}>
-      <Lines theme={ctx.theme} lines={[sectionLine(title, titleNote)]} />
+      <Lines theme={ctx.theme} lines={[header]} />
       <th-vchart
         values={plotted.values}
         colorRole={costs ? "cost" : "tokens"}
@@ -784,7 +796,7 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
     );
   };
   const activity: Section = {
-    id: "activity",
+    id: ACTIVITY,
     priority: 3,
     height: 2 + CHART_ROWS,
     minHeight: beside ? Math.max(5, 1 + topRows) : 5,
@@ -918,36 +930,58 @@ function cycle<T>(items: readonly T[], at: T, step: number): T {
   return items[(i + step + items.length) % items.length] as T;
 }
 
-export const overview: View<OverviewVM, OverviewState> = {
-  id: "overview",
-  title: "Overview",
-  hints: [
-    { key: "←/→", label: "window" },
-    { key: "t", label: "cost/tokens" },
-    { key: "enter", label: "details" },
-    { key: "tab", label: "card" },
-  ],
-  initial: { window: "24h", tokens: false, card: null },
-  keys(key, state, vm) {
-    if (key === "left" || key === "right") {
-      return { ...state, window: cycle(ACTIVITY_WINDOWS, state.window, key === "right" ? 1 : -1) };
-    }
-    if (key === "t" || key === "up" || key === "down") return { ...state, tokens: !state.tokens };
-    if (key === "tab") {
+const keymap: Keymap<OverviewState, OverviewVM | undefined> = [
+  moveKey("tabs", {
+    label: "window",
+    does: `Switch the activity window: ${ACTIVITY_WINDOWS.join(" · ")}`,
+    // The chart's: with no room for it, there's nothing on screen to switch.
+    section: ACTIVITY,
+    act: (state, _vm, key) => ({
+      ...state,
+      window: cycle(ACTIVITY_WINDOWS, state.window, key === "right" ? 1 : -1),
+    }),
+  }),
+  moveKey("select", {
+    label: "card",
+    does: "Select an account card (none is selected at first)",
+    act: (state, vm, key) => {
       const n = vm?.cards?.length ?? 0;
       if (n === 0) return undefined;
-      return { ...state, card: state.card === null || state.card + 1 >= n ? 0 : state.card + 1 };
-    }
-    if (key === "escape" && state.card !== null) return { ...state, card: null };
-    if (key === "return") {
-      // The selected card's account in Accounts (the first card's when none is selected).
+      const at = state.card === null ? 0 : state.card + (key === "down" ? 1 : -1);
+      return { ...state, card: Math.max(0, Math.min(n - 1, at)) };
+    },
+  }),
+  moveKey("open", {
+    label: "open",
+    does: "Open the selected card's account in Accounts (the first card's when none is selected)",
+    act: (state, vm) => {
       const cards = vm?.cards ?? [];
       const card = cards[state.card !== null && state.card < cards.length ? state.card : 0];
       if (card === undefined || card.account === null) return undefined;
       return withCommand(state, { type: "open", view: "accounts", account: card.account });
-    }
-    return undefined;
+    },
+  }),
+  moveKey("back", {
+    label: "back",
+    does: "Clear the card selection",
+    when: (state) => state.card !== null,
+    act: (state) => (state.card === null ? undefined : { ...state, card: null }),
+  }),
+  {
+    keys: ["t"],
+    show: "t",
+    label: "cost/tokens",
+    does: "Show cost or tokens in the activity chart and the top models",
+    section: ACTIVITY,
+    act: (state) => ({ ...state, tokens: !state.tokens }),
   },
+];
+
+export const overview: View<OverviewVM, OverviewState> = {
+  id: "overview",
+  title: "Overview",
+  keymap,
+  initial: { window: "24h", tokens: false, card: null },
   sections: (vm, state, ctx) => [
     limitsSection(vm, state, ctx),
     spendSection(vm, ctx),

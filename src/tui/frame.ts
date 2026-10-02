@@ -123,3 +123,72 @@ export function sectionLine(title: string, note?: string): Line {
     ? { left: [seg(` ${title}`, "head", true)] }
     : { left: [seg(` ${title}`, "head", true)], right: [seg(`${note} `, "dim")] };
 }
+
+/** A tab of a strip: its label, and a shorter one for narrow screens. */
+export interface Tab {
+  readonly label: string;
+  readonly short?: string;
+}
+
+/**
+ * A tab strip's forms, widest first (T17): `◀ a [this week] this month  days  d ▶`, so
+ * `a`/`d` show what they switch. The active tab is marked in text (`[…]`) as well as in
+ * colour, so a plain or piped frame, and a reader who can't tell the colours apart, see
+ * it; `crumb` follows its label (`weeks › 09-28`). `whole` show every tab: with its label, then its short
+ * label. `cut` show fewer tabs around the active one (a dim `…` where some are hidden), then
+ * the active one alone without the keys: the active tab always shows.
+ */
+export function tabStrips(
+  tabs: readonly Tab[],
+  active: number,
+  crumb?: string,
+): { whole: Seg[][]; cut: Seg[][] } {
+  const after = crumb === undefined ? "" : ` › ${crumb}`;
+  const build = (short: boolean, shown: number, keys: boolean): Seg[] => {
+    const first = Math.max(0, Math.min(active - Math.floor((shown - 1) / 2), tabs.length - shown));
+    const out: Seg[] = keys ? [seg("◀ a ", "dim")] : [];
+    if (first > 0) out.push(seg("… ", "dim"));
+    tabs.slice(first, first + shown).forEach((tab, k) => {
+      const label = short ? (tab.short ?? tab.label) : tab.label;
+      if (k > 0) out.push(seg(" ", "fg"));
+      out.push(
+        first + k === active
+          ? seg(`[${label}${after}]`, "head", true, "tab")
+          : seg(` ${label} `, "mute"),
+      );
+    });
+    if (first + shown < tabs.length) out.push(seg(" …", "dim"));
+    if (keys) out.push(seg(" d ▶", "dim"));
+    return out;
+  };
+  const cut: Seg[][] = [];
+  for (let shown = tabs.length - 1; shown >= 1; shown--) cut.push(build(true, shown, true));
+  cut.push(build(true, 1, false));
+  return { whole: [build(false, tabs.length, true), build(true, tabs.length, true)], cut };
+}
+
+/**
+ * A section's header line with tabs (T17): a title flush left and the tab strip flush
+ * right. Every tab stays as long as any title fits beside it (the strip's labels shorten
+ * before the title does); then the last title stays and the strip shows fewer tabs.
+ */
+export function tabsHeader(
+  titles: readonly (readonly Seg[])[],
+  tabs: readonly Tab[],
+  active: number,
+  width: number,
+): Line {
+  const { whole, cut } = tabStrips(tabs, active);
+  const line = (title: readonly Seg[], strip: Seg[]): Line => ({
+    left: title,
+    right: [...strip, seg(" ", "fg")],
+  });
+  const fits = (title: readonly Seg[], strip: Seg[]) =>
+    segsWidth(title) + 1 + segsWidth(strip) + 1 <= width;
+  for (const title of titles) {
+    for (const strip of whole) if (fits(title, strip)) return line(title, strip);
+  }
+  const last = titles[titles.length - 1] ?? [];
+  const strip = cut.find((f) => fits(last, f)) ?? (cut[cut.length - 1] as Seg[]);
+  return line(last, strip);
+}

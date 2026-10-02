@@ -11,6 +11,7 @@ import { sparkChar } from "../components/spark.ts";
 import { chartCell } from "../components/vchart.ts";
 import { Lines, Table } from "../elements.tsx";
 import { dayLabel, fit, percent, textWidth, tokens, truncate } from "../format.ts";
+import { footerHints, type Keymap, MOVE_KEYS, moveKey } from "../keys.ts";
 import { fitSections, type SectionSpec } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
 import type { AccountRow, AccountsVM, ModelSpend, WeekSlot } from "../vm/accounts.ts";
@@ -132,6 +133,8 @@ function staleAge(a: AccountRow, asOf: number): string | null {
 }
 
 const pct = (u: number) => `${Math.round(u * 100)}%`;
+/** How a disabled root is turned back on: its action menu's Enable. */
+const ENABLE = `${MOVE_KEYS.open.show}, then Enable`;
 
 function statusDot(a: AccountRow, asOf: number): { text: string; role: Role } {
   if (inactive(a)) return { text: "○", role: "dim" };
@@ -193,13 +196,6 @@ function selectedIndex(rows: readonly ListRow[], state: AccountsState): number {
   );
   return Math.max(0, at);
 }
-
-const HINTS: Line[] = [
-  { left: [seg(" enter ", "head", true), seg("scope to it", "dim")] },
-  { left: [seg(" e ", "head", true), seg("enable/disable", "dim")] },
-  { left: [seg(" l ", "head", true), seg("rename label", "dim")] },
-  { left: [seg(" h ", "head", true), seg("history only", "dim")] },
-];
 
 /** The list column: title, the accounts and "+ add a root…", then the keys if rows allow. */
 function ListColumn(props: {
@@ -391,9 +387,9 @@ function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
       noteLine(
         "limits",
         [
-          "not fetched: this root is disabled (e enables it)",
-          "not fetched: root disabled (e enables it)",
-          "root disabled (e enables it)",
+          `not fetched: this root is disabled (${ENABLE})`,
+          `not fetched: root disabled (${ENABLE})`,
+          `root disabled (${ENABLE})`,
           "root disabled",
         ],
         width,
@@ -660,7 +656,14 @@ function addRootLines(): Line[] {
   return [
     { left: [seg(" add a root", "head", true)] },
     { left: [] },
-    { left: [seg(" enter opens the settings account editor: every root found here,", "dim")] },
+    {
+      left: [
+        seg(
+          ` ${MOVE_KEYS.open.show} opens the settings account editor: every root found here,`,
+          "dim",
+        ),
+      ],
+    },
     { left: [seg(" to enable, rename or mark history-only", "dim")] },
   ];
 }
@@ -669,41 +672,47 @@ function partHeight(parts: readonly Part[]): number {
   return parts.reduce((n, p) => n + p.height, 0) + Math.max(0, parts.length - 1);
 }
 
-export const accounts: View<AccountsVM, AccountsState> = {
-  id: "accounts",
-  title: "Accounts",
-  hints: [
-    { key: "↑/↓", label: "account" },
-    { key: "enter", label: "scope" },
-    { key: "e", label: "enable" },
-    { key: "l", label: "label" },
-    { key: "h", label: "history only" },
-  ],
-  initial: { selected: null },
-  // Selection is by account id, so an account from another view is selected as it is.
-  select: (_state, account) => ({ selected: account }),
-  keys(key, state, vm) {
-    if (vm === undefined) return undefined;
-    const rows = listRows(vm);
-    if (key === "up" || key === "down") {
+const keymap: Keymap<AccountsState, AccountsVM | undefined> = [
+  moveKey("select", {
+    label: "account",
+    does: "Select an account; the last entry is + add a root…",
+    act: (state, vm, key) => {
+      if (vm === undefined) return undefined;
+      const rows = listRows(vm);
       const at = selectedIndex(rows, state) + (key === "down" ? 1 : -1);
       const row = rows[Math.max(0, Math.min(rows.length - 1, at))] as ListRow;
       return { selected: isAdd(row) ? ADD_ROOT : row.id };
-    }
-    // The rest act on what the shell owns: the scope, a root's config, the settings.
-    const row = rows[selectedIndex(rows, state)];
-    if (row === undefined) return undefined;
-    if (key === "return" || key === "enter") {
+    },
+  }),
+  moveKey("open", {
+    label: "actions",
+    does: "Open the account's action menu (show only it, enable or disable, rename, history only); on + add a root…, the settings account editor",
+    // The menu and the editor are the shell's: the state carries the command.
+    act: (state, vm) => {
+      if (vm === undefined) return undefined;
+      const rows = listRows(vm);
+      const row = rows[selectedIndex(rows, state)];
+      if (row === undefined) return undefined;
       return withCommand(
         state,
-        isAdd(row) ? { type: "settings" } : { type: "scope", account: row.id },
+        isAdd(row) ? { type: "settings" } : { type: "menu", account: row.id },
       );
-    }
-    if (isAdd(row)) return undefined;
-    const edit = key === "e" ? "enable" : key === "l" ? "rename" : key === "h" ? "history" : null;
-    if (edit === null) return undefined;
-    return withCommand(state, { type: "root", identity: row.identity, label: row.label, edit });
-  },
+    },
+  }),
+];
+
+/** The keys under the list, when rows allow: the footer's, one a line. */
+const HINTS: Line[] = footerHints(keymap).map((h) => ({
+  left: [seg(` ${h.key.padEnd(5)} `, "head", true), seg(h.label, "dim")],
+}));
+
+export const accounts: View<AccountsVM, AccountsState> = {
+  id: "accounts",
+  title: "Accounts",
+  keymap,
+  initial: { selected: null },
+  // Selection is by account id, so an account from another view is selected as it is.
+  select: (_state, account) => ({ selected: account }),
   sections(vm, state, ctx) {
     const rows = listRows(vm);
     const at = selectedIndex(rows, state);

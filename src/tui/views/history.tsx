@@ -1,16 +1,19 @@
 // History, "calendar + table" (gen.py `history_a()`, without its Project and Session tabs):
-// a 26-week heat map of daily cost, the selected day's detail card, and a table by day,
-// week or month with "this week" (from Monday) and "this month" (from the 1st) filters.
+// a 26-week heat map of daily cost, the selected day's detail card, and a table whose tabs
+// (`a`/`d`, T17) list this week's days (from Monday), this month's (from the 1st), every
+// day, the weeks or the months.
 //
-// One selection drives both halves: the selected day. The heat map's cursor is that day,
-// and the table's selected row is the row holding it, so moving either moves the other.
-// `/` filters by model: every number on screen is then that model's (rows without it go).
-// Everything here picks from the view model; nothing queries (ARCHITECTURE §9).
+// One selection drives both halves: the selected day. The table's selected row is the row
+// holding it, and the heat map highlights that row's days: the day, or its week's or
+// month's cells. `f` filters by model: every number on screen is then that model's (rows
+// without it go). Everything here picks from the view model; nothing queries
+// (ARCHITECTURE §9).
 import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column, MonthLabel } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
 import { clock, countdown, dayLabel, monthName, textWidth, tokens, truncate } from "../format.ts";
-import { sectionLine } from "../frame.ts";
+import { sectionLine, type Tab, tabStrips } from "../frame.ts";
+import { hintText, type KeyEntry, MOVE_KEYS, moveKey, TEXT } from "../keys.ts";
 import { HEAT_ROLES, type Role } from "../theme.ts";
 import type {
   HistoryDay,
@@ -23,13 +26,30 @@ import type {
 import { costNote, costText } from "./cells.ts";
 import type { Section, View, ViewContext } from "./types.ts";
 
+/** What a table row is. */
 export type Group = "day" | "week" | "month";
 
+/** The table's tabs, in the strip's order. */
+export type HistoryTab = "this_week" | "this_month" | "days" | "weeks" | "months";
+export const HISTORY_TABS: readonly HistoryTab[] = [
+  "this_week",
+  "this_month",
+  "days",
+  "weeks",
+  "months",
+];
+const TABS: Readonly<Record<HistoryTab, Tab>> = {
+  this_week: { label: "this week", short: "this wk" },
+  this_month: { label: "this month", short: "this mo" },
+  days: { label: "days" },
+  weeks: { label: "weeks", short: "wks" },
+  months: { label: "months", short: "mos" },
+};
+
 export interface HistoryState {
-  readonly focus: "heat" | "table";
-  readonly group: Group;
-  /** The table lists the days of the week or month holding the selected day (Enter, W, M). */
-  readonly open: "week" | "month" | null;
+  readonly tab: HistoryTab;
+  /** On the weeks or months tab: the selected period's days are listed (Enter; Esc closes). */
+  readonly open: boolean;
   /** The selected day, YYYY-MM-DD; null follows today. */
   readonly day: string | null;
   /** Only the models whose id contains this, ignoring case; "" for all. */
@@ -52,9 +72,8 @@ const BAR_HIGH = 1.5;
 const PAGE = 10;
 const MAX_FILTER = 32;
 const LABEL = 9;
-/** The table's least height (tabs, header, 3 rows, rule, totals): the card leaves it. */
-const TABLE_LEAST = 7;
-const GROUP_KEYS: Readonly<Record<string, Group>> = { d: "day", w: "week", m: "month" };
+/** The table's least height (header, 3 rows, rule, totals): the card leaves it, and the strip. */
+const TABLE_LEAST = 6;
 
 // ── days ─────────────────────────────────────────────────────────────────────────
 
@@ -171,40 +190,57 @@ function baseline(vm: HistoryVM, filter: string): HistoryVM["average"] {
 // ── what the table lists ─────────────────────────────────────────────────────────
 
 export interface Listing {
-  /** What each row is: days when one week or month is open. */
+  /** What each row is: days on this week's or month's tab, or a drilled week or month. */
   readonly kind: Group;
   /** Newest first; with a filter, the filtered models' part of the periods using them. */
   readonly rows: readonly HistoryPeriod[];
-  /** The open week or month (null when none is, or it is older than the heat map). */
+  /** The week or month whose days are listed; null when the rows are weeks or months. */
   readonly parent: HistoryPeriod | null;
-  /** The open week's Monday or month's YYYY-MM. */
+  /** That week's Monday or month's YYYY-MM. */
   readonly parentKey: string | null;
 }
 
+/** What the rows of `state`'s table are: a day, unless a weeks or months list shows. */
+function rowKind(state: HistoryState): Group {
+  if (state.open || state.tab === "this_week" || state.tab === "this_month") return "day";
+  return state.tab === "weeks" ? "week" : state.tab === "months" ? "month" : "day";
+}
+
+/** The week or month whose days the table lists: this one's, or the drilled one. */
+function listedPeriod(
+  vm: HistoryVM,
+  state: HistoryState,
+): { kind: "week" | "month"; key: string } | null {
+  if (state.tab === "this_week") return { kind: "week", key: holding("week", today(vm)) };
+  if (state.tab === "this_month") return { kind: "month", key: holding("month", today(vm)) };
+  if (!state.open || state.tab === "days") return null;
+  const kind = state.tab === "weeks" ? "week" : "month";
+  return { kind, key: holding(kind, selectedKey(vm, state)) };
+}
+
 export function listing(vm: HistoryVM, state: HistoryState): Listing {
-  const { open, filter } = state;
+  const { filter } = state;
+  const period = listedPeriod(vm, state);
   let rows: readonly HistoryPeriod[];
   let parent: HistoryPeriod | null = null;
-  let parentKey: string | null = null;
-  if (open !== null) {
-    const key = holding(open, selectedKey(vm, state));
-    parentKey = key;
-    rows = vm.days.filter((d) => holding(open, d.key) === key);
-    parent = (open === "week" ? vm.weeks : vm.months).find((p) => p.key === key) ?? null;
-  } else if (state.group === "day") {
+  if (period !== null) {
+    rows = vm.days.filter((d) => holding(period.kind, d.key) === period.key);
+    parent =
+      (period.kind === "week" ? vm.weeks : vm.months).find((p) => p.key === period.key) ?? null;
+  } else if (state.tab === "days") {
     rows = vm.days.slice(vm.gridStart);
   } else {
-    rows = state.group === "week" ? vm.weeks : vm.months;
+    rows = state.tab === "weeks" ? vm.weeks : vm.months;
   }
   const shown =
     filter === ""
       ? [...rows]
       : rows.map((p) => slice(p, filter)).filter((p) => p.models.length > 0);
   return {
-    kind: open === null ? state.group : "day",
+    kind: rowKind(state),
     rows: shown.reverse(),
     parent: parent === null ? null : slice(parent, filter),
-    parentKey,
+    parentKey: period?.key ?? null,
   };
 }
 
@@ -243,48 +279,35 @@ function snap(vm: HistoryVM, state: HistoryState): HistoryState {
 }
 
 /**
- * Keeps one side highlighted (critique m4): a day older than the heat map that no listed
- * row holds (left after closing the oldest month) moves to the heat map's first day.
+ * The tab `step` along: the selected day stays when the new tab lists it, else its newest
+ * row is selected. A drilled period and an events list close.
  */
-function settle(vm: HistoryVM, state: HistoryState): HistoryState {
-  if (selectedIndex(vm, state) >= vm.gridStart) return state;
-  if (selectedRow(vm, state, listing(vm, state)) >= 0) return state;
-  return { ...state, day: (vm.days[vm.gridStart] as HistoryDay).key };
+function switchTab(vm: HistoryVM, state: HistoryState, step: number): HistoryState {
+  const n = HISTORY_TABS.length;
+  const tab = HISTORY_TABS[(HISTORY_TABS.indexOf(state.tab) + step + n) % n] as HistoryTab;
+  const next = { ...state, tab, open: false, events: false };
+  return selectedRow(vm, next, listing(vm, next)) >= 0 ? next : selectRow(vm, next, 0);
+}
+
+/**
+ * The days the heat map highlights, as indices into `vm.days` (`from` up to `to`): the
+ * selected row's, which is the selected day, or its week or month in those lists.
+ */
+export function highlighted(vm: HistoryVM, state: HistoryState): { from: number; to: number } {
+  const at = selectedIndex(vm, state);
+  const kind = rowKind(state);
+  if (kind === "day") return { from: at, to: at + 1 };
+  const day = (vm.days[at] as HistoryDay).key;
+  const first = kind === "week" ? holding("week", day) : `${holding("month", day)}-01`;
+  const from = at - (dayNumber(day) - dayNumber(first));
+  const [y, m] = day.split("-").map(Number) as [number, number];
+  const length = kind === "week" ? 7 : new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: Math.max(0, from), to: Math.min(vm.days.length, from + length) };
 }
 
 // ── keys ─────────────────────────────────────────────────────────────────────────
 
-function typed(
-  key: string,
-  state: HistoryState,
-  vm: HistoryVM | undefined,
-): HistoryState | undefined {
-  if (key === "escape") return { ...state, typing: false, filter: "" };
-  if (key === "return" || key === "enter") {
-    const done = { ...state, typing: false };
-    return vm === undefined ? done : snap(vm, done);
-  }
-  if (key === "backspace") return { ...state, filter: [...state.filter].slice(0, -1).join("") };
-  const ch = key === "space" ? " " : key;
-  if ([...ch].length !== 1 || [...state.filter].length >= MAX_FILTER) return undefined;
-  return { ...state, filter: state.filter + ch };
-}
-
-/** W and M: the days of this week or this month, keeping the selection if it is in them. */
-function openCurrent(vm: HistoryVM, state: HistoryState, open: "week" | "month"): HistoryState {
-  const keep = holding(open, selectedKey(vm, state)) === holding(open, today(vm));
-  return { ...state, open, day: keep ? state.day : null };
-}
-
 function move(key: string, state: HistoryState, vm: HistoryVM): HistoryState | undefined {
-  if (state.focus === "heat") {
-    // Rows are weekdays and columns weeks: ↑/↓ a day, ←/→ a week, within the heat map.
-    const step = { up: -1, down: 1, left: -7, right: 7 }[key];
-    if (step === undefined) return undefined;
-    const last = vm.days.length - 1;
-    const at = Math.max(vm.gridStart, Math.min(last, selectedIndex(vm, state) + step));
-    return { ...state, day: (vm.days[at] as HistoryDay).key };
-  }
   const list = listing(vm, state);
   const at = selectedRow(vm, state, list);
   // With no row holding the selected day (it's filtered out), moves start from where it
@@ -498,8 +521,8 @@ function cardLines(
     const count = limitCount(day);
     const hitsOnly = limitCount(day, false);
     const shapes = [
-      `${count} · enter lists them`,
-      `${hitsOnly} · enter lists them`,
+      `${count} · ${KEYS.open.show} lists them`,
+      `${hitsOnly} · ${KEYS.open.show} lists them`,
       count,
       hitsOnly,
     ];
@@ -509,11 +532,6 @@ function cardLines(
   body.forEach((segs, i) => {
     lines.push({ left: [label(i === 0 ? "limits" : ""), ...segs] });
   });
-  const hint =
-    state.focus === "heat"
-      ? "tab table · ←/→ week · ↑/↓ day"
-      : "tab heat map · ↑/↓ row · enter open";
-  if (lines.length < rows) lines.push({ left: [seg(hint, "dim")] });
   return lines.slice(0, rows);
 }
 
@@ -569,7 +587,7 @@ function summaryLine(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Line
     ratio === null ? [] : [seg(`  ${ratioText(ratio)} avg`, "dim")],
     [seg(`  ${tokens(day.tokens)} tokens`, "tokens")],
     limits === "" ? [] : [seg(`  ${limits}`, "high")],
-    limits === "" ? [] : [seg("  enter lists them", "dim")],
+    limits === "" ? [] : [seg(`  ${KEYS.open.show} lists them`, "dim")],
     [seg(`  ${ranked(day.models, ctx.showCost)[0]?.name ?? "—"}`, "fg")],
   ];
   // Least important last: the top model goes first, then tokens, the hint and the ratio.
@@ -603,19 +621,18 @@ function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
     const p = d === undefined ? null : slice(d, state.filter);
     values.push(p === null ? null : ctx.showCost ? p.cost : p.tokens);
   }
-  const at = selected - vm.gridStart - first * 7;
+  const lit = highlighted(vm, state);
   const mondays = vm.weeks.slice(first, end).map((w) => w.key);
   const span =
     end === vm.weeks.length
       ? `LAST ${shown} WEEKS`
       : `${shown} WEEKS TO ${shortDate(keyOf(dayNumber(mondays[mondays.length - 1] as string) + 6)).toUpperCase()}`;
-  const focused = state.focus === "heat";
   const what = `daily ${ctx.showCost ? "cost" : "tokens"}`;
   const left = [
     seg(
       ` ${span} · ${what}${state.filter === "" ? "" : ` · filter: ${state.filter}`}`,
-      focused ? "head" : "mute",
-      focused,
+      "head",
+      true,
     ),
   ];
   const legend = [seg("less ", "dim"), ...HEAT_ROLES.map((r) => seg("■ ", r)), seg("more ", "dim")];
@@ -624,11 +641,11 @@ function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
   const beside = ctx.bp !== "narrow";
   // The grid ends in a blank cell, so one more makes the usual two-cell gap.
   const cardWidth = Math.min(CARD_MAX, ctx.width - gridWidth - 1);
-  // The card grows for the day's hits, but never past leaving the table its least, so it
-  // can't push the heat map off a short screen (critique R1). Hits it can't list then
-  // show as a count, listed in full by Enter.
+  // The card grows for the day's hits, but never past leaving the strip and the table their
+  // least, so it can't push the heat map off a short screen (critique R1). Hits it can't
+  // list then show as a count, listed in full by Enter.
   const want = beside ? cardHeight(vm, state, ctx, cardWidth) : HEAT_HEIGHT;
-  const room = ctx.height === undefined ? want : ctx.height - 1 - TABLE_LEAST;
+  const room = ctx.height === undefined ? want : ctx.height - 1 - 1 - TABLE_LEAST;
   const height = want <= room ? want : HEAT_HEIGHT;
   return {
     id: "heat",
@@ -641,7 +658,8 @@ function heatSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
           <th-heat
             values={values}
             weeks={shown}
-            selected={at >= 0 && at < values.length ? at : -1}
+            selected={lit.from - vm.gridStart - first * 7}
+            span={lit.to - lit.from}
             months={monthLabels(mondays)}
             theme={ctx.theme}
             width={gridWidth}
@@ -678,7 +696,7 @@ function cardSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
 function eventsSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
   const day = selectedDay(vm, state);
   const lines: Line[] = [
-    sectionLine(`LIMIT EVENTS · ${cardTitle(vm, day, state)}`, "esc back"),
+    sectionLine(`LIMIT EVENTS · ${cardTitle(vm, day, state)}`, hintText([KEYS.back])),
     ...byImportance(day.events).flatMap((e) =>
       eventLines(e, ctx.tz, ctx.width - 4).map(
         (segs): Line => ({ left: [seg("   ", "fg"), ...segs] }),
@@ -789,155 +807,222 @@ function columns(
   return out;
 }
 
-function tabsLine(
-  vm: HistoryVM,
-  state: HistoryState,
-  list: Listing,
-  rows: readonly HistoryTotal[],
-  ctx: ViewContext,
-): Line {
+/**
+ * The view's first line: the tab strip (with a drilled period's breadcrumb), then flush
+ * right the cost note and the filter. The strip is never dropped, and neither is a filter
+ * on screen: the note goes first, then the strip shortens. While the filter is typed, the
+ * line is its field.
+ */
+function stripLine(state: HistoryState, list: Listing, ctx: ViewContext): Line {
   if (state.typing) {
     return {
       left: [seg(" filter: ", "dim"), seg(`${state.filter}▏`, "head", true)],
-      right: [seg("a model's id · enter apply · esc clear ", "dim")],
+      right: [seg(`${FIELD.type.label} · ${hintText(Object.values(FIELD))} `, "dim")],
     };
   }
-  const current = state.open !== null && list.parentKey === holding(state.open, today(vm));
-  const active = state.open === null ? state.group : current ? `this ${state.open}` : state.open;
-  const tabs: Seg[] = [seg(" ", "fg")];
-  for (const [id, name] of [
-    ["day", "Day"],
-    ["week", "Week"],
-    ["month", "Month"],
-    ["this week", "This week"],
-    ["this month", "This month"],
-  ] as const) {
-    if (id === "this week") tabs.push(seg("  ", "fg"));
-    tabs.push(id === active ? seg(` ${name} `, "head", true, "tab") : seg(` ${name} `, "mute"));
-    tabs.push(seg(" ", "fg"));
-  }
-  if (state.open !== null && !current && list.parentKey !== null) {
-    tabs.push(seg(` › ${periodLabel(state.open, list.parentKey)}`, "head", true));
-  }
+  const crumb =
+    state.open && list.parentKey !== null
+      ? state.tab === "weeks"
+        ? list.parentKey.slice(5)
+        : list.parentKey
+      : undefined;
+  const { whole, cut } = tabStrips(
+    HISTORY_TABS.map((t) => TABS[t]),
+    HISTORY_TABS.indexOf(state.tab),
+    crumb,
+  );
   const filter =
     state.filter === ""
-      ? [seg("/ ", "head", true), seg("filter ", "dim")]
-      : [seg("filter: ", "dim"), seg(state.filter, "head", true), seg(" · esc clear ", "dim")];
-  const note = ctx.showCost ? costNote(rows) : null;
-  const room = ctx.width - segsWidth(tabs) - 1;
-  const right =
-    note !== null && textWidth(`${note} · `) + segsWidth(filter) <= room
-      ? [seg(`${note} · `, "dim"), ...filter]
-      : segsWidth(filter) <= room
-        ? filter
-        : [];
-  // A filter on screen is never dropped: the tabs give way to it.
-  return right.length === 0 && state.filter !== "" ? { left: filter } : { left: tabs, right };
+      ? [seg(`${KEYS.filter.show} `, "head", true), seg(`${KEYS.filter.label} `, "dim")]
+      : [
+          seg("filter: ", "dim"),
+          seg(state.filter, "head", true),
+          seg(` · ${KEYS.back.show} clear `, "dim"),
+        ];
+  const note = ctx.showCost ? costNote(list.rows) : null;
+  const rights = [...(note === null ? [] : [[seg(`${note} · `, "dim"), ...filter]]), filter];
+  const fits = (strip: Seg[], right: Seg[]) =>
+    1 + segsWidth(strip) + (right.length === 0 ? 0 : 1 + segsWidth(right)) <= ctx.width;
+  for (const right of rights) {
+    for (const strip of whole)
+      if (fits(strip, right)) return { left: [seg(" ", "fg"), ...strip], right };
+  }
+  // Narrow: a filter on screen stays, and the strip shows fewer tabs beside it.
+  const kept = state.filter === "" ? [] : filter;
+  const strip = cut.find((f) => fits(f, kept)) ?? (cut[cut.length - 1] as Seg[]);
+  return { left: [seg(" ", "fg"), ...strip], right: kept };
 }
 
-function tableSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
-  const list = listing(vm, state);
+function stripSection(state: HistoryState, list: Listing, ctx: ViewContext): Section {
+  const line = stripLine(state, list, ctx);
+  return {
+    id: "tabs",
+    priority: 1,
+    height: 1,
+    // A header: the heat map, or the table, sits right under it.
+    gap: 0,
+    render: () => <Lines theme={ctx.theme} lines={[line]} />,
+  };
+}
+
+function tableSection(
+  vm: HistoryVM,
+  state: HistoryState,
+  list: Listing,
+  ctx: ViewContext,
+): Section {
   const selected = selectedRow(vm, state, list);
   const { rows } = list;
   const whole =
     state.filter !== ""
       ? null
-      : state.open !== null
+      : list.parentKey !== null
         ? list.parent
-        : state.group === "month"
+        : list.kind === "month"
           ? vm.monthsTotal
           : vm.weeksTotal;
   const n = rows.length;
   const totals = {
-    // A copy: the open period's own object must not double as its totals row.
+    // A copy: the listed period's own object must not double as its totals row.
     row: { ...(whole ?? sum(rows)) },
     label: `${n} ${list.kind}${n === 1 ? "" : "s"}`,
   };
-  const head = tabsLine(vm, state, list, rows, ctx);
   return {
     id: "table",
     priority: 1,
-    height: 1 + 1 + n + 2,
-    minHeight: 1 + 1 + Math.min(3, n) + 2,
+    height: 1 + n + 2,
+    minHeight: 1 + Math.min(3, n) + 2,
     render: (height) => (
-      <box flexDirection="column" height={height} flexShrink={0}>
-        <Lines theme={ctx.theme} lines={[head]} />
-        <Table
-          columns={columns(vm, state, list, ctx, rows[selected], totals)}
-          rows={rows}
-          selected={selected}
-          totals={totals.row}
-          theme={ctx.theme}
-          height={height - 1}
-          width={ctx.width - 1}
-          marginLeft={1}
-        />
-      </box>
+      <Table
+        columns={columns(vm, state, list, ctx, rows[selected], totals)}
+        rows={rows}
+        selected={selected}
+        totals={totals.row}
+        theme={ctx.theme}
+        height={height}
+        width={ctx.width - 1}
+        marginLeft={1}
+      />
     ),
   };
 }
 
-function historyKeys(key: string, state: HistoryState, vm: HistoryVM): HistoryState | undefined {
-  if (key === "tab") return { ...state, focus: state.focus === "heat" ? "table" : "heat" };
-  const group = GROUP_KEYS[key];
-  if (group !== undefined) return { ...state, group, open: null, events: false };
-  if (key === "W") return { ...openCurrent(vm, state, "week"), events: false };
-  if (key === "M") return { ...openCurrent(vm, state, "month"), events: false };
-  if (key === "/") return { ...state, typing: true };
-  if (key === "return" || key === "enter") {
-    // A week or month row in the table opens its days; otherwise a day with limit events
-    // lists them in full.
-    const list = listing(vm, state);
-    const row = list.kind !== "day" && selectedRow(vm, state, list) >= 0;
-    if (state.focus === "table" && row) return { ...state, open: list.kind as "week" | "month" };
-    if (!state.events && selectedDay(vm, state).events.length > 0) {
-      return { ...state, events: true };
-    }
-    return row ? { ...state, open: list.kind as "week" | "month" } : undefined;
-  }
-  if (key === "escape") {
-    if (state.events) return { ...state, events: false };
-    if (state.open !== null) return { ...state, open: null };
-    return state.filter === "" ? undefined : { ...state, filter: "" };
-  }
-  return move(key, state, vm);
-}
+// ── keys ─────────────────────────────────────────────────────────────────────────
+
+type Entry = KeyEntry<HistoryState, HistoryVM | undefined>;
+
+/** The view's keys, by name (hints elsewhere in the view are made from them). */
+const KEYS: Readonly<Record<"tabs" | "select" | "page" | "open" | "back" | "filter", Entry>> = {
+  tabs: moveKey("tabs", {
+    label: "period",
+    does: `Switch the table: ${HISTORY_TABS.map((t) => TABS[t].label).join(" · ")}`,
+    act: (state, vm, key) =>
+      vm === undefined ? undefined : switchTab(vm, state, key === "right" ? 1 : -1),
+  }),
+  select: moveKey("select", {
+    label: "row",
+    does: "Select a row; the heat map highlights its day, week or month",
+    act: (state, vm, key) => (vm === undefined ? undefined : move(key, state, vm)),
+  }),
+  page: {
+    keys: ["pageup", "pagedown", "home", "end"],
+    show: "pgup/pgdn",
+    aliases: ["home/end"],
+    label: "page",
+    does: "Move ten rows, or to the first or last",
+    quiet: true,
+    act: (state, vm, key) => (vm === undefined ? undefined : move(key, state, vm)),
+  },
+  open: moveKey("open", {
+    label: "open",
+    does: "On a week or month, list its days; on a day, list its limit events",
+    act: (state, vm) => {
+      if (vm === undefined) return undefined;
+      const list = listing(vm, state);
+      if (list.kind !== "day") {
+        return selectedRow(vm, state, list) >= 0 ? { ...state, open: true } : undefined;
+      }
+      return !state.events && selectedDay(vm, state).events.length > 0
+        ? { ...state, events: true }
+        : undefined;
+    },
+  }),
+  back: moveKey("back", {
+    label: "back",
+    does: "Close the limit events, then the open week or month, then clear the filter",
+    when: (state) => state.events || state.open || state.filter !== "",
+    act: (state) => {
+      if (state.events) return { ...state, events: false };
+      if (state.open) return { ...state, open: false };
+      return state.filter === "" ? undefined : { ...state, filter: "" };
+    },
+  }),
+  filter: {
+    keys: ["f", "/"],
+    show: "f",
+    aliases: ["/"],
+    label: "filter",
+    does: `Filter every number by model: type part of a model id, ${MOVE_KEYS.open.show} applies it`,
+    act: (state) => ({ ...state, typing: true }),
+  },
+};
+
+/** The filter field's keys, while it is typed. */
+const FIELD: Readonly<Record<"type" | "apply" | "clear" | "erase", Entry>> = {
+  type: {
+    keys: [TEXT],
+    show: "type",
+    label: "a model's id",
+    does: "Type part of a model id",
+    // The field's line says so; the footer keeps to what ends the typing.
+    quiet: true,
+    act: (state, _vm, key) =>
+      [...state.filter].length >= MAX_FILTER
+        ? undefined
+        : { ...state, filter: state.filter + (key === "space" ? " " : key) },
+  },
+  apply: moveKey("open", {
+    label: "apply",
+    does: "Apply the filter",
+    act: (state, vm) => {
+      const done = { ...state, typing: false };
+      return vm === undefined ? done : snap(vm, done);
+    },
+  }),
+  clear: moveKey("back", {
+    label: "clear",
+    does: "Clear the filter",
+    act: (state) => ({ ...state, typing: false, filter: "" }),
+  }),
+  erase: {
+    keys: ["backspace"],
+    show: "backspace",
+    label: "delete",
+    does: "Delete the last character",
+    quiet: true,
+    act: (state) => ({ ...state, filter: [...state.filter].slice(0, -1).join("") }),
+  },
+};
 
 export const history: View<HistoryVM, HistoryState> = {
   id: "history",
   title: "History",
-  hints: [
-    { key: "d/w/m", label: "group" },
-    { key: "/", label: "filter by model" },
-    { key: "W/M", label: "this week/month" },
-    { key: "tab", label: "heat map/table" },
-    { key: "enter", label: "open" },
-    { key: "esc", label: "back" },
-    { key: "←→↑↓", label: "move" },
-  ],
+  keymap: Object.values(KEYS),
+  field: Object.values(FIELD),
   initial: {
-    focus: "heat",
-    group: "day",
-    open: null,
+    tab: "this_week",
+    open: false,
     day: null,
     filter: "",
     typing: false,
     events: false,
   },
   capturing: (state) => state.typing,
-  keys(key, state, vm) {
-    if (state.typing) {
-      const next = typed(key, state, vm);
-      return next === undefined || vm === undefined ? next : settle(vm, next);
-    }
-    if (vm === undefined) return undefined;
-    const next = historyKeys(key, state, vm);
-    return next === undefined ? undefined : settle(vm, next);
-  },
   sections(vm, state, ctx) {
-    const below = state.events ? eventsSection(vm, state, ctx) : tableSection(vm, state, ctx);
-    const sections = [heatSection(vm, state, ctx), below];
-    if (ctx.bp === "narrow") sections.splice(1, 0, cardSection(vm, state, ctx));
+    const list = listing(vm, state);
+    const below = state.events ? eventsSection(vm, state, ctx) : tableSection(vm, state, list, ctx);
+    const sections = [stripSection(state, list, ctx), heatSection(vm, state, ctx), below];
+    if (ctx.bp === "narrow") sections.splice(2, 0, cardSection(vm, state, ctx));
     return sections;
   },
 };

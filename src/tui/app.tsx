@@ -1,14 +1,22 @@
 // The frame every view plugs into: header, rule, body (the active view's sections, fitted
-// to the rows there are), rule, footer; plus the help and settings overlays. Pure
-// rendering of the controller's state.
+// to the rows there are), rule, footer (two lines from 30 rows: the view's keys, then the
+// global ones); plus the help and settings overlays and the action menu. Pure rendering of
+// the controller's state.
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { Component, memo, type ReactNode, useLayoutEffect, useSyncExternalStore } from "react";
+import {
+  Component,
+  memo,
+  type ReactNode,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import type { Config } from "../config.ts";
 import "./components/index.ts";
 import { type Line, type Seg, seg, segsWidth } from "./components/base.ts";
 import type { Controller, Overlay, UiState } from "./controller.ts";
 import { Lines } from "./elements.tsx";
-import { fit, truncate } from "./format.ts";
+import { fit, textWidth, truncate } from "./format.ts";
 import {
   footerLine,
   type HeaderState,
@@ -18,33 +26,62 @@ import {
   ruleLine,
   type Status,
 } from "./frame.ts";
-import { breakpoint, fitSections } from "./layout.ts";
+import {
+  footerHints,
+  GLOBAL_KEYS,
+  HELP_KEYS,
+  hintText,
+  type KeyHelp,
+  keyText,
+  MOVE_KEYS,
+  onScreen,
+} from "./keys.ts";
+import { breakpoint, type Fitted, fitSections } from "./layout.ts";
+import {
+  MENU_KEYMAP,
+  type MenuInput,
+  type MenuState,
+  menuItems,
+  menuLines,
+  menuRoot,
+  menuTitle,
+} from "./menu.ts";
 import {
   choices,
   filterZones,
   linkCandidates,
   ROW_LABELS,
   rowValue,
+  SETTINGS_KEYS,
   SETTINGS_ROWS,
   type SettingsInput,
   type SettingsState,
 } from "./settings.ts";
 import { type Theme, theme as themeNamed } from "./theme.ts";
 import { VIEWS } from "./views/index.ts";
-import type { ViewContext } from "./views/types.ts";
+import { activeKeymap, type Section, type ViewContext } from "./views/types.ts";
 import { type RootInfo, VIEW_IDS, type ViewId } from "./vm/types.ts";
 
 export const MIN_WIDTH = 40;
 export const MIN_HEIGHT = 10;
-/** Header, rule, rule, footer. */
-const CHROME_ROWS = 4;
+/** Header, rule and rule; the footer's lines come on top. */
+const CHROME_ROWS = 3;
 
-const GLOBAL = {
-  views: { key: "1-4", label: "views" },
-  scope: { key: "a", label: "account" },
-  settings: { key: "s", label: "settings" },
-  help: { key: "?", label: "help" },
-  quit: { key: "q", label: "quit" },
+/** The footer's lines: two from 30 rows (the view's keys, then the global ones), else one. */
+function footerRows(height: number): 1 | 2 {
+  return height >= 30 ? 2 : 1;
+}
+
+/** The global keys as the footer shows them: `1-4/tab views · c account · …`. */
+const GLOBAL_HINTS = {
+  views: {
+    key: `${GLOBAL_KEYS.views.show}/${GLOBAL_KEYS.next.show}`,
+    label: GLOBAL_KEYS.views.label,
+  },
+  scope: { key: GLOBAL_KEYS.scope.show, label: GLOBAL_KEYS.scope.label },
+  settings: { key: GLOBAL_KEYS.settings.show, label: GLOBAL_KEYS.settings.label },
+  help: { key: GLOBAL_KEYS.help.show, label: GLOBAL_KEYS.help.label },
+  quit: { key: GLOBAL_KEYS.quit.show, label: GLOBAL_KEYS.quit.label },
 } as const satisfies Record<string, Hint>;
 
 function statusOf(state: UiState): Status {
@@ -68,25 +105,34 @@ function headerState(state: UiState): HeaderState {
   };
 }
 
-function footer(state: UiState, width: number): Line {
-  let hints: Hint[];
-  let order: Hint[];
-  if (state.overlay === "settings") {
-    hints = [
-      { key: "esc", label: "back" },
-      { key: "enter", label: "change" },
-      { key: "↑/↓", label: "move" },
-    ];
-    order = [...hints].reverse();
-  } else if (state.overlay === "help") {
-    hints = [{ key: "esc", label: "close" }];
-    order = hints;
-  } else {
-    const own = VIEWS[state.view].hints;
-    // Shown in this order; dropped from the end of `hints` when the footer is narrow.
-    order = [GLOBAL.views, ...own, GLOBAL.scope, GLOBAL.settings, GLOBAL.help, GLOBAL.quit];
-    hints = [GLOBAL.quit, GLOBAL.help, GLOBAL.views, GLOBAL.scope, GLOBAL.settings, ...own];
-  }
+/** Whether the view's text field has the keys: the shell's own keys pause. */
+function capturing(state: UiState): boolean {
+  return (
+    state.menu === null &&
+    state.overlay === "none" &&
+    VIEWS[state.view].capturing?.(state.viewState[state.view]) === true
+  );
+}
+
+/**
+ * The keys of what has them now: the menu, the settings screen, the help, or the view (its
+ * field's while it captures; none whose section the layout left out, `drawn`).
+ */
+function ownHints(state: UiState, drawn: ReadonlySet<string> | undefined): Hint[] {
+  if (state.menu !== null) return footerHints(MENU_KEYMAP);
+  if (state.overlay === "settings") return footerHints(SETTINGS_KEYS[state.settings.screen]);
+  if (state.overlay === "help") return footerHints(Object.values(HELP_KEYS));
+  const view = VIEWS[state.view];
+  const viewState = state.viewState[state.view];
+  const vm = state.views[state.view];
+  return footerHints(
+    activeKeymap(view, viewState),
+    (e) => onScreen(e, drawn) && (e.when?.(viewState, vm) ?? true),
+  );
+}
+
+/** The footer's right side: a reader's notice, the update note while it leaves room, MCP. */
+function footerRight(state: UiState, width: number): Seg[] {
   const notice: Seg[] =
     state.mode === "reader"
       ? [seg(state.readOnlyReason ?? "another tokenhud is ingesting", "mid"), seg("   ", "dim")]
@@ -105,27 +151,135 @@ function footer(state: UiState, width: number): Line {
         ]
       : [];
   const withUpdate = [...update, ...right];
-  return footerLine(width, hints, order, segsWidth(withUpdate) + 20 <= width ? withUpdate : right);
+  return segsWidth(withUpdate) + 20 <= width ? withUpdate : right;
 }
 
-function HelpPanel(props: { view: ViewId; width: number; height: number; t: Theme }) {
-  const { t } = props;
-  const row = (key: string, label: string): Line => ({
-    left: [seg(`  ${fit(key, 9)}`, "head", true), seg(label, "fg")],
-  });
-  const view = VIEWS[props.view];
-  const lines: Line[] = [
-    row("1 2 3 4", "Overview, History, Models, Accounts"),
-    row("a", "cycle the account scope: all → each account → all"),
-    row("s", "settings"),
-    row("?", "this help"),
-    row("q", "quit (or Ctrl-C)"),
-  ];
-  if (view.hints.length > 0) {
-    lines.push({ left: [] }, { left: [seg(`  ${view.title}`, "mute", true)] });
-    for (const h of view.hints) lines.push(row(h.key, h.label));
+/**
+ * The footer: with `lines` 2, the keys of what has them (the view, an overlay or the menu),
+ * then the global keys with the status on the right; with 1, both on one line, dropping
+ * from the end of the priority order (`? help`, `a/d`, `w/s`, `enter`, then the rest) and
+ * shown in the two lines' order. An overlay, the menu or a text field takes every key, so
+ * no global key shows with one.
+ */
+function footer(
+  state: UiState,
+  width: number,
+  lines: 1 | 2,
+  drawn: ReadonlySet<string> | undefined,
+): Line[] {
+  const own = ownHints(state, drawn);
+  const alone = state.menu !== null || state.overlay !== "none" || capturing(state);
+  const G = GLOBAL_HINTS;
+  const global: Hint[] = alone ? [] : [G.views, G.scope, G.settings, G.help, G.quit];
+  const right = footerRight(state, width);
+  if (lines === 2) {
+    return [
+      footerLine(width, own, own, []),
+      footerLine(width, alone ? [] : [G.help, G.views, G.scope, G.settings, G.quit], global, right),
+    ];
   }
-  const width = Math.min(64, props.width - 2);
+  const help = alone ? [] : [G.help];
+  return [
+    footerLine(
+      width,
+      [...help, ...own, ...global.filter((h) => h !== G.help)],
+      [...own, ...global],
+      right,
+    ),
+  ];
+}
+
+/** `text` in lines of at most `width` cells, broken between words. */
+function wrap(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line === "" ? word : `${line} ${word}`;
+    if (line !== "" && textWidth(next) > width) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  return [...lines, line];
+}
+
+/**
+ * The help overlay's lines in `width` cells and at most `rows`: how to move (the same in
+ * every view, and always whole), this view's keys (its keymap, tab names included; not those
+ * of sections the layout left out, `drawn`) and the global keys. Short of rows, the global
+ * keys take one line, then this view's descriptions are cut instead of wrapped, then its
+ * last keys give way to a line saying how many.
+ */
+function helpLines(
+  view: ViewId,
+  width: number,
+  rows: number,
+  drawn: ReadonlySet<string> | undefined,
+): Line[] {
+  const move = Object.values(MOVE_KEYS);
+  const own = VIEWS[view].keymap.filter((e) => onScreen(e, drawn));
+  const global = Object.values(GLOBAL_KEYS);
+  const keyWidth = Math.max(...[...move, ...own, ...global].map((e) => textWidth(keyText(e)))) + 2;
+  const title = (text: string): Line => ({ left: [seg(` ${text}`, "mute", true)] });
+  const rowsOf = (entries: readonly KeyHelp[], wrapped: boolean): Line[] =>
+    entries.flatMap((e) =>
+      (wrapped ? wrap(e.does, width - 2 - keyWidth) : [e.does]).map((text, i) => ({
+        left: [seg(`  ${fit(i === 0 ? keyText(e) : "", keyWidth)}`, "head", true), seg(text, "fg")],
+      })),
+    );
+  const moves = [
+    title("MOVE"),
+    ...rowsOf(move, true),
+    { left: [seg("  WASD works like the arrow keys; letters work with Caps Lock on", "dim")] },
+  ];
+  const name = title(VIEWS[view].title.toUpperCase());
+  const globals: Line = {
+    left: [
+      seg("  ", "fg"),
+      ...global.flatMap((e, i) => [
+        ...(i > 0 ? [seg(" · ", "dim")] : []),
+        seg(e.show, "head", true),
+        seg(` ${e.label}`, "fg"),
+      ]),
+    ],
+  };
+  const blank: Line = { left: [] };
+  const full = [
+    ...moves,
+    blank,
+    name,
+    ...rowsOf(own, true),
+    blank,
+    title("GLOBAL"),
+    ...rowsOf(global, true),
+  ];
+  if (full.length <= rows) return full;
+  const short = (ownLines: Line[]) => [...moves, name, ...ownLines, title("GLOBAL"), globals];
+  for (const wrapped of [true, false]) {
+    const lines = short(rowsOf(own, wrapped));
+    if (lines.length <= rows) return lines;
+  }
+  // This view's keys give way last to first, a line counting them in their place.
+  const room = Math.max(0, rows - short([]).length - 1);
+  const shown = rowsOf(own, false).slice(0, room);
+  const more: Line = {
+    left: [seg(`  +${own.length - shown.length} more: a taller terminal shows them`, "dim")],
+  };
+  return short([...shown, more]);
+}
+
+function HelpPanel(props: {
+  view: ViewId;
+  drawn: ReadonlySet<string> | undefined;
+  width: number;
+  height: number;
+  t: Theme;
+}) {
+  const { t } = props;
+  const width = Math.min(96, props.width - 2);
+  const lines = helpLines(props.view, width - 4, props.height - 2, props.drawn);
   const height = Math.min(props.height, lines.length + 2);
   return (
     <box flexDirection="column" alignItems="center" height={props.height} flexShrink={0}>
@@ -138,6 +292,55 @@ function HelpPanel(props: { view: ViewId; width: number; height: number; t: Them
         flexDirection="column"
       >
         <Lines theme={t} lines={lines} height={height - 2} />
+      </th-card>
+    </box>
+  );
+}
+
+/** The action menu's card: its title and lines, and its size with the blank cell round it. */
+function menuCard(menu: MenuState, input: MenuInput, bodyWidth: number) {
+  const items = menuItems(menu.target, input);
+  const lines = menuLines(menu, items, menuRoot(menu.target, input.roots) !== undefined);
+  const title = menuTitle(menu.target);
+  const inner = Math.max(textWidth(title) + 2, ...lines.map((l) => segsWidth(l.left)), 24);
+  const width = Math.min(bodyWidth - 6, inner + 4);
+  return { title, lines, width, height: lines.length + 2, outer: lines.length + 4 };
+}
+
+/**
+ * The action menu's card over whatever the body shows, with a blank cell around it. Over
+ * the settings screen it sits inside the settings card (`top` 2, under its border), which
+ * grows to hold it, so the blank cell cuts no border.
+ */
+function MenuCard(props: {
+  menu: MenuState;
+  input: MenuInput;
+  width: number;
+  top: number;
+  t: Theme;
+}) {
+  const { t } = props;
+  const card = menuCard(props.menu, props.input, props.width);
+  return (
+    <box
+      position="absolute"
+      top={props.top}
+      left={Math.max(0, Math.floor((props.width - card.width - 2) / 2))}
+      width={card.width + 2}
+      height={card.outer}
+      padding={1}
+      zIndex={10}
+      backgroundColor={t.hex.bg}
+    >
+      <th-card
+        title={card.title}
+        theme={t}
+        width={card.width}
+        height={card.height}
+        flexShrink={0}
+        flexDirection="column"
+      >
+        <Lines theme={t} lines={card.lines} height={card.height - 2} />
       </th-card>
     </box>
   );
@@ -177,7 +380,7 @@ function settingsLines(
           ),
           { left: [] },
           ...message,
-          hint("↑/↓ move · enter change · esc back to the view"),
+          hint(hintText(SETTINGS_KEYS.main)),
         ],
       };
     case "choice": {
@@ -189,7 +392,7 @@ function settingsLines(
             picked(i === s.pick, [seg(c.label === now ? "● " : "  ", "live"), seg(c.label, "fg")]),
           ),
           { left: [] },
-          hint("● current · ↑/↓ move · enter select · esc back"),
+          hint(`● current · ${hintText(SETTINGS_KEYS.choice)}`),
         ],
       };
     }
@@ -207,7 +410,7 @@ function settingsLines(
             ]),
           ),
           ...message,
-          hint("type to filter · ↑/↓ move · enter select · esc back"),
+          hint(hintText(SETTINGS_KEYS.tz)),
         ],
       };
     }
@@ -237,13 +440,9 @@ function settingsLines(
           ? [
               { left: [seg("new label ", "mute"), seg(`${s.text}▏`, "head")] },
               ...message,
-              hint("enter save · esc cancel"),
+              hint(hintText(SETTINGS_KEYS.rename)),
             ]
-          : [
-              ...message,
-              hint("e enable/disable · l rename · h history only · esc back"),
-              hint("a same account as… · u unlink"),
-            ];
+          : [...message, hint(hintText(SETTINGS_KEYS.accounts))];
       return { title: "Settings › Accounts", lines: [...lines, { left: [] }, ...footerLines] };
     }
     case "link": {
@@ -268,7 +467,7 @@ function settingsLines(
           ),
           { left: [] },
           ...message,
-          hint("↑/↓ move · enter link · esc cancel"),
+          hint(hintText(SETTINGS_KEYS.link)),
         ],
       };
     }
@@ -282,6 +481,8 @@ function SettingsPanel(props: {
   roots: readonly RootInfo[];
   width: number;
   height: number;
+  /** Rows the card takes at least: room for the action menu inside it. */
+  least: number;
   t: Theme;
 }) {
   const { t, controller } = props;
@@ -297,7 +498,7 @@ function SettingsPanel(props: {
     },
     rows,
   );
-  const height = Math.min(props.height, lines.length + 2);
+  const height = Math.min(props.height, Math.max(props.least, lines.length + 2));
   return (
     <box flexDirection="column" alignItems="center" height={props.height} flexShrink={0}>
       <th-card
@@ -314,6 +515,56 @@ function SettingsPanel(props: {
   );
 }
 
+/** A section of the active view as the body places it: `top` rows below the first. */
+export interface Placed extends Fitted {
+  readonly top: number;
+}
+
+/** The active view laid out in the body: its sections, where those that fit go, their ids. */
+export interface ViewLayout {
+  readonly sections: readonly Section[];
+  readonly placed: readonly Placed[];
+  readonly drawn: ReadonlySet<string>;
+}
+
+/**
+ * The active view as the body lays it out in a `width` × `height` terminal (the whole
+ * frame): its sections, which fit and where, with the gap each asks for after it. The frame
+ * draws by it, its footer, help and keys leave out what it leaves out, and the README's
+ * screenshots (scripts/readme-shots.ts) place their boxes by it.
+ */
+export function viewLayout(
+  view: ViewId,
+  vm: unknown,
+  viewState: unknown,
+  config: Config,
+  scope: number | null,
+  width: number,
+  height: number,
+  systemZone: string,
+): ViewLayout {
+  // The body's first row is for notices; the sections share the rest.
+  const rows = height - CHROME_ROWS - footerRows(height) - 1;
+  const ctx: ViewContext = {
+    width,
+    height: rows,
+    bp: breakpoint(width),
+    theme: themeNamed(config.theme),
+    showCost: config.show_cost,
+    tz: config.time_zone === "system" ? systemZone : config.time_zone,
+    scope,
+  };
+  const sections = VIEWS[view].sections(vm, viewState, ctx);
+  const gaps = new Map(sections.map((s) => [s.id, s.gap ?? 1]));
+  const placed: Placed[] = [];
+  let top = 0;
+  for (const f of fitSections(sections, rows)) {
+    placed.push({ ...f, top });
+    top += f.height + (gaps.get(f.id) as number);
+  }
+  return { sections, placed, drawn: new Set(placed.map((p) => p.id)) };
+}
+
 interface BodyProps {
   readonly controller: Controller;
   readonly width: number;
@@ -322,12 +573,13 @@ interface BodyProps {
   readonly error: string | null;
   readonly overlay: Overlay;
   readonly view: ViewId;
-  readonly vm: unknown;
-  readonly viewState: unknown;
+  /** Null until the view's model arrives. */
+  readonly layout: ViewLayout | null;
   readonly config: Config;
   readonly scope: number | null;
   readonly settings: SettingsState;
   readonly roots: readonly RootInfo[];
+  readonly menu: MenuState | null;
 }
 
 /**
@@ -335,10 +587,12 @@ interface BodyProps {
  * footer shows (the live indicator, MCP status) doesn't redraw the view.
  */
 const Body = memo(function Body(props: BodyProps) {
-  const { width, height, t, config } = props;
+  const { width, height, t, config, layout, menu } = props;
   const top: Line =
     props.error === null ? { left: [] } : { left: [seg(` ${props.error}`, "high")] };
   const rows = height - 1;
+  const input: MenuInput = { config, roots: props.roots, scope: props.scope };
+  const inSettings = menu?.from === "settings";
   let content: ReactNode;
   if (props.overlay === "settings") {
     content = (
@@ -349,36 +603,36 @@ const Body = memo(function Body(props: BodyProps) {
         roots={props.roots}
         width={width}
         height={rows}
+        least={menu !== null && inSettings ? menuCard(menu, input, width).outer + 2 : 0}
         t={t}
       />
     );
   } else if (props.overlay === "help") {
-    content = <HelpPanel view={props.view} width={width} height={rows} t={t} />;
-  } else if (props.vm === undefined) {
+    content = (
+      <HelpPanel view={props.view} drawn={layout?.drawn} width={width} height={rows} t={t} />
+    );
+  } else if (layout === null) {
     content = <Lines theme={t} lines={[{ left: [seg("  reading the store…", "dim")] }]} />;
   } else {
-    const ctx: ViewContext = {
-      width,
-      height: rows,
-      bp: breakpoint(width),
-      theme: t,
-      showCost: config.show_cost,
-      tz: config.time_zone === "system" ? props.controller.systemZone : config.time_zone,
-      scope: props.scope,
-    };
-    const sections = VIEWS[props.view].sections(props.vm, props.viewState, ctx);
-    const byId = new Map(sections.map((s) => [s.id, s]));
-    content = fitSections(sections, rows).flatMap((f, i) => [
-      ...(i > 0 ? [<box key={`gap-${f.id}`} height={1} flexShrink={0} />] : []),
-      <box key={f.id} flexDirection="column" height={f.height} flexShrink={0}>
-        {byId.get(f.id)?.render(f.height)}
-      </box>,
-    ]);
+    const byId = new Map(layout.sections.map((s) => [s.id, s]));
+    content = layout.placed.flatMap((f, i) => {
+      const above = layout.placed[i - 1];
+      const gap = above === undefined ? 0 : f.top - above.top - above.height;
+      return [
+        ...(gap > 0 ? [<box key={`gap-${f.id}`} height={gap} flexShrink={0} />] : []),
+        <box key={f.id} flexDirection="column" height={f.height} flexShrink={0}>
+          {byId.get(f.id)?.render(f.height)}
+        </box>,
+      ];
+    });
   }
   return (
     <box flexDirection="column" height={height} flexShrink={0}>
       <Lines theme={t} lines={[top]} />
       {content}
+      {menu === null ? null : (
+        <MenuCard menu={menu} input={input} width={width} top={inSettings ? 2 : 1} t={t} />
+      )}
     </box>
   );
 });
@@ -414,6 +668,22 @@ export function Frame(props: {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   useLayoutEffect(() => onCommit?.(state), [state, onCommit]);
   const t = themeNamed(state.config.theme);
+  const lines = footerRows(height);
+  const { view, config, scope } = state;
+  const vm = state.views[view];
+  const viewState = state.viewState[view];
+  // The view laid out once per change it sees: the body draws it; the footer, the help and
+  // the controller's keys leave out what it left out.
+  const layout = useMemo(
+    () =>
+      vm === undefined
+        ? null
+        : viewLayout(view, vm, viewState, config, scope, width, height, controller.systemZone),
+    [view, vm, viewState, config, scope, width, height, controller],
+  );
+  useLayoutEffect(() => {
+    if (layout !== null) controller.drawn(view, layout.drawn);
+  }, [controller, view, layout]);
   if (width < MIN_WIDTH || height < MIN_HEIGHT) {
     return (
       <box width={width} height={height} backgroundColor={t.hex.bg}>
@@ -436,19 +706,19 @@ export function Frame(props: {
       <Body
         controller={controller}
         width={width}
-        height={height - CHROME_ROWS}
+        height={height - CHROME_ROWS - lines}
         t={t}
         error={state.vmDown ?? state.ingestDown ?? state.error}
         overlay={state.overlay}
-        view={state.view}
-        vm={state.views[state.view]}
-        viewState={state.viewState[state.view]}
-        config={state.config}
-        scope={state.scope}
+        view={view}
+        layout={layout}
+        config={config}
+        scope={scope}
         settings={state.settings}
         roots={state.roots}
+        menu={state.menu}
       />
-      <Lines theme={t} lines={[ruleLine(width), footer(state, width)]} />
+      <Lines theme={t} lines={[ruleLine(width), ...footer(state, width, lines, layout?.drawn)]} />
     </box>
   );
 }
@@ -462,7 +732,12 @@ export function App(props: {
   // A key handler that throws is a crash like a render error (OpenTUI would swallow it).
   useKeyboard((key) => {
     try {
-      props.controller.key({ name: key.name, sequence: key.sequence, ctrl: key.ctrl });
+      props.controller.key({
+        name: key.name,
+        sequence: key.sequence,
+        ctrl: key.ctrl,
+        shift: key.shift,
+      });
     } catch (error) {
       props.onFatal(error as Error);
     }

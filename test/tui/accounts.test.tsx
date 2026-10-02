@@ -11,6 +11,7 @@ import type { LimitEvent, LimitWindow } from "../../src/limits/index.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import { money } from "../../src/tui/format.ts";
+import { type MenuState, menuItems } from "../../src/tui/menu.ts";
 import { type AccountsState, ADD_ROOT, highest } from "../../src/tui/views/accounts.tsx";
 import { costText } from "../../src/tui/views/cells.ts";
 import {
@@ -275,51 +276,100 @@ describe("keys", () => {
     expect(state().selected).toBe((vm.rows[vm.rows.length - 1] as AccountRow).id);
   });
 
-  test("Enter scopes everything to the account, saved by label; Enter again: all", () => {
-    const { c, s, calls, saved } = setup();
+  /** Opens the selected account's action menu and runs its item `at` (0 is the scope). */
+  const run = (c: Controller, at: number) => {
+    c.key(key("return"));
+    for (let i = 0; i < at; i++) c.key(key("down"));
+    c.key(key("return"));
+  };
+
+  test("Enter opens the account's action menu: its items, in order; esc closes it", () => {
+    const { c, s, calls } = setup();
     select(c, "personal");
     c.key(key("return"));
     const personal = accounts.find((a) => a.label === "personal") as AccountInfo;
+    expect(s().menu).toEqual({
+      target: {
+        identity: "fixture-identity-personal",
+        label: "personal",
+        provider: "claude",
+        account: personal.id,
+      },
+      cursor: 0,
+      from: "view",
+    });
+    expect(
+      menuItems((s().menu as MenuState).target, {
+        config: s().config,
+        roots,
+        scope: s().scope,
+      }).map((i) => i.label),
+    ).toEqual(["Show only this account", "Disable", "Rename…", "History only: off"]);
+    // In the menu, keys are the menu's: 1 doesn't switch views, w/s and ↑/↓ move.
+    for (const k of ["1", "down", "s", "s", "s"]) c.key(key(k));
+    expect(s()).toMatchObject({ view: "accounts", menu: { cursor: 3 } });
+    c.key(key("w"));
+    expect(s().menu).toMatchObject({ cursor: 2 });
+    c.key(key("escape"));
+    expect(s().menu).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  test("Show only this account scopes everything to it, saved by label; again: all", () => {
+    const { c, s, calls, saved } = setup();
+    select(c, "personal");
+    run(c, 0);
+    const personal = accounts.find((a) => a.label === "personal") as AccountInfo;
     expect(s().scope).toBe(personal.id);
+    expect(s().menu).toBeNull();
     expect(saved.at(-1)?.account_scope).toBe("personal");
     expect(calls).toEqual(["save", `vmSettings:${personal.id}`]);
+    c.key(key("return"));
+    expect(
+      menuItems((s().menu as MenuState).target, { config: s().config, roots, scope: s().scope })[0],
+    ).toEqual({ action: "scope", label: "Show all accounts" });
     c.key(key("return"));
     expect(s().scope).toBeNull();
     expect(saved.at(-1)?.account_scope).toBe("all");
   });
 
-  test("e disables the account's root, as the settings editor does, and restarts ingest", () => {
+  test("Disable turns the account's root off, as the settings editor does, and restarts ingest", () => {
     const { c, s, calls } = setup();
     select(c, "personal");
-    c.key(key("e"));
+    run(c, 1);
     expect(s().config.disabled_roots).toEqual([`${HOME}/.claude`]);
     expect(calls).toEqual(["save", "vmConfig", "accountsEdited"]);
   });
 
-  test("e twice, before the roots are discovered again, restores the config: no duplicates", () => {
+  test("Disable then Enable, before the roots are discovered again, restores the config", () => {
     const { c, s, calls } = setup();
     select(c, "personal");
-    c.key(key("e"));
-    c.key(key("e"));
+    run(c, 1);
+    c.key(key("return"));
+    expect(
+      menuItems((s().menu as MenuState).target, { config: s().config, roots, scope: s().scope })[1],
+    ).toEqual({ action: "enable", label: "Enable" });
+    c.key(key("escape"));
+    run(c, 1);
     expect(s().config.disabled_roots).toEqual([]);
-    c.key(key("e"));
+    run(c, 1);
     expect(s().config.disabled_roots).toEqual([`${HOME}/.claude`]);
     expect(calls.filter((x) => x === "save")).toHaveLength(3);
   });
 
-  test("h toggles history-only for the account's root", () => {
+  test("History only toggles history-only for the account's root", () => {
     const { c, s } = setup();
     select(c, "personal");
-    c.key(key("h"));
+    run(c, 3);
     expect(s().config.history_only_roots).toContain("fixture-identity-personal");
-    c.key(key("h"));
+    run(c, 3);
     expect(s().config.history_only_roots).not.toContain("fixture-identity-personal");
   });
 
-  test("l renames in the settings prompt, then comes back to the view", () => {
+  test("Rename… renames in the settings prompt, then comes back to the view", () => {
     const { c, s, calls } = setup();
     select(c, "personal");
-    c.key(key("l"));
+    run(c, 2);
     expect(s().overlay).toBe("settings");
     expect(s().settings).toMatchObject({ screen: "rename", text: "personal" });
     for (let i = 0; i < "personal".length; i++) c.key(key("backspace"));
@@ -330,29 +380,47 @@ describe("keys", () => {
     expect(s().config.claude_roots).toEqual([{ path: `${HOME}/.claude`, label: "main" }]);
     expect(calls).toEqual(["save", "vmConfig", "accountsEdited"]);
     // Esc in the prompt changes nothing and also comes back.
-    c.key(key("l"));
+    run(c, 2);
     c.key(key("escape"));
     expect(s().overlay).toBe("none");
   });
 
-  test("an account with no root here says so instead of editing anything", () => {
+  test("an account with no root here: only the scope, and the menu says why", () => {
     const { c, s, calls } = setup();
     select(c, "work");
-    c.key(key("e"));
-    expect(s().error).toBe("work has no root on this machine: nothing to change");
+    c.key(key("return"));
+    const target = (s().menu as MenuState).target;
+    expect(menuItems(target, { config: s().config, roots, scope: null })).toEqual([
+      { action: "scope", label: "Show only this account" },
+    ]);
+    c.key(key("down"));
+    expect(s().menu).toMatchObject({ cursor: 0 });
     expect(calls).toEqual([]);
   });
 
-  test("Enter on + add a root… opens the settings account editor", () => {
+  test("the old letters do nothing: e, l and h", () => {
+    const { c, s, calls } = setup();
+    select(c, "personal");
+    const before = s();
+    for (const k of ["e", "l", "h"]) c.key(key(k));
+    expect(s()).toBe(before);
+    expect(calls).toEqual([]);
+  });
+
+  test("Enter on + add a root… opens the settings account editor, whose Enter is the same menu", () => {
     const { c, s, calls } = setup();
     for (let i = 0; i < 10; i++) c.key(key("down"));
     c.key(key("return"));
     expect(s().overlay).toBe("settings");
     expect(s().settings).toMatchObject({ screen: "accounts", pick: 0 });
     expect(calls).toEqual(["vmRoots"]);
-    // Keys go to the editor now: e there toggles its first root.
-    c.key(key("e"));
+    c.key(key("return"));
+    expect(s().menu).toMatchObject({ from: "settings", target: { label: "personal" } });
+    c.key(key("down"));
+    c.key(key("return"));
+    // A root edit from settings restarts ingest when settings close, not before.
     expect(calls).toEqual(["vmRoots", "save", "vmConfig"]);
+    expect(s()).toMatchObject({ overlay: "settings", menu: null });
   });
 });
 
@@ -441,6 +509,23 @@ describe("frames", () => {
     expect(frame).toMatchSnapshot();
   });
 
+  test("105×50: the action menu over the view", async () => {
+    const c = controller();
+    c.vmMessage({ type: "roots", roots });
+    const setup = await render(<Frame controller={c} width={105} height={50} />, 105, 50);
+    await settle(setup, () => {
+      select(c, "personal");
+      c.key(key("return"));
+      c.key(key("down"));
+    });
+    const frame = chars(setup);
+    expect(frame).toContain("╭─ personal · claude");
+    expect(frame).toContain("› Disable");
+    expect(frame).toContain("History only: off");
+    expect(frame.split("\n")[48]).toContain("w/s move   enter run   esc close");
+    expect(frame).toMatchSnapshot();
+  });
+
   test("+ add a root… selected: what Enter does", async () => {
     const c = controller();
     const setup = await render(<Frame controller={c} width={105} height={30} />, 105, 30);
@@ -470,7 +555,7 @@ describe("no line cut at the side-by-side widths", () => {
 
   test("80×24, the disabled account: its note whole", async () => {
     const frame = await frameAt(80, 24, "codex-win");
-    expect(frame).toContain("root disabled (e enables it)");
+    expect(frame).toContain("root disabled (enter, then Enable)");
     expect(frame.replace("add a root…", "")).not.toContain("…");
   });
 });

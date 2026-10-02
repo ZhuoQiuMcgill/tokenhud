@@ -19,16 +19,16 @@ release candidate 0.1.0-rc.1 has all of it.
     until reset), marked when the limits are stale or the account isn't signed in here;
     the MCP agents at work; spend from the last hour to all time; activity over 5 hours,
     24 hours or 7 days, in cost or tokens; the top models; the past week's limit events.
-    `tab` selects a card and `enter` opens its account.
+    `w`/`s` select a card and `enter` opens its account.
   - **History:** a 26-week calendar heat map, the selected day's card with its limit hits,
-    and a table by day, week or month against the 30-day average; this week or this month
-    at a key, and a filter that narrows every number to one model.
+    and a table of this week, this month, every day, the weeks or the months against the
+    30-day average, and a filter that narrows every number to one model.
   - **Models:** a rate board (tokens, the rates each model is billed at, cost and share) for
     a window you pick, sortable, with the selected model's full rates, their sources, and
     which accounts used it.
   - **Accounts:** every account with its status; the selected one's root, history, limit
     windows, weekly use at the last 8 resets, 30 days of spend, models and agents. Accounts
-    can be scoped to, turned off, renamed or marked history only right there.
+    can be scoped to, turned off, renamed or marked history only from their menu.
 
   Layouts for half a 1080p screen, a portrait half, 80 × 24 and wide terminals; a settings
   screen; dark, light and high-contrast themes. It reads stored totals, so it starts and
@@ -74,6 +74,25 @@ release candidate 0.1.0-rc.1 has all of it.
   or tells npm, npx and bunx users the command. `--check` only reports. The TUI notes a
   newer release in its footer, checking at most once a day (a setting turns it off); it
   never updates on its own.
+
+### Changed since 0.1.0-rc.1
+
+- **Keys: one movement scheme for every view**, all within reach of the left hand. `a`/`d`
+  (or `←`/`→`) switch the tab, `w`/`s` (or `↑`/`↓`) move the selection, `enter` opens it
+  and `esc` goes back one step, in every view, the settings screen and the new account
+  menu. Letters work with Caps Lock on. A view with tabs shows them as a strip,
+  `◀ a … d ▶`, and the footer takes two lines from 30 rows: the view's keys, then the
+  global ones. What moved:
+  - account scope `a` → `c`; settings `s` → `x`; `tab` and `shift-tab` now switch views;
+  - History: `d`/`w`/`m` and `W`/`M` → its tabs (this week, this month, days, weeks,
+    months), on this week at first; the heat map is no longer a focus of its own and
+    highlights the selected row's day, week or month; the filter `/` → `f` (`/` still
+    works);
+  - Overview: `tab` → `w`/`s` select a card; `↑`/`↓` no longer switch cost and tokens (`t`
+    does);
+  - Models: sort `o` → `r` (`o` still works);
+  - Accounts and the settings account editor: `e`/`l`/`h` → `enter`, which opens the
+    account's menu (show only it, enable or disable, rename, history only).
 
 ### For contributors
 

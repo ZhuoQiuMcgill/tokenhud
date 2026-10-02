@@ -15,13 +15,16 @@ export function breakpoint(width: number): Breakpoint {
 /**
  * One block of a view, stacked vertically in the body. `priority` 1 is the most important;
  * when rows are short the highest numbers drop first. A section may shrink from `height`
- * down to `minHeight` before anything is dropped.
+ * down to `minHeight` before anything is dropped. `gap` is the blank rows between it and the
+ * section under it (the layout's gap when absent): 0 for a header line that belongs to
+ * what follows it.
  */
 export interface SectionSpec {
   readonly id: string;
   readonly priority: number;
   readonly height: number;
   readonly minHeight?: number;
+  readonly gap?: number;
 }
 
 export interface Fitted {
@@ -32,7 +35,7 @@ export interface Fitted {
 /**
  * Which sections fit in `rows`, and how tall each is, in display order (the order given).
  *
- * The sections are taken in priority order while their minimum heights (plus a `gap` row
+ * The sections are taken in priority order while their minimum heights (plus the gap rows
  * between neighbours) fit; the first one that doesn't fit is dropped with everything of
  * lower priority, so a lower-priority section never shows while a higher one is hidden.
  * Rows left over then grow the shrunk sections back toward their full height, most
@@ -41,21 +44,30 @@ export interface Fitted {
 export function fitSections(sections: readonly SectionSpec[], rows: number, gap = 1): Fitted[] {
   if (sections.length === 0 || rows <= 0) return [];
   const byPriority = [...sections].sort((a, b) => a.priority - b.priority);
-  const kept: SectionSpec[] = [];
+  /** Rows `kept` take at their least: heights, and the gaps between display neighbours. */
+  const least = (kept: ReadonlySet<SectionSpec>): number => {
+    const shown = sections.filter((s) => kept.has(s));
+    return shown.reduce(
+      (n, s, i) => n + (s.minHeight ?? s.height) + (i < shown.length - 1 ? (s.gap ?? gap) : 0),
+      0,
+    );
+  };
+  const kept = new Set<SectionSpec>();
   let used = 0;
   for (const s of byPriority) {
-    const need = (kept.length > 0 ? gap : 0) + (s.minHeight ?? s.height);
-    if (used + need > rows) break;
-    kept.push(s);
-    used += need;
+    const need = least(new Set([...kept, s]));
+    if (need > rows) break;
+    kept.add(s);
+    used = need;
   }
-  if (kept.length === 0) {
+  if (kept.size === 0) {
     const top = byPriority[0] as SectionSpec;
     return [{ id: top.id, height: rows }];
   }
   let spare = rows - used;
-  const heights = new Map(kept.map((s) => [s.id, s.minHeight ?? s.height]));
-  for (const s of kept) {
+  const heights = new Map([...kept].map((s) => [s.id, s.minHeight ?? s.height]));
+  for (const s of byPriority) {
+    if (!kept.has(s)) continue;
     const grow = Math.min(spare, s.height - (heights.get(s.id) as number));
     if (grow > 0) {
       heights.set(s.id, (heights.get(s.id) as number) + grow);

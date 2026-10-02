@@ -22,12 +22,16 @@ import { dayLabel, money } from "../../src/tui/format.ts";
 import { theme } from "../../src/tui/theme.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import {
+  HISTORY_TABS,
   type HistoryState,
+  type HistoryTab,
+  highlighted,
   history,
   listing,
   selectedIndex,
   selectedRow,
 } from "../../src/tui/views/history.tsx";
+import { viewKey } from "../../src/tui/views/types.ts";
 import { computeHistory, readAccountEvents } from "../../src/tui/vm/history.ts";
 import {
   createQueries,
@@ -272,11 +276,21 @@ beforeAll(() => {
 afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
 
 const START = history.initial;
-/** The state after `keys`, as the shell hands them to the view. */
+/** `state` after `keys`, named as the shell hands them to the view (WASD already arrows). */
+function after(model: HistoryVM, state: HistoryState, ...keys: string[]): HistoryState {
+  let out = state;
+  for (const k of keys) out = viewKey(history, k, out, model) ?? out;
+  return out;
+}
+
+/** The state after `keys` from the start (this week's tab). */
 function press(model: HistoryVM, ...keys: string[]): HistoryState {
-  let state = START;
-  for (const k of keys) state = history.keys(k, state, model) ?? state;
-  return state;
+  return after(model, START, ...keys);
+}
+
+/** The `right` presses from this week's tab to `tab`. */
+function toTab(tab: HistoryTab): string[] {
+  return Array(HISTORY_TABS.indexOf(tab)).fill("right");
 }
 
 function rowKeys(model: HistoryVM, state: HistoryState): string[] {
@@ -544,7 +558,8 @@ function nextMonth(key: string): string {
 describe("calendar periods on a fixed clock in Toronto", () => {
   test("this week on a Sunday is the Monday before to today, not 7 rolling days", () => {
     const sunday = computeAt(SUNDAY_THE_1ST);
-    const state = press(sunday, "W");
+    const state = press(sunday);
+    expect(state.tab).toBe("this_week");
     expect(rowKeys(sunday, state)).toEqual([
       "2026-11-01",
       "2026-10-31",
@@ -569,7 +584,7 @@ describe("calendar periods on a fixed clock in Toronto", () => {
 
   test("this week on a Wednesday is Monday to Wednesday", () => {
     const wednesday = computeAt(WEDNESDAY);
-    expect(rowKeys(wednesday, press(wednesday, "W"))).toEqual([
+    expect(rowKeys(wednesday, press(wednesday))).toEqual([
       "2026-11-04",
       "2026-11-03",
       "2026-11-02",
@@ -584,7 +599,8 @@ describe("calendar periods on a fixed clock in Toronto", () => {
 
   test("this month on the 1st is just today", () => {
     const first = computeAt(SUNDAY_THE_1ST);
-    const state = press(first, "M");
+    const state = press(first, "right");
+    expect(state.tab).toBe("this_month");
     expect(rowKeys(first, state)).toEqual(["2026-11-01"]);
     const month = first.months.at(-1) as HistoryPeriod;
     expect(listing(first, state).parent).toBe(month);
@@ -601,12 +617,12 @@ describe("calendar periods on a fixed clock in Toronto", () => {
 
   test("on screen: the tabs and totals rows say the same", async () => {
     const first = computeAt(SUNDAY_THE_1ST);
-    const { frame } = await frameOf(first, 120, 45, ["W"]);
+    const { frame } = await frameOf(first, 120, 45);
     const week = first.weeks.at(-1) as HistoryPeriod;
     expect(line(frame, " 7 days")).toContain(costText(week).text);
     expect(frame).toContain("Mon Oct 26");
     expect(frame).not.toContain("Sun Oct 25");
-    const { frame: month } = await frameOf(first, 120, 45, ["M"]);
+    const { frame: month } = await frameOf(first, 120, 45, ["d"]);
     const nov = first.months.at(-1) as HistoryPeriod;
     expect(line(month, " 1 day ")).toContain(costText(nov).text);
     expect(month).not.toContain("Sat Oct 31");
@@ -667,124 +683,242 @@ function selectedLine(setup: Setup): string | null {
   return null;
 }
 
-/** The heat map's cursor (the cell drawn bold in `head`), as the day it stands for. */
-function heatCursor(setup: Setup, model: HistoryVM): string | null {
+/**
+ * The heat map's highlighted cells (drawn bold in `head`), as the days they stand for.
+ * `first` is the week in its first column: by default, as many weeks as fit show, the
+ * latest ones.
+ */
+function heatLit(setup: Setup, model: HistoryVM, first?: number): string[] {
   const lines = setup.captureSpans().lines;
-  const monday = chars(setup)
-    .split("\n")
-    .findIndex((l) => l.startsWith(" Mon ■"));
+  const text = chars(setup).split("\n");
+  const monday = text.findIndex((l) => l.startsWith(" Mon ■"));
+  const shown = (text[monday] as string).slice(5).split("■").length - 1;
+  const start = first ?? model.weeks.length - shown;
+  const lit: string[] = [];
   for (const [y, l] of lines.entries()) {
+    if (y < monday || y > monday + 6) continue;
     let x = 0;
     for (const s of l.spans) {
       const head = rgbToHex(s.fg as RGBA) === dark.hex.head && (s.attributes & 1) === 1;
-      if (head && s.text.includes("■")) {
-        const week = (x + s.text.indexOf("■") - 5) / 2;
-        return model.days[model.gridStart + week * 7 + (y - monday)]?.key ?? null;
+      if (head) {
+        for (let i = 0; i < s.text.length; i++) {
+          if (s.text[i] !== "■") continue;
+          const week = start + (x + i - 5) / 2;
+          lit.push(model.days[model.gridStart + week * 7 + (y - monday)]?.key as string);
+        }
       }
       x += Bun.stringWidth(s.text);
     }
   }
-  return null;
+  return lit.sort();
 }
 
-describe("the heat map and the table share one selection", () => {
-  test("moving on the heat map moves the table's row, by day, week and month", async () => {
-    let state = press(vm, "left", "up");
-    expect(selectedDay(vm, state)).toBe("2026-11-25");
-    for (const [group, row] of [
-      ["d", "2026-11-25"],
-      ["w", "2026-11-23"],
-      ["m", "2026-11"],
-    ] as const) {
-      state = history.keys(group, state, vm) ?? state;
-      const list = listing(vm, state);
-      expect(list.rows[selectedRow(vm, state, list)]?.key).toBe(row);
+/** The keys of `model.days` from `from` up to `to`, in order. */
+function daysBetween(model: HistoryVM, from: string, to: string): string[] {
+  return model.days.map((d) => d.key).filter((k) => k >= from && k <= to);
+}
+
+describe("tabs: this week, this month, days, weeks, months", () => {
+  test("this week first; d is this month, and every tab is at most 4 presses away either way", () => {
+    expect(START.tab).toBe("this_week");
+    expect(press(vm, "right").tab).toBe("this_month");
+    for (const from of HISTORY_TABS) {
+      for (const step of ["right", "left"]) {
+        const seen: HistoryTab[] = [];
+        let state = { ...START, tab: from };
+        for (let i = 0; i < 4; i++) {
+          state = after(vm, state, step);
+          seen.push(state.tab);
+        }
+        expect(new Set([from, ...seen])).toEqual(new Set(HISTORY_TABS));
+      }
     }
-    const { setup } = await frameOf(vm, 120, 45, ["left", "up"]);
-    expect(heatCursor(setup, vm)).toBe("2026-11-25");
-    expect(selectedLine(setup)).toStartWith("Wed Nov 25");
-    const { setup: weeks } = await frameOf(vm, 120, 45, ["left", "up", "w"]);
-    expect(selectedLine(weeks)).toStartWith("Nov 23–29");
-    const { setup: months } = await frameOf(vm, 120, 45, ["left", "up", "m", "left", "left"]);
-    expect(heatCursor(months, vm)).toBe("2026-11-11");
-    expect(selectedLine(months)).toStartWith("Nov 2026");
   });
 
-  test("moving in the table moves the heat map's cursor, keeping the weekday or the date", async () => {
-    let state = press(vm, "tab", "down", "down", "down");
-    expect(state.focus).toBe("table");
-    expect(selectedDay(vm, state)).toBe("2026-11-30");
-    state = history.keys("w", state, vm) ?? state;
-    state = history.keys("down", state, vm) ?? state;
-    expect(selectedDay(vm, state)).toBe("2026-11-23"); // the Monday a week back
-    state = history.keys("m", state, vm) ?? state;
-    state = history.keys("down", state, vm) ?? state;
-    expect(selectedDay(vm, state)).toBe("2026-10-23");
-    state = history.keys("up", state, vm) ?? state;
-    state = history.keys("up", state, vm) ?? state;
-    expect(selectedDay(vm, state)).toBe("2026-12-03"); // Dec 23 is after today
-    const { setup } = await frameOf(vm, 105, 50, ["tab", "down", "down", "down"]);
-    expect(heatCursor(setup, vm)).toBe("2026-11-30");
-    expect(selectedLine(setup)).toStartWith("Mon Nov 30");
-    const { setup: weeks } = await frameOf(vm, 105, 50, ["tab", "w", "down", "down"]);
-    expect(selectedLine(weeks)).toStartWith("Nov 16–22");
-    expect(heatCursor(weeks, vm)).toBe("2026-11-19");
+  test("each tab lists its rows: this week's and this month's days, every day, the weeks, the months", () => {
+    expect(rowKeys(vm, START)).toEqual(daysBetween(vm, "2026-11-30", "2026-12-03").reverse());
+    expect(rowKeys(vm, press(vm, ...toTab("this_month")))).toEqual(
+      daysBetween(vm, "2026-12-01", "2026-12-03").reverse(),
+    );
+    expect(rowKeys(vm, press(vm, ...toTab("days")))).toHaveLength(179);
+    expect(rowKeys(vm, press(vm, ...toTab("weeks")))).toEqual(vm.weeks.map((w) => w.key).reverse());
+    expect(rowKeys(vm, press(vm, ...toTab("months")))).toEqual(
+      vm.months.map((m) => m.key).reverse(),
+    );
   });
 
-  test("Enter opens a week's days, the heat map carries it to the next week, Esc goes back", () => {
-    let state = press(vm, "tab", "w", "down", "return");
-    expect(state.open).toBe("week");
-    expect(rowKeys(vm, state)).toEqual([
-      "2026-11-29",
-      "2026-11-28",
-      "2026-11-27",
-      "2026-11-26",
-      "2026-11-25",
-      "2026-11-24",
+  test("switching tabs keeps the selected day where the tab lists it, else selects the newest row", () => {
+    const nov25 = press(
+      vm,
+      ...toTab("days"),
+      "down",
+      "down",
+      "down",
+      "down",
+      "down",
+      "down",
+      "down",
+      "down",
+    );
+    expect(selectedDay(vm, nov25)).toBe("2026-11-25");
+    const weeks = after(vm, nov25, "right");
+    expect(weeks.tab).toBe("weeks");
+    expect(selectedDay(vm, weeks)).toBe("2026-11-25");
+    expect(listing(vm, weeks).rows[selectedRow(vm, weeks, listing(vm, weeks))]?.key).toBe(
       "2026-11-23",
-    ]);
-    state = history.keys("tab", state, vm) ?? state;
-    state = history.keys("left", state, vm) ?? state;
-    expect(rowKeys(vm, state)[0]).toBe("2026-11-22");
-    state = history.keys("escape", state, vm) ?? state;
-    expect(state).toMatchObject({ open: null, group: "week" });
-    expect(history.keys("escape", state, vm)).toBeUndefined();
+    );
+    const months = after(vm, weeks, "right");
+    expect(selectedDay(vm, months)).toBe("2026-11-25");
+    // This week doesn't hold Nov 25: its newest row, today, is selected.
+    const thisWeek = after(vm, months, "right");
+    expect(thisWeek.tab).toBe("this_week");
+    expect(selectedDay(vm, thisWeek)).toBe("2026-12-03");
+    // Dec 2 is in this month too.
+    const dec2 = after(vm, START, "down", "right");
+    expect(dec2).toMatchObject({ tab: "this_month", day: "2026-12-02" });
+  });
+
+  test("moving in a list keeps the weekday of a week and the date of a month", () => {
+    let state = press(vm, ...toTab("days"), "down", "down", "down");
+    expect(selectedDay(vm, state)).toBe("2026-11-30");
+    state = after(vm, state, "right", "down");
+    expect(selectedDay(vm, state)).toBe("2026-11-23"); // the Monday a week back
+    state = after(vm, state, "right", "down");
+    expect(selectedDay(vm, state)).toBe("2026-10-23");
+    state = after(vm, state, "up", "up");
+    expect(selectedDay(vm, state)).toBe("2026-12-03"); // Dec 23 is after today
+    expect(after(vm, state, "end")).toMatchObject({ day: "2026-06-03" });
+    expect(after(vm, state, "end", "home")).toMatchObject({ day: "2026-12-03" });
+  });
+
+  test("Enter drills into a week's days, the strip shows where, and Esc goes back to the same row", async () => {
+    const drilled = press(vm, ...toTab("weeks"), "down", "return");
+    expect(drilled).toMatchObject({ tab: "weeks", open: true });
+    expect(rowKeys(vm, drilled)).toEqual(daysBetween(vm, "2026-11-23", "2026-11-29").reverse());
+    const back = after(vm, drilled, "down", "escape");
+    expect(back).toMatchObject({ tab: "weeks", open: false });
+    expect(listing(vm, back).rows[selectedRow(vm, back, listing(vm, back))]?.key).toBe(
+      "2026-11-23",
+    );
+    expect(viewKey(history, "escape", back, vm)).toBeUndefined();
+    const { frame } = await frameOf(vm, 120, 45, [...toTab("weeks"), "down", "return"]);
+    expect(line(frame, " ◀ a")).toContain("[weeks › 11-23]");
+    const { frame: month } = await frameOf(vm, 120, 45, [...toTab("months"), "return"]);
+    expect(line(month, " ◀ a")).toContain("[months › 2026-12]");
     // Enter on a day lists its limit events (today has two); a day without any opens nothing.
-    expect(history.keys("return", press(vm, "tab"), vm)).toMatchObject({ events: true });
-    expect(history.keys("return", press(vm, "tab", "down"), vm)).toBeUndefined();
+    expect(viewKey(history, "return", START, vm)).toMatchObject({ events: true });
+    expect(viewKey(history, "return", press(vm, "down"), vm)).toBeUndefined();
   });
 
-  test("W and M keep a selection that's in this week or month, else jump to today", () => {
-    expect(press(vm, "up", "W")).toMatchObject({ open: "week", day: "2026-12-02" });
-    expect(press(vm, "left", "W")).toMatchObject({ open: "week", day: null });
-    expect(press(vm, "left", "M")).toMatchObject({ open: "month", day: null });
-    expect(press(vm, "up", "up", "M")).toMatchObject({ open: "month", day: "2026-12-01" });
-    expect(press(vm, "up", "up", "up", "M")).toMatchObject({ open: "month", day: null });
+  test("the strip marks the active tab, and shows this month one d away", async () => {
+    const { setup } = await frameOf(vm, 105, 50);
+    const strip = () =>
+      roles(setup.captureSpans(), dark)
+        .split("\n")
+        .find((l) => l.includes("◀ a")) ?? "";
+    expect(strip()).toContain("[dim/bg]◀ a ");
+    expect(strip()).toContain("[head/tab/b][this week]");
+    expect(strip()).toContain("[mute/bg] this month ");
+    expect(strip()).toContain("[dim/bg] d ▶");
+    const { setup: next } = await frameOf(vm, 105, 50, ["d"]);
+    const nextStrip =
+      roles(next.captureSpans(), dark)
+        .split("\n")
+        .find((l) => l.includes("◀ a")) ?? "";
+    expect(nextStrip).toContain("[head/tab/b][this month]");
   });
 
-  test("/ filters by model; typing takes every key; Enter applies, Esc clears", () => {
-    let state = press(vm, "w", "/");
-    expect(history.capturing?.(state)).toBe(true);
-    for (const k of ["m", "Y", "s", "t", "e", "r", "y"]) {
-      state = history.keys(k, state, vm) ?? state;
+  test("narrow, the strip shortens its labels, then shows fewer tabs, never hiding the active one", async () => {
+    for (const width of [40, 50, 60]) {
+      for (const tab of HISTORY_TABS) {
+        const { frame } = await frameOf(vm, width, 30, toTab(tab));
+        const strip = frame.split("\n")[3] as string;
+        expect(Bun.stringWidth(strip)).toBeLessThanOrEqual(width);
+        const label = {
+          this_week: "this wk",
+          this_month: "this mo",
+          days: "days",
+          weeks: "wks",
+          months: "mos",
+        }[tab];
+        expect({ width, tab, strip: strip.includes(label) }).toEqual({ width, tab, strip: true });
+      }
     }
+  });
+});
+
+describe("the heat map highlights the selected row's days", () => {
+  test("a day, a week, a month (the view model's indices)", () => {
+    const at = (key: string) => vm.days.findIndex((d) => d.key === key);
+    const day = press(vm, ...toTab("days"), "down", "down");
+    expect(highlighted(vm, day)).toEqual({ from: at("2026-12-01"), to: at("2026-12-01") + 1 });
+    const week = after(vm, day, "right");
+    expect(highlighted(vm, week)).toEqual({ from: at("2026-11-30"), to: at("2026-12-03") + 1 });
+    const lastWeek = after(vm, week, "down");
+    expect(highlighted(vm, lastWeek)).toEqual({
+      from: at("2026-11-23"),
+      to: at("2026-11-29") + 1,
+    });
+    const month = after(vm, lastWeek, "right");
+    expect(highlighted(vm, month)).toEqual({ from: at("2026-11-01"), to: at("2026-11-30") + 1 });
+    // The oldest month starts before the heat map; its days are still the month's.
+    const june = after(vm, month, "end");
+    expect(highlighted(vm, june)).toEqual({ from: at("2026-06-01"), to: at("2026-06-30") + 1 });
+    // A drilled week's rows are days again: Tuesday Nov 24 kept, then the day after.
+    const drilled = after(vm, lastWeek, "return", "up");
+    expect(highlighted(vm, drilled)).toEqual({ from: at("2026-11-25"), to: at("2026-11-26") });
+  });
+
+  test("on screen: the day's cell, the week's 7, the month's 30 that show", async () => {
+    const { setup: day } = await frameOf(vm, 120, 45, [...toTab("days"), "down", "down"]);
+    expect(heatLit(day, vm)).toEqual(["2026-12-01"]);
+    expect(selectedLine(day)).toStartWith("Tue Dec 1");
+    const { setup: week } = await frameOf(vm, 120, 45, [...toTab("weeks"), "down"]);
+    expect(heatLit(week, vm)).toEqual(daysBetween(vm, "2026-11-23", "2026-11-29"));
+    expect(selectedLine(week)).toStartWith("Nov 23–29");
+    const { setup: month } = await frameOf(vm, 120, 45, [...toTab("months"), "down"]);
+    expect(heatLit(month, vm)).toEqual(daysBetween(vm, "2026-11-01", "2026-11-30"));
+    expect(selectedLine(month)).toStartWith("Nov 2026");
+    // June's first week is before the heat map: only its days on it light up.
+    const { setup: june } = await frameOf(vm, 120, 45, [...toTab("months"), "end"]);
+    expect(heatLit(june, vm)).toEqual(daysBetween(vm, "2026-06-08", "2026-06-30"));
+  });
+
+  test("narrow: the heat map shows the latest weeks that fit, and follows the selection back", async () => {
+    const { setup, frame } = await frameOf(vm, 50, 30, [...toTab("days"), "end"]);
+    expect(frame).toContain("22 WEEKS TO");
+    expect(heatLit(setup, vm, 0)).toEqual(["2026-06-08"]);
+    const { frame: now } = await frameOf(vm, 50, 30);
+    expect(now).toContain("LAST 22 WEEKS");
+  });
+});
+
+describe("the model filter", () => {
+  test("f (or /) filters by model; typing takes every key, WASD too; Enter applies, Esc clears", () => {
+    let state = press(vm, ...toTab("weeks"), "f");
+    expect(history.capturing?.(state)).toBe(true);
+    state = after(vm, state, "m", "Y", "s", "t", "e", "r", "y");
     expect(state.filter).toBe("mYstery");
-    state = history.keys("return", state, vm) ?? state;
+    state = after(vm, state, "return");
     expect(state.typing).toBe(false);
     const rows = listing(vm, state).rows;
     expect(rows.length).toBeGreaterThan(0);
     for (const r of rows) expect(r.models.map((m) => m.name)).toEqual(["claude-mystery-9"]);
-    // Accounts are the `a` scope's: an account's name matches nothing.
+    // Accounts are the `c` scope's: an account's name matches nothing.
     expect(listing(vm, press(vm, "/", "c", "o", "d", "e", "x", "return")).rows).toEqual([]);
-    expect(listing(vm, press(vm, "/", "z", "z", "return")).rows).toEqual([]);
-    state = history.keys("escape", state, vm) ?? state;
+    expect(listing(vm, press(vm, "f", "z", "z", "return")).rows).toEqual([]);
+    state = after(vm, state, "escape");
     expect(state.filter).toBe("");
-    const typing = press(vm, "/", "o", "p", "backspace", "escape");
+    expect(press(vm, "f", "w", "a", "s", "d", "space", "q")).toMatchObject({
+      typing: true,
+      filter: "wasd q",
+    });
+    const typing = press(vm, "f", "o", "p", "backspace", "escape");
     expect(typing).toMatchObject({ typing: false, filter: "" });
   });
 
   test("a model filter narrows every number to that model: rows, totals, bars, heat map, card", async () => {
-    const keys = ["/", "o", "p", "u", "s", "return"];
+    const keys = [...toTab("days"), "/", "o", "p", "u", "s", "return"];
     const isOpus = (r: UsageRow) => r.model.includes("opus");
     const grid = { from: midnight("2026-06-08"), to: midnight("2026-12-04") };
     const opus = oracle(grid.from, grid.to, isOpus);
@@ -822,18 +956,25 @@ describe("the heat map and the table share one selection", () => {
   });
 
   test("Esc clears the filter, and every number is whole again", async () => {
-    const { frame } = await frameOf(vm, 120, 45, ["/", "o", "p", "u", "s", "return", "escape"]);
+    const { frame } = await frameOf(vm, 120, 45, [
+      ...toTab("days"),
+      "/",
+      "o",
+      "p",
+      "u",
+      "s",
+      "return",
+      "escape",
+    ]);
     expect(line(frame, " 179 days")).toContain(costText(vm.weeksTotal).text);
     expect(frame).not.toContain("filter:");
   });
 
-  test("narrow: the heat map shows the latest weeks that fit, and follows the selection back", async () => {
-    const back = Array.from({ length: 24 }, () => "left");
-    const { setup, frame } = await frameOf(vm, 50, 30, back);
-    expect(frame).toContain("22 WEEKS TO");
-    expect(heatCursor(setup, vm)).toBe("2026-06-11");
-    const { frame: now } = await frameOf(vm, 50, 30);
-    expect(now).toContain("LAST 22 WEEKS");
+  test("narrow, a filter on screen is never dropped: the strip gives way to it", async () => {
+    const { frame } = await frameOf(vm, 60, 30, ["f", "o", "p", "u", "s", "return"]);
+    const strip = frame.split("\n")[3] as string;
+    expect(strip).toContain("filter: opus · esc clear");
+    expect(strip).toContain("this wk");
   });
 });
 
@@ -896,37 +1037,36 @@ describe("limit events on the card", () => {
       expect(list).toContain(" Mon ■");
       expect(list).toMatchSnapshot();
       await settle(setup, () => c.key(keyOf("escape")));
-      expect(chars(setup)).toContain(" Day   Week");
+      expect(chars(setup)).toContain(" ◀ a [this week]");
     },
   );
 });
 
 describe("one side is always highlighted (critique m4)", () => {
-  test("a day older than the heat map, left by closing the oldest month, moves onto it", async () => {
-    // By month, the oldest month opened, its 3rd selected: Jun 3, before the heat map.
-    const opened = press(vm, "m", "tab", "end", "return");
-    expect(opened.open).toBe("month");
+  test("a day older than the heat map: the months list holds it, another tab selects its newest row", async () => {
+    // The oldest month opened, its 3rd selected: Jun 3, before the heat map.
+    const opened = press(vm, ...toTab("months"), "end", "return");
+    expect(opened.open).toBe(true);
     expect(selectedDay(vm, opened)).toBe("2026-06-03");
-    const back = history.keys("escape", opened, vm) as HistoryState;
+    const back = viewKey(history, "escape", opened, vm) as HistoryState;
     expect(selectedDay(vm, back)).toBe("2026-06-03"); // the June row holds it
-    for (const k of ["d", "w"]) {
-      const next = history.keys(k, back, vm) as HistoryState;
-      expect(selectedDay(vm, next)).toBe("2026-06-08");
-      expect(selectedRow(vm, next, listing(vm, next))).toBeGreaterThanOrEqual(0);
-    }
-    const { setup } = await frameOf(vm, 120, 45, ["m", "tab", "end", "return", "escape", "d"]);
-    expect(heatCursor(setup, vm)).toBe("2026-06-08");
-    expect(selectedLine(setup)).toStartWith("Mon Jun 8");
+    const weeks = viewKey(history, "left", back, vm) as HistoryState;
+    expect(weeks.tab).toBe("weeks");
+    expect(selectedRow(vm, weeks, listing(vm, weeks))).toBe(0);
+    const keys = [...toTab("months"), "end", "return", "escape", "left"];
+    const { setup } = await frameOf(vm, 120, 45, keys);
+    expect(heatLit(setup, vm)).toEqual(daysBetween(vm, "2026-11-30", "2026-12-03"));
+    expect(selectedLine(setup)).toStartWith("Nov 30–Dec 6");
   });
 
   test("from a day the filter hides, ↓ goes to the next older row and ↑ to the next newer", () => {
-    // Opus rows: … Dec 2, Nov 28 …; the heat map moves to Dec 1, which has no Opus.
-    const hidden = press(vm, "/", "o", "p", "u", "s", "return", "up");
-    expect(selectedDay(vm, hidden)).toBe("2026-12-01");
+    // Opus rows: … Dec 2, Nov 28 …; Dec 1 has no Opus.
+    const hidden: HistoryState = { ...START, tab: "days", filter: "opus", day: "2026-12-01" };
     expect(selectedRow(vm, hidden, listing(vm, hidden))).toBe(-1);
-    const table = history.keys("tab", hidden, vm) as HistoryState;
-    expect(selectedDay(vm, history.keys("down", table, vm) as HistoryState)).toBe("2026-11-28");
-    expect(selectedDay(vm, history.keys("up", table, vm) as HistoryState)).toBe("2026-12-02");
+    expect(selectedDay(vm, viewKey(history, "down", hidden, vm) as HistoryState)).toBe(
+      "2026-11-28",
+    );
+    expect(selectedDay(vm, viewKey(history, "up", hidden, vm) as HistoryState)).toBe("2026-12-02");
   });
 });
 
@@ -962,8 +1102,9 @@ describe.each([
     expect(frame).toMatchSnapshot();
   });
 
-  test("History by week, the table focused", async () => {
-    const { frame } = await frameOf(vm, width, height, ["tab", "w", "down"]);
+  test("History, the weeks tab, last week selected", async () => {
+    const { frame } = await frameOf(vm, width, height, ["a", "a", "s"]);
+    expect(frame).toContain(" weeks ");
     expect(frame).toMatchSnapshot();
   });
 });
@@ -982,7 +1123,7 @@ test("with costs hidden, tokens take their place: heat map, ratios, card and tab
   expect(frame).toMatchSnapshot();
 });
 
-test("colours at 120×45, by role: the cursor, the selected row, the bars", async () => {
-  const { setup } = await frameOf(vm, 120, 45, ["left", "up"]);
+test("colours at 120×45, by role: the strip, the highlighted week, the selected row, the bars", async () => {
+  const { setup } = await frameOf(vm, 120, 45, [...toTab("weeks"), "down"]);
   expect(roles(setup.captureSpans(), dark)).toMatchSnapshot();
 });

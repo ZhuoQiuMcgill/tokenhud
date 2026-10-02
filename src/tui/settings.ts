@@ -1,8 +1,9 @@
 // The settings screen as a pure state machine, ported from cc-usage's keyboard-driven
-// settings (settings_screen.py) and adapted: every value is picked from a list (↑/↓,
-// Enter, Esc), except an account's new label and the time-zone filter, which are typed.
-// Under Accounts, a root can also be linked to another on the same subscription account,
-// or unlinked (T16). Keys in, new state and config out; the shell saves and applies.
+// settings (settings_screen.py) and adapted: every value is picked from a list (w/s,
+// Enter, Esc) or stepped in place (a/d), except an account's new label and the time-zone
+// filter, which are typed. An account's edits are the action menu's (menu.ts), the same as
+// the Accounts view's; its "Same account as…" (T16) picks the other root from a list here.
+// Keys in, new state and config out; the shell saves and applies.
 
 import {
   type Config,
@@ -11,6 +12,7 @@ import {
   THEME_CHOICES,
   WINDOW_CHOICES,
 } from "../config.ts";
+import { entryFor, type KeyHelp, MOVE_KEYS, TEXT } from "./keys.ts";
 import type { RootInfo } from "./vm/types.ts";
 
 export type SettingsRow = "refresh" | "window" | "cost" | "theme" | "tz" | "update" | "accounts";
@@ -90,10 +92,9 @@ export type SettingsState =
       readonly message: string | null;
     };
 
-/** A key as the settings screen reads it: OpenTUI's name, and the text it typed. */
-export interface SettingsKey {
-  readonly name: string;
-  readonly sequence: string;
+/** Whether `screen` is a text field: its keys come as typed (WASD are letters there). */
+export function settingsCapturing(state: SettingsState): boolean {
+  return state.screen === "tz" || state.screen === "rename";
 }
 
 export interface SettingsInput {
@@ -114,6 +115,8 @@ export interface SettingsResult {
   readonly config?: Config;
   /** Roots were enabled, disabled, renamed, marked or linked: ingest should restart on close. */
   readonly accountsChanged?: boolean;
+  /** Open the action menu for this root (an index into `roots`). */
+  readonly menu?: number;
 }
 
 export function initialSettings(): SettingsState {
@@ -348,36 +351,141 @@ export function unlinkRoot(config: Config, root: RootInfo): Config {
 
 // ── keys ─────────────────────────────────────────────────────────────────────────
 
+const PAGE: KeyHelp = {
+  keys: ["pageup", "pagedown", "home", "end"],
+  show: "pgup/pgdn",
+  aliases: ["home/end"],
+  label: "page",
+  does: "Move ten rows, or to the first or last",
+  quiet: true,
+};
+const TYPE_BACK: KeyHelp = {
+  keys: ["backspace"],
+  show: "backspace",
+  label: "delete",
+  does: "Delete the last character",
+  quiet: true,
+};
+
+const MAIN = {
+  move: { ...MOVE_KEYS.select, label: "move", does: "Move" },
+  step: {
+    ...MOVE_KEYS.tabs,
+    label: "change",
+    does: "Step the selected setting's value in place (not the time zone or accounts)",
+  },
+  open: { ...MOVE_KEYS.open, label: "open", does: "Open the selected setting's list" },
+  close: {
+    keys: ["escape", "x", "q"],
+    show: "esc",
+    aliases: ["x", "q"],
+    label: "close",
+    does: "Back to the view",
+  },
+  page: PAGE,
+} as const satisfies Record<string, KeyHelp>;
+
+const PICK = {
+  move: { ...MOVE_KEYS.select, label: "move", does: "Move" },
+  pick: { ...MOVE_KEYS.open, label: "select", does: "Pick the value" },
+  back: {
+    keys: ["escape", "q"],
+    show: "esc",
+    aliases: ["q"],
+    label: "back",
+    does: "Back to the list",
+  },
+  page: PAGE,
+} as const satisfies Record<string, KeyHelp>;
+
+const ZONE = {
+  type: { keys: [TEXT], show: "type", label: "to filter", does: "Filter the zones" },
+  move: { keys: ["up", "down"], show: "↑/↓", label: "move", does: "Move" },
+  pick: { ...MOVE_KEYS.open, label: "select", does: "Pick the zone" },
+  back: { ...MOVE_KEYS.back, label: "back", does: "Back to the list" },
+  erase: TYPE_BACK,
+  page: PAGE,
+} as const satisfies Record<string, KeyHelp>;
+
+const ACCOUNTS = {
+  move: { ...MOVE_KEYS.select, label: "move", does: "Select a root" },
+  open: { ...MOVE_KEYS.open, label: "actions", does: "Open the root's action menu" },
+  back: {
+    keys: ["escape", "q"],
+    show: "esc",
+    aliases: ["q"],
+    label: "back",
+    does: "Back to the list",
+  },
+  page: PAGE,
+} as const satisfies Record<string, KeyHelp>;
+
+const LINK = {
+  move: { ...MOVE_KEYS.select, label: "move", does: "Select the root it shares its account with" },
+  pick: { ...MOVE_KEYS.open, label: "link", does: "Link the two" },
+  cancel: { keys: ["escape", "q"], show: "esc", label: "cancel", does: "Back to the list" },
+  page: PAGE,
+} as const satisfies Record<string, KeyHelp>;
+
+const RENAME = {
+  type: { keys: [TEXT], show: "type", label: "a label", does: "Type the new label" },
+  save: { ...MOVE_KEYS.open, label: "save", does: "Save the label" },
+  cancel: { ...MOVE_KEYS.back, label: "cancel", does: "Keep the label as it was" },
+  erase: TYPE_BACK,
+} as const satisfies Record<string, KeyHelp>;
+
+/** Each screen's keys, in the footer's order; a key its screen doesn't list does nothing. */
+export const SETTINGS_KEYS: Readonly<Record<SettingsState["screen"], readonly KeyHelp[]>> = {
+  main: Object.values(MAIN),
+  choice: Object.values(PICK),
+  tz: Object.values(ZONE),
+  accounts: Object.values(ACCOUNTS),
+  link: Object.values(LINK),
+  rename: Object.values(RENAME),
+};
+
 const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n));
 
-function isText(key: SettingsKey): boolean {
-  return key.sequence.length === 1 && key.sequence >= " " && key.sequence !== "\u007f";
+function move(key: string, pick: number, count: number): number {
+  if (key === "up") return clamp(pick - 1, count - 1);
+  if (key === "down") return clamp(pick + 1, count - 1);
+  if (key === "pageup") return clamp(pick - 10, count - 1);
+  if (key === "pagedown") return clamp(pick + 10, count - 1);
+  if (key === "home") return 0;
+  return Math.max(0, count - 1);
 }
 
-function move(key: SettingsKey, pick: number, count: number): number | null {
-  if (key.name === "up") return clamp(pick - 1, count - 1);
-  if (key.name === "down") return clamp(pick + 1, count - 1);
-  if (key.name === "pageup") return clamp(pick - 10, count - 1);
-  if (key.name === "pagedown") return clamp(pick + 10, count - 1);
-  if (key.name === "home") return 0;
-  if (key.name === "end") return Math.max(0, count - 1);
-  return null;
-}
-
+/**
+ * The settings screen's answer to `key`, named as the shell names it (keys.ts `keyName`;
+ * `typedName` while a text field has the keys, `settingsCapturing`).
+ */
 export function settingsKey(
   state: SettingsState,
-  key: SettingsKey,
+  key: string,
   input: SettingsInput,
 ): SettingsResult {
   const { config, roots } = input;
-  const back = key.name === "escape";
+  const entry = entryFor(SETTINGS_KEYS[state.screen], key);
   switch (state.screen) {
     case "main": {
-      if (back || key.name === "q" || key.name === "s") return { state: null };
-      const moved = move(key, state.cursor, SETTINGS_ROWS.length);
-      if (moved !== null) return { state: { ...state, cursor: moved, message: null } };
-      if (key.name !== "return" && key.name !== "enter") return { state };
+      if (entry === MAIN.close) return { state: null };
+      if (entry === MAIN.move || entry === MAIN.page) {
+        return {
+          state: { ...state, cursor: move(key, state.cursor, SETTINGS_ROWS.length), message: null },
+        };
+      }
       const row = SETTINGS_ROWS[state.cursor] as SettingsRow;
+      if (entry === MAIN.step) {
+        if (row === "tz" || row === "accounts") return { state };
+        const list = choices(row);
+        const at = list.findIndex((c) => c.value === current(row, config));
+        const next = list[(at + (key === "right" ? 1 : -1) + list.length) % list.length];
+        return {
+          state: { ...state, message: null },
+          config: withValue(row, config, (next as Choice).value),
+        };
+      }
+      if (entry !== MAIN.open) return { state };
       if (row === "accounts")
         return { state: { screen: "accounts", cursor: state.cursor, pick: 0, message: null } };
       if (row === "tz") {
@@ -406,11 +514,12 @@ export function settingsKey(
     }
     case "choice": {
       const list = choices(state.row);
-      if (back || key.name === "q")
+      if (entry === PICK.back)
         return { state: { screen: "main", cursor: state.cursor, message: null } };
-      const moved = move(key, state.pick, list.length);
-      if (moved !== null) return { state: { ...state, pick: moved } };
-      if (key.name !== "return" && key.name !== "enter") return { state };
+      if (entry === PICK.move || entry === PICK.page) {
+        return { state: { ...state, pick: move(key, state.pick, list.length) } };
+      }
+      if (entry !== PICK.pick) return { state };
       const choice = list[state.pick] as Choice;
       return {
         state: { screen: "main", cursor: state.cursor, message: null },
@@ -419,13 +528,15 @@ export function settingsKey(
     }
     case "tz": {
       const shown = filterZones(input.zones, state.filter);
-      if (back) return { state: { screen: "main", cursor: state.cursor, message: null } };
-      const moved = move(key, state.pick, shown.length);
-      if (moved !== null) return { state: { ...state, pick: moved } };
-      if (key.name === "backspace") {
+      if (entry === ZONE.back)
+        return { state: { screen: "main", cursor: state.cursor, message: null } };
+      if (entry === ZONE.move || entry === ZONE.page) {
+        return { state: { ...state, pick: move(key, state.pick, shown.length) } };
+      }
+      if (entry === ZONE.erase) {
         return { state: { ...state, filter: state.filter.slice(0, -1), pick: 0 } };
       }
-      if (key.name === "return" || key.name === "enter") {
+      if (entry === ZONE.pick) {
         const zone = shown[state.pick];
         if (zone === undefined) return { state: { ...state, message: "no zone matches" } };
         return {
@@ -433,70 +544,20 @@ export function settingsKey(
           config: { ...config, time_zone: zone },
         };
       }
-      if (isText(key))
-        return { state: { ...state, filter: state.filter + key.sequence, pick: 0, message: null } };
+      if (entry === ZONE.type) {
+        return { state: { ...state, filter: state.filter + typed(key), pick: 0, message: null } };
+      }
       return { state };
     }
     case "accounts": {
-      if (back || key.name === "q")
+      if (entry === ACCOUNTS.back) {
         return { state: { screen: "main", cursor: state.cursor, message: null } };
-      const moved = move(key, state.pick, roots.length);
-      if (moved !== null) return { state: { ...state, pick: moved, message: null } };
-      const root = roots[state.pick];
-      if (root === undefined) return { state };
-      if (
-        key.name === "e" ||
-        key.name === "return" ||
-        key.name === "enter" ||
-        key.name === "space"
-      ) {
-        return {
-          state: { ...state, message: null },
-          config: toggleEnabled(config, root),
-          accountsChanged: true,
-        };
       }
-      if (key.name === "h") {
-        return {
-          state: { ...state, message: null },
-          config: toggleHistoryOnly(config, root),
-          accountsChanged: true,
-        };
+      if (entry === ACCOUNTS.move || entry === ACCOUNTS.page) {
+        return { state: { ...state, pick: move(key, state.pick, roots.length), message: null } };
       }
-      if (key.name === "l") {
-        return {
-          state: {
-            screen: "rename",
-            cursor: state.cursor,
-            pick: state.pick,
-            text: root.label,
-            message: null,
-          },
-        };
-      }
-      if (key.name === "a") {
-        if (linkCandidates(root, roots).length === 0) {
-          return { state: { ...state, message: `no other ${root.provider} root to link it to` } };
-        }
-        return {
-          state: {
-            screen: "link",
-            cursor: state.cursor,
-            pick: state.pick,
-            choice: 0,
-            message: null,
-          },
-        };
-      }
-      if (key.name === "u") {
-        if (root.group === null) {
-          return { state: { ...state, message: `${root.label} shares its account with no root` } };
-        }
-        return {
-          state: { ...state, message: null },
-          config: unlinkRoot(config, root),
-          accountsChanged: true,
-        };
+      if (entry === ACCOUNTS.open && roots[state.pick] !== undefined) {
+        return { state: { ...state, message: null }, menu: state.pick };
       }
       return { state };
     }
@@ -508,11 +569,12 @@ export function settingsKey(
         pick: state.pick,
         message: null,
       };
-      if (back || key.name === "q" || root === undefined) return { state: toList };
+      if (entry === LINK.cancel || root === undefined) return { state: toList };
       const candidates = linkCandidates(root, roots);
-      const moved = move(key, state.choice, candidates.length);
-      if (moved !== null) return { state: { ...state, choice: moved } };
-      if (key.name !== "return" && key.name !== "enter") return { state };
+      if (entry === LINK.move || entry === LINK.page) {
+        return { state: { ...state, choice: move(key, state.choice, candidates.length) } };
+      }
+      if (entry !== LINK.pick) return { state };
       const other = candidates[state.choice];
       if (other === undefined) return { state: toList };
       // Say which pairs kept apart in config the link undoes: it is never a silent change.
@@ -537,19 +599,26 @@ export function settingsKey(
         pick: state.pick,
         message: null,
       };
-      if (back || root === undefined) return { state: toList };
-      if (key.name === "backspace")
+      if (entry === RENAME.cancel || root === undefined) return { state: toList };
+      if (entry === RENAME.erase) {
         return { state: { ...state, text: state.text.slice(0, -1), message: null } };
-      if (key.name === "return" || key.name === "enter") {
+      }
+      if (entry === RENAME.save) {
         const label = state.text.trim();
         if (label === root.label) return { state: toList };
         const problem = labelProblem(label, root, roots, input.accounts);
         if (problem !== null) return { state: { ...state, message: problem } };
         return { state: toList, config: renameRoot(config, root, label), accountsChanged: true };
       }
-      if (isText(key))
-        return { state: { ...state, text: state.text + key.sequence, message: null } };
+      if (entry === RENAME.type) {
+        return { state: { ...state, text: state.text + typed(key), message: null } };
+      }
       return { state };
     }
   }
+}
+
+/** The text a typing key adds: its character as typed, a space for the space bar. */
+function typed(key: string): string {
+  return key === "space" ? " " : key;
 }

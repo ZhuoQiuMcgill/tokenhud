@@ -1,7 +1,9 @@
 // The settings screen's state machine (a port of cc-usage's keyboard-driven settings) and
-// the config edits behind its account editor.
+// the config edits behind its account editor. Keys are named as the shell names them
+// (keys.ts): WASD already the arrows outside a text field.
 import { describe, expect, test } from "bun:test";
 import { type Config, defaultConfig } from "../../src/config.ts";
+import { menuItems } from "../../src/tui/menu.ts";
 import {
   filterZones,
   initialSettings,
@@ -72,20 +74,31 @@ function input(config: Config = defaultConfig()): SettingsInput {
   };
 }
 
-/** Feeds keys (OpenTUI names; single characters type themselves) and follows the config. */
+/** Feeds keys (single characters type themselves) and follows the config. */
 function drive(keys: string[], config = defaultConfig(), start: SettingsState = initialSettings()) {
   let state: SettingsState | null = start;
   let cfg = config;
   let accountsChanged = false;
+  let menu: number | undefined;
   for (const name of keys) {
     if (state === null) break;
-    const r = settingsKey(state, { name, sequence: name.length === 1 ? name : "" }, input(cfg));
+    const r = settingsKey(state, name, input(cfg));
     state = r.state;
     if (r.config) cfg = r.config;
     if (r.accountsChanged) accountsChanged = true;
+    if (r.menu !== undefined) menu = r.menu;
   }
-  return { state, config: cfg, accountsChanged };
+  return { state, config: cfg, accountsChanged, menu };
 }
+
+/** The label prompt for root `pick`, as the action menu's Rename opens it. */
+const renaming = (pick: number): SettingsState => ({
+  screen: "rename",
+  cursor: SETTINGS_ROWS.indexOf("accounts"),
+  pick,
+  text: (ROOTS[pick] as RootInfo).label,
+  message: null,
+});
 
 describe("the main list", () => {
   test("rows show the current values", () => {
@@ -103,7 +116,7 @@ describe("the main list", () => {
     expect(rowValue("tz", input())).toBe("system (America/Toronto)");
   });
 
-  test("↑/↓ move within the list; Esc, q or s close", () => {
+  test("↑/↓ move within the list; Esc, x or q close", () => {
     expect(drive(["down", "down", "up"]).state).toEqual({
       screen: "main",
       cursor: 1,
@@ -111,7 +124,34 @@ describe("the main list", () => {
     });
     expect(drive(["up"]).state).toMatchObject({ cursor: 0 });
     expect(drive(["end", "down"]).state).toMatchObject({ cursor: 6 });
-    for (const k of ["escape", "q", "s"]) expect(drive([k]).state).toBeNull();
+    for (const k of ["escape", "x", "q"]) expect(drive([k]).state).toBeNull();
+  });
+
+  test("←/→ step a row's value in place, round the ends; not the time zone's or the accounts'", () => {
+    expect(drive(["right"]).config.refresh_interval).toBe(10);
+    expect(drive(["left", "left"]).config.refresh_interval).toBe(30);
+    expect(drive(["down", "left"]).config.default_window).toBe("this_month");
+    expect(drive(["down", "down", "right"]).config.show_cost).toBe(false);
+    expect(drive(["down", "down", "down", "left"]).config.theme).toBe("high-contrast");
+    expect(drive(["end", "up", "right"]).config.update_check).toBe(false);
+    expect(drive(["end", "up", "up", "right"]).config).toEqual(defaultConfig());
+    expect(drive(["end", "left"]).config).toEqual(defaultConfig());
+    expect(drive(["right"]).state).toEqual({ screen: "main", cursor: 0, message: null });
+  });
+
+  test("keys a screen doesn't list do nothing", () => {
+    for (const k of ["e", "t", "1", "space", "backspace"]) {
+      expect(drive([k])).toEqual({
+        state: initialSettings(),
+        config: defaultConfig(),
+        accountsChanged: false,
+        menu: undefined,
+      });
+    }
+    expect(drive(["end", "return", "e", "h", "l"]).state).toMatchObject({
+      screen: "accounts",
+      pick: 0,
+    });
   });
 });
 
@@ -157,39 +197,43 @@ describe("time zone", () => {
 describe("accounts", () => {
   const open = ["end", "return"];
 
-  test("e disables an enabled root by its path, and re-enables a disabled one", () => {
-    const off = drive([...open, "down", "e"]);
-    expect(off.config.disabled_roots).toEqual(["/home/someone/.claude-work"]);
-    expect(off.accountsChanged).toBe(true);
+  test("Enter asks for the selected root's action menu; Esc or q go back to the list", () => {
+    expect(drive([...open, "down", "return"])).toMatchObject({
+      state: { screen: "accounts", pick: 1 },
+      menu: 1,
+    });
+    for (const k of ["escape", "q"]) {
+      expect(drive([...open, k]).state).toEqual({ screen: "main", cursor: 6, message: null });
+    }
+  });
+
+  test("toggleEnabled disables an enabled root by its path, and re-enables a disabled one", () => {
+    const off = toggleEnabled(defaultConfig(), ROOTS[1] as RootInfo);
+    expect(off.disabled_roots).toEqual(["/home/someone/.claude-work"]);
     const config: Config = {
       ...defaultConfig(),
       disabled_roots: ["/mnt/c/Users/someone/.codex", "/elsewhere"],
       codex_roots: [{ path: "/mnt/c/Users/someone/.codex", label: "codex-win", enabled: false }],
     };
-    const on = drive([...open, "end", "e"], config);
-    expect(on.config.disabled_roots).toEqual(["/elsewhere"]);
-    expect(on.config.codex_roots).toEqual([
-      { path: "/mnt/c/Users/someone/.codex", label: "codex-win" },
-    ]);
+    const on = toggleEnabled(config, ROOTS[3] as RootInfo);
+    expect(on.disabled_roots).toEqual(["/elsewhere"]);
+    expect(on.codex_roots).toEqual([{ path: "/mnt/c/Users/someone/.codex", label: "codex-win" }]);
   });
 
-  test("h marks a root history-only by its identity, and unmarks it", () => {
-    expect(drive([...open, "h"]).config.history_only_roots).toEqual(["id-personal"]);
+  test("toggleHistoryOnly marks a root history-only by its identity, and unmarks it", () => {
+    expect(toggleHistoryOnly(defaultConfig(), ROOTS[0] as RootInfo).history_only_roots).toEqual([
+      "id-personal",
+    ]);
     const config = { ...defaultConfig(), history_only_roots: ["id-personal", "other"] };
     expect(toggleHistoryOnly(config, ROOTS[0] as RootInfo).history_only_roots).toEqual(["other"]);
   });
 
-  test("l renames: a new config entry for a found root, the entry's label for a configured one", () => {
-    const renamed = drive([
-      ...open,
-      "down",
-      "l",
-      ...Array(4).fill("backspace"),
-      "j",
-      "o",
-      "b",
-      "return",
-    ]);
+  test("renaming: a new config entry for a found root, the entry's label for a configured one", () => {
+    const renamed = drive(
+      [...Array(4).fill("backspace"), "j", "o", "b", "return"],
+      undefined,
+      renaming(1),
+    );
     expect(renamed.config.claude_roots).toEqual([
       { path: "/home/someone/.claude-work", label: "job" },
     ]);
@@ -204,25 +248,29 @@ describe("accounts", () => {
     ]);
   });
 
+  test("the label is a text field: w, a, s, d, x, q and space are typed", () => {
+    const typed = drive(
+      [...Array(8).fill("backspace"), "w", "a", "s", "d", "space", "x", "q"],
+      undefined,
+      renaming(0),
+    );
+    expect(typed.state).toMatchObject({ screen: "rename", text: "wasd xq" });
+  });
+
   test("the default root is renamed through a config entry for its path", () => {
-    const renamed = drive([
-      ...open,
-      "l",
-      ...Array(8).fill("backspace"),
-      "m",
-      "a",
-      "i",
-      "n",
-      "return",
-    ]);
+    const renamed = drive(
+      [...Array(8).fill("backspace"), "m", "a", "i", "n", "return"],
+      undefined,
+      renaming(0),
+    );
     expect(renamed.config.claude_roots).toEqual([{ path: "/home/someone/.claude", label: "main" }]);
     expect(renamed.accountsChanged).toBe(true);
     expect(renamed.state).toMatchObject({ screen: "accounts", pick: 0, message: null });
   });
 
   test("the env root is renamed the same way", () => {
-    const keys = [...open, "down", "down", "l", ...Array(7).fill("backspace"), "x", "return"];
-    expect(drive(keys).config.claude_roots).toEqual([
+    const keys = [...Array(7).fill("backspace"), "x", "return"];
+    expect(drive(keys, undefined, renaming(2)).config.claude_roots).toEqual([
       { path: "/elsewhere/.claude-company", label: "x" },
     ]);
   });
@@ -239,22 +287,17 @@ describe("accounts", () => {
     expect(labelProblem("old-laptop", work, ROOTS, store)).toBe("'old-laptop' is taken");
     expect(labelProblem("work", work, ROOTS, store)).toBeNull();
     expect(labelProblem("new-name", work, ROOTS, store)).toBeNull();
-    const clash = drive([
-      ...open,
-      "down",
-      "l",
-      ...Array(4).fill("backspace"),
-      "a",
-      "l",
-      "l",
-      "return",
-    ]);
+    const clash = drive(
+      [...Array(4).fill("backspace"), "a", "l", "l", "return"],
+      undefined,
+      renaming(1),
+    );
     expect(clash.state).toMatchObject({
       screen: "rename",
       message: "'all' is reserved for the all-accounts scope",
     });
     expect(clash.config.claude_roots).toEqual([]);
-    expect(drive([...open, "down", "l", "x", "escape"]).config.claude_roots).toEqual([]);
+    expect(drive(["x", "escape"], undefined, renaming(1)).config.claude_roots).toEqual([]);
   });
 
   test("toggleEnabled leaves other config alone", () => {
@@ -267,7 +310,6 @@ describe("accounts", () => {
 });
 
 describe("shared accounts (T16): same account as…, unlink", () => {
-  const open = ["end", "return"];
   /** The roots, with personal and work on one account. */
   const linked = (source: "auto" | "manual"): RootInfo[] =>
     ROOTS.map((r) =>
@@ -278,46 +320,65 @@ describe("shared accounts (T16): same account as…, unlink", () => {
           : r,
     );
 
-  function driveRoots(roots: RootInfo[], keys: string[], config = defaultConfig()) {
-    let state: SettingsState | null = initialSettings();
+  /** The list to pick from for root `pick`, as the action menu's "Same account as…" opens it. */
+  const linking = (pick: number): SettingsState => ({
+    screen: "link",
+    cursor: SETTINGS_ROWS.indexOf("accounts"),
+    pick,
+    choice: 0,
+    message: null,
+  });
+
+  function driveRoots(
+    roots: RootInfo[],
+    keys: string[],
+    start: SettingsState,
+    config = defaultConfig(),
+  ) {
+    let state: SettingsState | null = start;
     let cfg = config;
     for (const name of keys) {
       if (state === null) break;
-      const r = settingsKey(
-        state,
-        { name, sequence: name.length === 1 ? name : "" },
-        { ...input(cfg), roots },
-      );
+      const r = settingsKey(state, name, { ...input(cfg), roots });
       state = r.state;
       if (r.config) cfg = r.config;
     }
     return { state, config: cfg };
   }
 
-  test("a picks another root of the same provider; enter links them in same_account", () => {
-    const picker = drive([...open, "a"]);
-    expect(picker.state).toMatchObject({ screen: "link", pick: 0, choice: 0 });
+  /** The action menu's items for `root`, as settings would list them. */
+  const items = (root: RootInfo, roots: RootInfo[] = ROOTS) =>
+    menuItems(
+      { identity: root.identity, label: root.label, provider: root.provider, account: null },
+      { config: defaultConfig(), roots, scope: null },
+    ).map((i) => i.label);
+
+  test("the menu's Same account as… picks another root of the provider; enter links them", () => {
+    expect(items(ROOTS[0] as RootInfo)).toContain("Same account as…");
     expect(linkCandidates(ROOTS[0] as RootInfo, ROOTS).map((r) => r.label)).toEqual([
       "work",
       "company",
     ]);
-    const done = drive([...open, "a", "down", "return"]);
+    const done = drive(["down", "return"], undefined, linking(0));
     expect(done.config.same_account).toEqual([["id-personal", "id-env"]]);
     expect(done.accountsChanged).toBe(true);
     expect(done.state).toMatchObject({ screen: "accounts", pick: 0 });
-    // Esc leaves the config as it was.
-    expect(drive([...open, "a", "escape"]).config.same_account).toEqual([]);
+    // w/s move there too; Esc or q leave the config as it was.
+    expect(drive(["down", "up"], undefined, linking(0)).state).toMatchObject({ choice: 0 });
+    for (const k of ["escape", "q"]) {
+      expect(drive([k], undefined, linking(0))).toMatchObject({
+        state: { screen: "accounts", pick: 0 },
+        config: { same_account: [] },
+      });
+    }
   });
 
-  test("roots already linked are not offered; a root with none to link to says so", () => {
+  test("roots already linked are not offered; with none to link to, the menu doesn't offer it", () => {
     expect(
       linkCandidates(linked("auto")[0] as RootInfo, linked("auto")).map((r) => r.label),
     ).toEqual(["company"]);
-    const lone = drive([...open, "end", "a"]);
-    expect(lone.state).toMatchObject({
-      screen: "accounts",
-      message: "no other codex root to link it to",
-    });
+    expect(linkCandidates(ROOTS[3] as RootInfo, ROOTS)).toEqual([]);
+    expect(items(ROOTS[3] as RootInfo)).not.toContain("Same account as…");
   });
 
   test("linking joins the entry either root is in, and drops a separate pair between them", () => {
@@ -403,42 +464,28 @@ describe("shared accounts (T16): same account as…, unlink", () => {
       ]);
     }
     // Through the keys: personal (first) picks work (its only candidate), with a message.
-    let state: SettingsState | null = initialSettings();
-    let cfg = config;
-    for (const name of ["end", "return", "a", "return"]) {
-      const r = settingsKey(
-        state as SettingsState,
-        { name, sequence: name.length === 1 ? name : "" },
-        {
-          ...input(cfg),
-          roots,
-        },
-      );
-      state = r.state;
-      if (r.config) cfg = r.config;
-    }
-    expect(cfg.separate_accounts).toEqual([]);
-    expect(state).toMatchObject({
+    const done = driveRoots(roots, ["return"], linking(0), config);
+    expect(done.config.separate_accounts).toEqual([]);
+    expect(done.state).toMatchObject({
       screen: "accounts",
       message: "no longer kept apart: work | personal, work | company",
     });
   });
 
-  test("u unlinks: out of same_account, and kept apart from every root it shared with", () => {
+  test("unlinking: out of same_account, and kept apart from every root it shared with", () => {
     const config: Config = {
       ...defaultConfig(),
       same_account: [["id-personal", "id-work", "x"]],
     };
-    const manual = driveRoots(linked("manual"), [...open, "u"], config);
-    expect(manual.config.same_account).toEqual([["id-work", "x"]]);
-    expect(manual.config.separate_accounts).toEqual([["id-personal", "id-work"]]);
+    const manual = unlinkRoot(config, linked("manual")[0] as RootInfo);
+    expect(manual.same_account).toEqual([["id-work", "x"]]);
+    expect(manual.separate_accounts).toEqual([["id-personal", "id-work"]]);
     // An auto-detected link is kept apart the same way, so it isn't found again.
-    const auto = driveRoots(linked("auto"), [...open, "down", "u"]);
-    expect(auto.config.separate_accounts).toEqual([["id-work", "id-personal"]]);
-    expect(unlinkRoot(auto.config, linked("auto")[1] as RootInfo)).toEqual(auto.config);
-    // A root on its own has nothing to unlink.
-    expect(drive([...open, "u"]).state).toMatchObject({
-      message: "personal shares its account with no root",
-    });
+    const auto = unlinkRoot(defaultConfig(), linked("auto")[1] as RootInfo);
+    expect(auto.separate_accounts).toEqual([["id-work", "id-personal"]]);
+    expect(unlinkRoot(auto, linked("auto")[1] as RootInfo)).toEqual(auto);
+    // Only a linked root's menu offers Unlink.
+    expect(items(linked("auto")[0] as RootInfo, linked("auto"))).toContain("Unlink");
+    expect(items(ROOTS[0] as RootInfo)).not.toContain("Unlink");
   });
 });

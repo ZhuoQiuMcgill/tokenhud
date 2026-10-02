@@ -71,8 +71,16 @@ function controller(config: Config = fixtureConfig(), mode: "owner" | "reader" =
 
 const key = (name: string) => ({ name, sequence: name, ctrl: false });
 
+/** The tab strip each view draws, and its active tab at first: marked in text too. */
+const STRIPS: Readonly<Record<string, string | null>> = {
+  overview: "[24h]",
+  history: "[this week]",
+  models: "[all]",
+  accounts: null,
+};
+
 describe.each(SIZES)("%i×%i", (width, height) => {
-  test.each(VIEWS)("view %s (%s)", async (k, _name) => {
+  test.each(VIEWS)("view %s (%s)", async (k, name) => {
     const c = controller();
     const setup = await render(
       <Frame controller={c} width={width} height={height} />,
@@ -84,6 +92,24 @@ describe.each(SIZES)("%i×%i", (width, height) => {
     const lines = frame.split("\n").slice(0, height);
     expect(lines).toHaveLength(height);
     for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(width);
+    // T17: a view with tabs shows them, its active tab marked, with the keys that switch them.
+    // The Overview's strip heads its activity chart, which this fixture's five limit cards
+    // leave no room for at 80×24: the chart goes, as before, and so do a/d and t (the PM's
+    // ruling on critique M1).
+    const strip = roles(setup.captureSpans(), theme("dark"))
+      .split("\n")
+      .find((l) => l.includes("◀ a"));
+    const chartless = name === "overview" && height === 24;
+    expect(frame.includes("ACTIVITY")).toBe(name === "overview" && !chartless);
+    if (STRIPS[name] === null || chartless) expect(strip).toBeUndefined();
+    else {
+      expect(strip).toContain(" d ▶");
+      expect(strip).toContain(`[head/tab/b]${STRIPS[name]}`);
+    }
+    // Two footer lines from 30 rows (the view's keys, then the global ones), else one.
+    const rule = lines.findLastIndex((l) => l.startsWith("─"));
+    expect(height - 1 - rule).toBe(height >= 30 ? 2 : 1);
+    expect(lines[height - 1]).toContain("? help");
     expect(frame).toMatchSnapshot();
   });
 
@@ -198,7 +224,7 @@ describe("footer update note, from the once-a-day check", () => {
     c.setUpdate("0.2.0");
     const line = await footer(c, 105);
     expect(line).toContain("[dim/bg]update 0.2.0 available");
-    expect(line).toContain("quit");
+    expect(line).toContain("[head/bg/b]?[dim/bg] help");
   });
 
   test("a newer prerelease says it takes --prerelease", async () => {
@@ -242,14 +268,90 @@ describe("states", () => {
     );
   });
 
-  test("help overlay", async () => {
+  test("help overlay: how to move, this view's keys with its tab names, the global keys", async () => {
     const c = controller();
     const setup = await render(<Frame controller={c} width={105} height={50} />, 105, 50);
     await settle(setup, () => {
       c.key(key("2"));
       c.key(key("?"));
     });
-    expect(chars(setup)).toMatchSnapshot();
+    const frame = chars(setup);
+    const at = (text: string) => frame.indexOf(text);
+    expect(at("MOVE")).toBeGreaterThan(0);
+    expect(at("MOVE")).toBeLessThan(at("HISTORY"));
+    expect(at("HISTORY")).toBeLessThan(at("GLOBAL"));
+    expect(frame).toContain("WASD works like the arrow keys");
+    expect(frame).toContain("this week · this month · days · weeks · months");
+    expect(frame).toMatchSnapshot();
+    for (const k of ["escape", "return", "?", "q"]) {
+      await settle(setup, () => {
+        c.key(key("?"));
+        c.key(key(k));
+      });
+      expect(c.getState().overlay).toBe("none");
+    }
+  });
+
+  test("help at 80×24: the moves whole, WASD said, every global key; this view's cut first", async () => {
+    const c = controller();
+    const setup = await render(<Frame controller={c} width={80} height={24} />, 80, 24);
+    await settle(setup, () => {
+      c.key(key("2"));
+      c.key(key("?"));
+    });
+    const frame = chars(setup);
+    expect(frame).toContain("a/d  ←/→             Switch the tab: what the view shows");
+    expect(frame).toContain("w/s  ↑/↓             Move the selection: which row or card");
+    expect(frame).toContain("WASD works like the arrow keys");
+    expect(frame).toContain("1-4 views · tab next view · c account · x settings · ? help · q quit");
+    expect(frame).toContain("f  /                 Filter every number by model");
+    for (const line of frame.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+  });
+
+  test("help on a screen too short for every key of the view: a line counts the rest", async () => {
+    const c = controller();
+    const setup = await render(<Frame controller={c} width={80} height={20} />, 80, 20);
+    await settle(setup, () => {
+      c.key(key("2"));
+      c.key(key("?"));
+    });
+    const frame = chars(setup);
+    expect(frame).toContain("WASD works like the arrow keys");
+    expect(frame).toMatch(/\+\d more: a taller terminal shows them/);
+    expect(frame).toContain("? help · q quit");
+  });
+
+  test("the action menu over settings sits inside the settings card: its borders whole", async () => {
+    const c = controller();
+    c.vmMessage({
+      type: "roots",
+      roots: [
+        {
+          provider: "claude",
+          label: "personal",
+          path: "/home/someone/.claude",
+          source: "auto",
+          enabled: true,
+          historyOnly: false,
+          identity: (accounts.find((a) => a.label === "personal") as AccountInfo).identity,
+          disabledBy: [],
+          configIndex: null,
+          group: null,
+        },
+      ],
+    });
+    const setup = await render(<Frame controller={c} width={105} height={30} />, 105, 30);
+    await settle(setup, () => {
+      for (const k of ["x", "end", "return", "return"]) c.key(key(k));
+    });
+    const lines = chars(setup).split("\n");
+    expect(lines.find((l) => l.includes("╭─ Settings › Accounts"))).toMatch(
+      /^ +╭─ Settings › Accounts ─+╮ +$/,
+    );
+    const bottom = lines.findLastIndex((l) => l.includes("╰"));
+    expect(lines[bottom]).toMatch(/^ +╰─+╯ +$/);
+    expect(lines.slice(0, bottom).join("\n")).toContain("╭─ personal · claude");
+    expect(chars(setup)).toContain("› Show only this account");
   });
 
   test("settings: the list, then a picker", async () => {
@@ -272,7 +374,7 @@ describe("states", () => {
       ],
     });
     const setup = await render(<Frame controller={c} width={105} height={30} />, 105, 30);
-    await settle(setup, () => c.key(key("s")));
+    await settle(setup, () => c.key(key("x")));
     const list = chars(setup);
     await settle(setup, () => {
       c.key({ name: "down", sequence: "", ctrl: false });
@@ -298,6 +400,24 @@ describe("states", () => {
     expect(frame.split("\n")[0]).toContain("scope work ▾");
     expect(frame).toContain("work · claude");
     expect(frame).not.toContain("personal · claude");
+  });
+
+  test("80×24 scoped to one account: the Overview has room for its chart, and its strip", async () => {
+    const work = accounts.find((a) => a.label === "work") as AccountInfo;
+    const c = controller();
+    c.vmMessage({
+      type: "views",
+      views: fixture.views(work.id).views,
+      accounts,
+      scope: work.id,
+      ms: 1,
+    });
+    const setup = await render(<Frame controller={c} width={80} height={24} />, 80, 24);
+    const strip = roles(setup.captureSpans(), theme("dark"))
+      .split("\n")
+      .find((l) => l.includes("ACTIVITY"));
+    expect(strip).toContain("[head/tab/b][24h]");
+    expect(strip).toContain("[dim/bg]◀ a ");
   });
 
   test("show cost off: tokens only", async () => {

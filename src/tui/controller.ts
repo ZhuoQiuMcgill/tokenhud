@@ -5,16 +5,27 @@
 
 import { type Config, WINDOW_CHOICES } from "../config.ts";
 import type { McpActivity } from "../mcp/heartbeat.ts";
+import { entryFor, GLOBAL_KEYS, HELP_KEYS, type Key, keyName, typedName } from "./keys.ts";
+import {
+  type MenuAction,
+  type MenuState,
+  type MenuTarget,
+  menuItems,
+  menuKey,
+  menuRoot,
+} from "./menu.ts";
 import {
   initialSettings,
   SETTINGS_ROWS,
   type SettingsState,
+  settingsCapturing,
   settingsKey,
   toggleEnabled,
   toggleHistoryOnly,
+  unlinkRoot,
 } from "./settings.ts";
 import { VIEWS } from "./views/index.ts";
-import { type ViewCommand, viewAnswer } from "./views/types.ts";
+import { type ViewCommand, viewAnswer, viewKey } from "./views/types.ts";
 import {
   type AccountInfo,
   type IngestMode,
@@ -26,6 +37,8 @@ import {
   type VmSettings,
   vmSettingsOf,
 } from "./vm/types.ts";
+
+export type { Key } from "./keys.ts";
 
 export type Overlay = "none" | "help" | "settings";
 
@@ -44,6 +57,8 @@ export interface UiState {
   readonly mcp: McpActivity | null;
   readonly overlay: Overlay;
   readonly settings: SettingsState;
+  /** The action menu, over the view or the settings screen; null when closed. */
+  readonly menu: MenuState | null;
   readonly roots: readonly RootInfo[];
   /** A problem to show above the view (the store can't be read, settings not saved). */
   readonly error: string | null;
@@ -60,12 +75,6 @@ export interface UiState {
   readonly update: string | null;
 }
 
-export interface Key {
-  readonly name: string;
-  readonly sequence: string;
-  readonly ctrl: boolean;
-}
-
 export interface Ports {
   /** Saves config; throws if it can't. */
   saveConfig(config: Config): void;
@@ -78,15 +87,6 @@ export interface Ports {
   /** Settings closed after account edits: ingest should restart with the new config. */
   accountsEdited(): void;
   quit(): void;
-}
-
-/**
- * A key as views and the global keys see it: a printable one as typed ("W", "/"), so a
- * shifted letter is its own key; any other by name ("return", "up", "space").
- */
-export function typedName(key: Key): string {
-  const printable = key.sequence.length === 1 && key.sequence > " " && key.sequence !== "\u007f";
-  return printable ? key.sequence : key.name;
 }
 
 export function initialState(config: Config, mode: IngestMode): UiState {
@@ -105,6 +105,7 @@ export function initialState(config: Config, mode: IngestMode): UiState {
     mcp: null,
     overlay: "none",
     settings: initialSettings(),
+    menu: null,
     roots: [],
     error: null,
     vmDown: null,
@@ -114,20 +115,44 @@ export function initialState(config: Config, mode: IngestMode): UiState {
   };
 }
 
-const VIEW_KEYS: Readonly<Record<string, ViewId>> = {
-  "1": "overview",
-  "2": "history",
-  "3": "models",
-  "4": "accounts",
-};
+type RootEdit = Extract<ViewCommand, { type: "root" }>["edit"];
+
+/**
+ * The settings screen a root edit goes on to, the root being `pick` in the roots: the label
+ * prompt for a rename, the list to pick from for a link (T16); null for an edit made at once.
+ */
+function editScreen(
+  edit: RootEdit,
+  pick: number,
+  root: RootInfo,
+  cursor: number,
+): SettingsState | null {
+  if (edit === "rename") return { screen: "rename", cursor, pick, text: root.label, message: null };
+  if (edit === "link") return { screen: "link", cursor, pick, choice: 0, message: null };
+  return null;
+}
+
+/** Whether settings have left the screens an edit goes on to: closed, or back to the list. */
+function editEnded(state: SettingsState | null): boolean {
+  return state?.screen !== "rename" && state?.screen !== "link";
+}
+
+/** The config an edit made at once leaves: the root switched on or off, marked, unlinked. */
+function editedConfig(edit: RootEdit, config: Config, root: RootInfo): Config {
+  if (edit === "enable") return toggleEnabled(config, root);
+  if (edit === "history") return toggleHistoryOnly(config, root);
+  return unlinkRoot(config, root);
+}
 
 export class Controller {
   #state: UiState;
   readonly #ports: Ports;
   readonly #listeners = new Set<() => void>();
   #accountsEdited = false;
-  /** Settings opened on a rename from a view: finishing it goes back to the view. */
-  #renameFromView = false;
+  /** Settings opened on a rename or a link from a view: finishing it goes back to the view. */
+  #editFromView = false;
+  /** The sections the last frame drew of a view (`drawn`); unknown before one is drawn. */
+  #drawn: { readonly view: ViewId; readonly ids: ReadonlySet<string> } | null = null;
   /** performance.now() of the last view-switch key, until its frame is drawn. */
   switchStartedAt: number | null = null;
   readonly zones: readonly string[];
@@ -201,37 +226,78 @@ export class Controller {
 
   // ── keys ─────────────────────────────────────────────────────────────────────
 
+  /** Whether a text field has the keys: they come as typed, and WASD are letters. */
+  #capturing(): boolean {
+    const s = this.#state;
+    if (s.menu !== null) return false;
+    if (s.overlay === "settings") return settingsCapturing(s.settings);
+    return s.overlay === "none" && VIEWS[s.view].capturing?.(s.viewState[s.view]) === true;
+  }
+
+  /** The key contract (keys.ts; described on `View`). */
   key(key: Key): void {
     const s = this.#state;
-    const name = typedName(key);
     if (key.ctrl && key.name === "c") {
       this.#ports.quit();
-    } else if (s.overlay === "settings") {
-      this.#settingsKey(key);
-    } else if (s.overlay === "help") {
-      if (name === "escape" || name === "?" || name === "q" || name === "return") {
-        this.#set({ overlay: "none" });
-      }
-    } else if (VIEWS[s.view].capturing?.(s.viewState[s.view]) === true) {
-      this.#viewKey(name);
-    } else if (VIEW_KEYS[name] !== undefined) {
-      const view = VIEW_KEYS[name] as ViewId;
-      if (view !== s.view) {
-        this.switchStartedAt = performance.now();
-        this.#set({ view });
-      }
-    } else if (name === "q") {
-      this.#ports.quit();
-    } else if (name === "a") {
-      this.#cycleScope();
-    } else if (name === "s") {
-      this.#ports.vmRoots();
-      this.#set({ overlay: "settings", settings: initialSettings() });
-    } else if (name === "?") {
-      this.#set({ overlay: "help" });
-    } else {
-      this.#viewKey(name);
+      return;
     }
+    const name = this.#capturing() ? typedName(key) : keyName(key);
+    if (s.menu !== null) {
+      this.#menuKey(s.menu, name);
+    } else if (s.overlay === "settings") {
+      this.#settingsKey(name);
+    } else if (s.overlay === "help") {
+      if (entryFor(Object.values(HELP_KEYS), name) !== undefined) this.#set({ overlay: "none" });
+    } else if (this.#capturing()) {
+      this.#viewKey(name);
+    } else {
+      this.#globalKey(name);
+    }
+  }
+
+  /** The global keys (keys.ts `GLOBAL_KEYS`); any other key goes to the view. */
+  #globalKey(name: string): void {
+    const s = this.#state;
+    switch (entryFor(Object.values(GLOBAL_KEYS), name)) {
+      case GLOBAL_KEYS.views:
+        this.#switchTo(VIEW_IDS[Number(name) - 1] as ViewId);
+        return;
+      case GLOBAL_KEYS.next: {
+        const n = VIEW_IDS.length;
+        const at = VIEW_IDS.indexOf(s.view) + (name === "tab" ? 1 : -1);
+        this.#switchTo(VIEW_IDS[(at + n) % n] as ViewId);
+        return;
+      }
+      case GLOBAL_KEYS.scope:
+        this.#cycleScope();
+        return;
+      case GLOBAL_KEYS.settings:
+        this.#ports.vmRoots();
+        this.#set({ overlay: "settings", settings: initialSettings() });
+        return;
+      case GLOBAL_KEYS.help:
+        this.#set({ overlay: "help" });
+        return;
+      case GLOBAL_KEYS.quit:
+        this.#ports.quit();
+        return;
+      default:
+        this.#viewKey(name);
+    }
+  }
+
+  /**
+   * The renderer's report of the sections a frame drew of `view`: a key whose section is
+   * left out does nothing (`KeyEntry.section`). Not state: it changes nothing on screen.
+   */
+  drawn(view: ViewId, ids: ReadonlySet<string>): void {
+    this.#drawn = { view, ids };
+  }
+
+  #switchTo(view: ViewId): void {
+    if (view === this.#state.view) return;
+    this.switchStartedAt = performance.now();
+    this.#set({ view });
   }
 
   /**
@@ -240,7 +306,8 @@ export class Controller {
    */
   #viewKey(name: string): void {
     const s = this.#state;
-    const answer = VIEWS[s.view].keys(name, s.viewState[s.view], s.views[s.view]);
+    const drawn = this.#drawn?.view === s.view ? this.#drawn.ids : undefined;
+    const answer = viewKey(VIEWS[s.view], name, s.viewState[s.view], s.views[s.view], drawn);
     if (answer === undefined) return;
     const { state, command } = viewAnswer(answer);
     this.#set({ viewState: { ...s.viewState, [s.view]: state } });
@@ -306,7 +373,57 @@ export class Controller {
         });
         return;
       }
+      case "menu": {
+        const account = s.accounts.find((a) => a.id === command.account);
+        if (account === undefined) return;
+        const { identity, label, provider, id } = account;
+        this.#set({
+          menu: { target: { identity, label, provider, account: id }, cursor: 0, from: "view" },
+        });
+        return;
+      }
     }
+  }
+
+  // ── the action menu ──────────────────────────────────────────────────────────
+
+  #menuKey(menu: MenuState, name: string): void {
+    const { config, roots, scope } = this.#state;
+    const items = menuItems(menu.target, { config, roots, scope });
+    const { state, run } = menuKey(menu, name, items.length);
+    this.#set({ menu: state });
+    const item = run === undefined ? undefined : items[run];
+    if (item !== undefined) this.#runMenu(menu, item.action);
+  }
+
+  /**
+   * A menu item, run as the place the menu opened from always ran it: from a view, the
+   * `scope` and `root` commands; from settings, the editor's own edits (saved now, ingest
+   * restarted when settings close).
+   */
+  #runMenu(menu: MenuState, action: MenuAction): void {
+    const { target } = menu;
+    if (action === "scope") {
+      if (target.account !== null) this.#command({ type: "scope", account: target.account });
+      return;
+    }
+    if (menu.from === "view") {
+      this.#command({ type: "root", identity: target.identity, label: target.label, edit: action });
+      return;
+    }
+    const { roots, config, settings } = this.#state;
+    const root = menuRoot(target, roots);
+    if (root === undefined) return;
+    const screen = editScreen(action, roots.indexOf(root), root, settings.cursor);
+    if (screen !== null) {
+      this.#set({ settings: screen });
+      return;
+    }
+    const after = editedConfig(action, config, root);
+    this.#save(after);
+    this.#set({ config: after });
+    this.#accountsEdited = true;
+    this.#ports.vmConfig(after);
   }
 
   /** An account's root edited from a view, exactly as the settings account editor does it. */
@@ -318,22 +435,13 @@ export class Controller {
       this.#set({ error: `${command.label} has no root on this machine: nothing to change` });
       return;
     }
-    if (command.edit === "rename") {
-      this.#renameFromView = true;
-      this.#set({
-        overlay: "settings",
-        settings: {
-          screen: "rename",
-          cursor: SETTINGS_ROWS.indexOf("accounts"),
-          pick,
-          text: root.label,
-          message: null,
-        },
-      });
+    const screen = editScreen(command.edit, pick, root, SETTINGS_ROWS.indexOf("accounts"));
+    if (screen !== null) {
+      this.#editFromView = true;
+      this.#set({ overlay: "settings", settings: screen });
       return;
     }
-    const after =
-      command.edit === "enable" ? toggleEnabled(config, root) : toggleHistoryOnly(config, root);
+    const after = editedConfig(command.edit, config, root);
     if (!this.#save(after)) return;
     this.#set({ config: after });
     this.#ports.vmConfig(after);
@@ -350,9 +458,9 @@ export class Controller {
     }
   }
 
-  #settingsKey(key: Key): void {
+  #settingsKey(name: string): void {
     const s = this.#state;
-    const result = settingsKey(s.settings, key, {
+    const result = settingsKey(s.settings, name, {
       config: s.config,
       roots: s.roots,
       accounts: s.accounts,
@@ -370,9 +478,22 @@ export class Controller {
       }
       if (result.accountsChanged) this.#ports.vmConfig(after);
     }
-    // A rename started from a view ends back in it, saved or not.
-    const back = this.#renameFromView && result.state?.screen !== "rename";
-    if (back) this.#renameFromView = false;
+    if (result.menu !== undefined) {
+      const root = s.roots[result.menu];
+      if (root !== undefined) {
+        const account = s.accounts.find((a) => a.identity === root.identity)?.id ?? null;
+        const target: MenuTarget = {
+          identity: root.identity,
+          label: root.label,
+          provider: root.provider,
+          account,
+        };
+        this.#set({ menu: { target, cursor: 0, from: "settings" } });
+      }
+    }
+    // A rename or link started from a view ends back in it, made or not.
+    const back = this.#editFromView && editEnded(result.state);
+    if (back) this.#editFromView = false;
     if (result.state === null || back) {
       this.#set({ overlay: "none", settings: initialSettings() });
       if (this.#accountsEdited) {

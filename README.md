@@ -88,65 +88,96 @@ the store, the accounts it follows, unpriced models, and anything still only in 
 
 ## Keys
 
+Every view moves the same way, with the left hand on WASD or either hand on the arrows:
+
 | Key | Does |
 |---|---|
+| `a/d` or `←/→` | Switch the tab: what the view shows |
+| `w/s` or `↑/↓` | Move the selection: which row or card |
+| `enter` | Open the selection |
+| `esc` | Go back one step: close, un-drill, clear |
+
+Letters work the same with Caps Lock on. In a text field (History's model filter, the time
+zone filter, a new label) letters are just text.
+
+| Key | Does, in every view |
+|---|---|
 | `1-4` | Switch view: Overview, History, Models, Accounts |
-| `a` | Cycle the account scope: all accounts, then each account, then all again |
-| `s` | Open settings |
+| `tab` or `shift-tab` | Next view, or the previous one |
+| `c` | Cycle the account scope: all accounts, then each account, then all again |
+| `x` | Open settings |
 | `?` | Show the keys, the current view's included |
 | `q` or `Ctrl-C` | Quit |
 
-The footer shows the keys of the view you are in.
+A view with tabs shows them as a strip, `◀ a  …  d ▶`, over what they switch. The footer
+shows the keys of the view you are in.
 
 ### Overview
 
 | Key | Does |
 |---|---|
-| `←/→` | Change the activity span: the last 5 hours, 24 hours or 7 days |
-| `t` | Show cost or tokens; the top models follow (`↑/↓` too) |
-| `tab` | Select the next account card; `esc` clears the selection |
+| `a/d` | Switch the activity chart's window: the last 5 hours, 24 hours or 7 days |
+| `w/s` | Select an account card (none is selected at first) |
 | `enter` | Open the selected card's account (the first card's when none is selected) in Accounts |
+| `esc` | Clear the card selection |
+| `t` | Show cost or tokens in the activity chart and the top models |
 
 ### History
 
 | Key | Does |
 |---|---|
-| `tab` | Move between the heat map and the table |
-| `←→↑↓` | On the heat map, a week back or forward and a day up or down; in the table, a row |
-| `d/w/m` | Group the table by day, week or month |
-| `W/M` | List the days of this week, or of this month |
+| `a/d` | Switch the table: this week, this month, every day, the weeks or the months |
+| `w/s` | Select a row; the heat map highlights its day, week or month |
+| `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
 | `enter` | On a week or month, list its days; on a day, list its limit events |
-| `/` | Filter every number by model: type part of a model id, `enter` applies it |
-| `esc` | Close the open week, month or day, then clear the filter |
+| `esc` | Close the limit events, then the open week or month, then clear the filter |
+| `f` or `/` | Filter every number by model: type part of a model id, `enter` applies it |
 
 ### Models
 
 | Key | Does |
 |---|---|
-| `←/→` | Change the window: today, this week, this month or all time, then the last 1, 5 or 24 hours (their tabs show on a wide screen) |
-| `↑/↓` | Select a model |
+| `a/d` | Switch the window: today, this week, this month, all time, the last 1, 5 or 24 hours |
+| `w/s` | Select a model |
 | `enter` | Show or hide the selected model's rates and who used it |
-| `o` | Sort by cost, tokens or name |
+| `r` | Sort by cost, tokens or name |
 
 ### Accounts
 
 | Key | Does |
 |---|---|
-| `↑/↓` | Select an account |
-| `enter` | Scope every view to that account; again, back to all accounts |
-| `e` | Turn the account off or on |
-| `l` | Rename (label) it |
-| `h` | Mark it history only, or not |
+| `w/s` | Select an account; the last entry is "add a root…" |
+| `enter` | Open the account's action menu; on "add a root…", the settings account editor |
+
+### Account menu
+
+`enter` on an account, in the Accounts view or in settings under Accounts, opens a small
+menu: show only this account (again: all accounts), enable or disable it, rename it, mark
+it history only or not, mark it as the same subscription account as another directory
+("Same account as…", picked from a list) and, once linked, unlink it.
+
+| Key | Does |
+|---|---|
+| `w/s` or `↑/↓` | Select an action |
+| `enter` | Run it |
+| `esc` | Close the menu |
+
+### Help
+
+| Key | Does |
+|---|---|
+| `esc`, `?`, `enter` or `q` | Close the help |
 
 ### Settings
 
 | Key | Does |
 |---|---|
-| `↑/↓` | Move |
-| `enter` | Change the selected setting, or pick a value |
-| `esc` | Back; from the main list, back to the view |
-| `e`, `l`, `h` | Under Accounts: turn an account off or on, rename it, mark it history only |
-| `a`, `u` | Under Accounts: mark an account as the same subscription account as another (pick it from a list), or unlink it |
+| `w/s` or `↑/↓` | Move; in the time zone list, only the arrows (letters filter it) |
+| `a/d` or `←/→` | Step the selected setting's value in place |
+| `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
+| `enter` | Open the selected setting's list, pick a value, or open an account's action menu |
+| `esc`, `x` or `q` | Back; from the main list, back to the view (`x` only there) |
+| `backspace` | Delete the last character of a filter or label |
 
 Settings are the refresh interval, the default spend window, whether to show cost, the
 theme (dark, light, high contrast), the time zone, whether to check for updates, and the
@@ -169,7 +200,7 @@ How close each account is to its limits, and what your usage is costing right no
 2. 🟧 **Limits.** A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder that pace is measured over the last 30 minutes and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.
 3. 🟨 **Agents.** Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: the account the call was about, the tool, and how long ago. With no recent calls, it says how many servers are running.
 4. 🟩 **Spend.** What your usage would cost at the providers' API prices (not what your subscription costs), and its tokens: input, output, cache reads and cache writes together. `1h` and `5h` are the last 60 minutes and the last 5 hours (shown on screens 120 columns wide or more). `today`, `this week` and `this month` start at local midnight, on Monday and on the 1st. `all-time` is everything tokenhud has stored, including usage whose transcripts are gone. For `*` and `≈`, see [Glyphs and colours](#glyphs-and-colours).
-5. 🟦 **Activity.** Cost over the last 24 hours, one bar per time slot (the view can switch to the last 5 hours or 7 days, and to tokens). The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.
+5. 🟦 **Activity.** Cost over the last 24 hours, one bar per time slot. The tabs on the right switch to the last 5 hours or 7 days (`a`/`d`; the one shown is in brackets), and `t` switches to tokens. The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.
 6. 🟪 **Top models.** The five models with the most cost in the last 24 hours: the cost, its share of the 24 hours' cost, and a bar of that share. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced` and comes last. Under the list, the chart's tallest slot and when it started.
 7. 🟫 **Limit events.** Limits hit in the last 7 days: day and time, account, and what happened. `5-hour limit reached` (red) is a window that reached 100 %; `weekly passed 80%` (amber) is a weekly window crossing 80 %. After a reached limit, `resumed 16:05` is when tokenhud first saw the window usable again after its reset; `resets` and a time, when a window that is still full will reset; `—`, that no fetch has seen it since. Limits reached come first, newest first, then the 80 % marks. Up to 8 lines; the rest are counted on the last one.
 <!-- /shots:overview -->
@@ -212,13 +243,14 @@ the `week ends ~N%` figure, shown from 80 %. Treat it as a rough guide:
 Your usage day by day, week by week and month by month, and the days you hit a limit.
 
 <!-- shots:history -->
-![The History view with five numbered boxes: heat map, day card, period table, totals, footer](docs-public/images/history.png)
+![The History view with six numbered boxes: tabs, heat map, day card, period table, totals, footer](docs-public/images/history.png)
 
-1. 🟥 **Heat map.** One square per day for the last 26 weeks: a column per week, Monday at the top. The shade is the day's cost against the busiest day shown: the darkest square is a day without usage, and the four lighter shades are under a quarter of the busiest day, under a half, under three quarters, and the rest. The selected day is white; days after today are blank.
-2. 🟧 **Day card.** The selected day. `cost`, and how it compares with your usual day: `2.4×` is the day's cost divided by your average daily cost over the 30 days before today (or fewer, if your usage started more recently). `tokens`, split into input, output and cache (reads and writes). `models`: its three most expensive models, with their share of the day's cost. `accounts`: each account's cost that day. `limits`: the day's limit events. `hit 100% at 14:10 (waited 1h55m)` is a window that reached its limit, and how long it was until tokenhud saw it usable again; a weekly window crossing 80 % reads passed 80%.
-3. 🟨 **Period table.** The tabs choose days, weeks (Monday to Sunday) or months; `This week` and `This month` list the days so far of the current week or month. Rows are newest first. `input`, `output` and `cache` (reads and writes) are tokens; `cost` is at API prices. `vs 30-day avg` compares the period with your average day times the period's days so far: the bar is full at 2.25 times, 1 times is a little under half of it, and it turns red-orange above 1.5 times; the ratio follows it. `top model` is the period's most expensive model, `accounts` those with usage, most cost first. The selected row holds the selected day. On the right of the tabs, what `*` and `≈` mean, and the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.
-4. 🟩 **Totals.** Every period listed, added up: here the `177 days` of the heat map's 26 weeks, today included.
-5. 🟦 **Footer.** The keys of the view you are on, then the keys every view has (all of them are in [Keys](#keys)). On the right, `MCP ● 2 agents`: tokenhud's MCP server is running (teal dot) and two agent sessions called it in the last 10 minutes; `MCP ○` means no server is running. A newer release, or another tokenhud reading the transcripts, is noted here too.
+1. 🟥 **Tabs.** What the table lists, switched with `a`/`d`; the one shown is in brackets. `this week` and `this month` list the days so far of the current week or month (History opens on this week), `days` every day of the heat map, `weeks` (Monday to Sunday) and `months` one row each. On the right, what `*` and `≈` mean, and `f`, the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.
+2. 🟧 **Heat map.** One square per day for the last 26 weeks: a column per week, Monday at the top. The shade is the day's cost against the busiest day shown: the darkest square is a day without usage, and the four lighter shades are under a quarter of the busiest day, under a half, under three quarters, and the rest. The table's selected row is white: here a day; on the weeks or months tab, that week's or month's days. Days after today are blank.
+3. 🟨 **Day card.** The selected day. `cost`, and how it compares with your usual day: `2.4×` is the day's cost divided by your average daily cost over the 30 days before today (or fewer, if your usage started more recently). `tokens`, split into input, output and cache (reads and writes). `models`: its three most expensive models, with their share of the day's cost. `accounts`: each account's cost that day. `limits`: the day's limit events. `hit 100% at 14:10 (waited 1h55m)` is a window that reached its limit, and how long it was until tokenhud saw it usable again; a weekly window crossing 80 % reads passed 80%.
+4. 🟩 **Period table.** The rows of the tab shown, newest first, moved through with `w`/`s`. On the weeks or months tab, `enter` lists a row's days and `esc` goes back; on a day with limit events, `enter` lists them. `input`, `output` and `cache` (reads and writes) are tokens; `cost` is at API prices. `vs 30-day avg` compares the period with your average day times the period's days so far: the bar is full at 2.25 times, 1 times is a little under half of it, and it turns red-orange above 1.5 times; the ratio follows it. `top model` is the period's most expensive model, `accounts` those with usage, most cost first.
+5. 🟦 **Totals.** Every period listed, added up: here the `177 days` of the heat map's 26 weeks, today included.
+6. 🟪 **Footer.** Its first line is the keys of the view you are on: `a/d` its tabs, `w/s` the selection, `enter` to open it, then the view's own; `esc back` joins them while there is something to go back from. Its second line is the keys every view has (all of them are in [Keys](#keys)). On the right, `MCP ● 2 agents`: tokenhud's MCP server is running (teal dot) and two agent sessions called it in the last 10 minutes; `MCP ○` means no server is running. A newer release, or another tokenhud reading the transcripts, is noted here too.
 <!-- /shots:history -->
 
 ### Models screen
@@ -228,7 +260,7 @@ What each model cost you, the rates it was billed at, and who used it.
 <!-- shots:models -->
 ![The Models view with five numbered boxes: rate board, total, footnotes, rates card, who used it](docs-public/images/models.png)
 
-1. 🟥 **Rate board.** Every model used in the window, by cost (or by tokens, or by name). The tabs on the right are the windows: today, this week, this month and all time are calendar periods; the last 1, 5 and 24 hours show on screens 120 columns wide or more. One row per model and tier; a fast or priority tier is its own row, `(fast)`. For input, output and cache (reads and writes): the tokens used, and the `$/M` rate they are billed at today, in dollars per million tokens (`—`: no price). `cost` prices each request at the rate in effect on its date, so it can differ from tokens times today's rate. The bar and the percentage are the model's share of the window's cost. `*` after a name: some or all of its tokens have no published rate, so they are counted but not priced. The selected row is highlighted.
+1. 🟥 **Rate board.** Every model used in the window, by cost (`r` sorts by tokens, then by name). The tabs on the right are the windows, switched with `a`/`d`; the one shown is in brackets. Today, this week, this month and all time are calendar periods, and 1h, 5h and 24h the last hours. One row per model and tier; a fast or priority tier is its own row, `(fast)`. For input, output and cache (reads and writes): the tokens used, and the `$/M` rate they are billed at today, in dollars per million tokens (`—`: no price). `cost` prices each request at the rate in effect on its date, so it can differ from tokens times today's rate. The bar and the percentage are the model's share of the window's cost. `*` after a name: some or all of its tokens have no published rate, so they are counted but not priced. The selected row (`w`/`s`) is highlighted, and `enter` shows or hides its cards below.
 2. 🟧 **Total.** All models together. Rates don't add up, so the total has none.
 3. 🟨 **Footnotes.** `$/M` is the base rate; cache writes, and requests over a model's long-context threshold, cost more. Then the share of the window's tokens that have a price, and which costs are estimates: `codex-auto-review` is priced as the model OpenAI said serves it.
 4. 🟩 **Rates.** The selected model's prices today, per million tokens: input and output; cache reads, and what fraction of the input rate they are; cache writes, for 5 minutes and for 1 hour (Anthropic) or one rate (OpenAI); the fast tier's prices; the long-context threshold and its multipliers, for models that have one; where the prices come from and when they were last checked; and any price change inside the window.
@@ -243,7 +275,7 @@ its last 30 days.
 <!-- shots:accounts -->
 ![The Accounts view with six numbered boxes: account list, selected account, where it comes from, limits, weekly history, last 30 days](docs-public/images/accounts.png)
 
-1. 🟥 **Accounts.** Every account tokenhud has usage for: those active on this machine first, then by all-time cost. The dot and the percentage show the account's most-used limit among its windows that haven't reset yet: blue below 50 %, amber from 50 %, red-orange from 80 %. `○` and a grey label: inactive here (history only, not signed in, turned off, or its config directory isn't on this machine). `+ add a root…` opens the account settings. Under the list, the keys for the selected account.
+1. 🟥 **Accounts.** Every account tokenhud has usage for: those active on this machine first, then by all-time cost. The dot and the percentage show the account's most-used limit among its windows that haven't reset yet: blue below 50 %, amber from 50 %, red-orange from 80 %. `○` and a grey label: inactive here (history only, not signed in, turned off, or its config directory isn't on this machine). `+ add a root…` opens the account settings. Under the list, the keys: `w`/`s` select an account, and `enter` opens its menu: show only this account, enable or disable it, rename it, history only, and linking it to another directory on the same subscription account.
 2. 🟧 **Account.** The selected account, its provider, and when its limits were last fetched.
 3. 🟨 **Where it comes from.** `root` is the config directory its transcripts are read from, and how: `watched` (read as they are written), `polled` (checked at intervals, for a Windows drive under WSL) or `disabled`. `history`: how many requests tokenhud has stored for it, and the day of the first.
 4. 🟩 **Limits.** Every limit window of the account: 5-hour, weekly, then any of a model's own. The bar and the percentage are how much is used (colours as on the cards), then when the window resets: a time today, a weekday and a time within a week, else a date. A window that has reset since the last fetch shows an empty bar, `—`, and how long ago it reset. A failed fetch is noted under the meters.
@@ -260,7 +292,7 @@ its last 30 days.
   eighths of a row.
 - `■` **heat map**: the darkest square is a day without usage; the four lighter shades are
   days under a quarter of the busiest day shown, under a half, under three quarters, and
-  the rest. White is the selected day.
+  the rest. White is the table's selected row: a day, or a week's or month's days.
 - `*` after a cost: some of its tokens have no price, so the cost leaves them out and is a
   lower bound. After a model's name: some or all of its tokens have no published rate.
   `unpriced`: none of its tokens has a price. See [Pricing](#pricing).
@@ -272,7 +304,8 @@ its last 30 days.
 - **Dots**: teal `●` is live (the header) or an MCP server running (the footer); amber `●`
   stale; red `●` an error. In Accounts, an account's dot takes its limit colour.
 - **Highlights**: a lighter background marks the selected row, and the active view, tab or
-  window.
+  window; a tab strip's active tab is in brackets too (`[24h]`), for plain text and for
+  anyone who can't tell the colours apart.
 
 The layout adapts to the terminal: it is laid out for half of a 1080p screen (about 105 ×
 50), the top half of a portrait monitor (about 120 × 45), 80 × 24 and wider. On narrower
@@ -292,13 +325,13 @@ An account is one Claude Code or Codex config directory. tokenhud finds:
 
 Directories elsewhere go in `config.json` as `claude_roots` or `codex_roots`, for example
 `"claude_roots": [{"path": "/srv/claude-ci", "label": "ci"}]`. In the Accounts view, or in
-settings under Accounts, you can turn any account off, rename it, or mark it history only.
-`a` narrows every view to one account.
+settings under Accounts, `enter` opens an account's menu: turn it off, rename it, or mark it
+history only. `c` narrows every view to one account.
 
 **History-only accounts.** An account that isn't signed in on this machine any more (it now
 runs on another computer, say) keeps all of its history. Its card says "not signed in
 here" instead of showing an error, and tokenhud checks its limits only once a day, or never
-once you mark it history only (`h`).
+once you mark it history only (in its menu).
 
 **Several directories on one subscription account.** Two config dirs signed in to the same
 Claude (or ChatGPT) account share one set of limits: under WSL, `~/.claude` and the
@@ -316,11 +349,12 @@ other directory is still fetched every 30 minutes, and once more right away when
 credential file changes. If a reset differs, the two show apart straight away, and a second
 difference in a row unlinks them; a difference in use alone is checked again next round.
 
-In settings under Accounts, `a` links an account to another by hand and `u` unlinks it;
-they are saved as `same_account` and `separate_accounts` in `config.json`, and win over
-what tokenhud finds. A link you made is never undone: if the limits differ, Accounts and
-`tokenhud doctor` say so. `tokenhud doctor` lists the linked directories, how each link was
-made, and the pairs kept apart.
+An account's menu (`enter` on it, in the Accounts view or in settings under Accounts) links
+it to another by hand ("Same account as…") and unlinks it ("Unlink"). These are saved as
+`same_account` and `separate_accounts` in `config.json`, and win over what tokenhud finds.
+A link you made is never undone: if the limits differ, Accounts and `tokenhud doctor` say
+so. `tokenhud doctor` lists the linked directories, how each link was made, and the pairs
+kept apart.
 
 ## Use with Claude Code
 
