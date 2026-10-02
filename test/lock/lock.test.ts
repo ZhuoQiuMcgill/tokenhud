@@ -218,11 +218,13 @@ describe("across processes", () => {
   });
 
   test("16 contenders with random kill -9s never hold it at the same moment (6 rounds)", async () => {
-    // `bun test/lock/stress.ts 300` runs the full acceptance count.
+    // `bun test/lock/stress.ts 300` runs the full acceptance count. Each round runs until
+    // its 24 holds are logged and its 4 kills made, however slow the machine.
     for (let r = 0; r < 6; r++) {
-      const result = await round(16, 300, 4);
+      const result = await round(16, 300, 4, 24);
       expect(result.overlaps).toBe(0);
-      expect(result.holds).toBeGreaterThan(0);
+      expect(result.holds).toBeGreaterThanOrEqual(24);
+      expect(result.kills).toBe(4);
     }
-  }, 120_000);
+  }, 180_000);
 });

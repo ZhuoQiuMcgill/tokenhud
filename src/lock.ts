@@ -147,6 +147,10 @@ function lockDatabase(path: string, token: string): Database | null {
   const db = new Database(path, { create: true, strict: true });
   try {
     db.exec("PRAGMA busy_timeout = 0");
+    // The file's contents don't matter, only the OS lock on it: no fsync. A holder killed
+    // mid-write leaves a journal the next one rolls back; a power cut that leaves the file
+    // damaged gets it rebuilt.
+    db.exec("PRAGMA synchronous = OFF");
     db.exec("PRAGMA locking_mode = EXCLUSIVE");
     // The write takes the exclusive lock; in EXCLUSIVE mode it is kept after COMMIT.
     db.exec("BEGIN EXCLUSIVE");
