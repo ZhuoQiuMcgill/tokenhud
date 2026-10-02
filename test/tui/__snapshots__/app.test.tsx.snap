@@ -16,7 +16,7 @@ exports[`105×50 view 1 (overview) 1`] = `
  │ pace $0/h   → idle                              │  │ pace $0.04/h → week ends ~89%                  │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
  ╭─ codex-win · codex ─────────────────────────────╮  ╭─ agents · MCP ─────────────────────────────────╮ 
- │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● claude session  work  limits             <1m │ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● demo-app        work  limits             <1m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  personal  should_wait     3m │ 
  │ pace $0.04/h → safe until reset                 │  │                                                │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
@@ -62,16 +62,16 @@ exports[`105×50 view 2 (history) 1`] = `
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ───────────────────────╮
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M                              │
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · +2          │
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   Opus 4.8 71% · +2                 │
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · +2              │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30         │
  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                            │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                            │
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰────────────────────────────────────────────╯
                                                                                                          
- date         input  output    cache        cost vs 30-day avg            top model       accounts       
- Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8 personal, code…
- Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8 personal, code…
+ date         input  output    cache        cost vs 30-day avg            top model accounts             
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× Opus 4.8  personal, codex, cod…
+ Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× Opus 4.8  personal, codex-win,…
  ────────────────────────────────────────────────────────────────────────────────────────────────────────
  2 days        399K    331K    12.3M     $14.64*                                                         
                                                                                                          
@@ -169,7 +169,7 @@ exports[`105×50 view 4 (accounts) 1`] = `
  ACCOUNTS        ○ inactive here  │  codex-win · codex                           limits fetched 11:37:00 
                                   │                                                                      
  ● codex-win          codex   58% │  root      ~/.codex-win  (watched)                                   
- ● codex              codex   83% │  history   1,610 records since Aug 2                                 
+ ● codex              codex   83% │  history   1,610 requests since Aug 2                                
  ● personal           claude  78% │                                                                      
  ● work               claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50    
  ○ old-laptop         claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
@@ -227,7 +227,7 @@ exports[`120×45 view 1 (overview) 1`] = `
  │ pace $1.3/h → hits 100% at 12:59   │  │ pace $0/h   → idle                 │  │ pace $0/h   → idle                 │ 
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯ 
  ╭─ codex · codex ────────────────────╮  ╭─ codex-win · codex ────────────────╮  ╭─ agents · MCP ─────────────────────╮ 
- │ 5h   ━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● claude session  limits       <1m │ 
+ │ 5h   ━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● demo-app        limits       <1m │ 
  │ week ━━━━━━━━━━━━━━━━━  83% 19h05m │  │ week ━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  should_wait   3m │ 
  │ pace $0.04/h → week ends ~89%      │  │ pace $0.04/h → safe until reset    │  │                                    │ 
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯ 
@@ -273,16 +273,16 @@ exports[`120×45 view 2 (history) 1`] = `
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ──────────────────────────────────────╮
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                    │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M            │
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · gpt-5.6-sol 17% · +1       │
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   Opus 4.8 71% · gpt-5.6-sol 17% · gpt-5.5 12%     │
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · codex $2.41 · codex-win $0.02  │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30                        │
  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                           │
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                           │
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰───────────────────────────────────────────────────────────╯
                                                                                                                         
- date         input  output    cache        cost vs 30-day avg            top model       accounts                      
- Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8 personal, codex, codex-win    
- Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8 personal, codex-win, codex, w…
+ date         input  output    cache        cost vs 30-day avg            top model accounts                            
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× Opus 4.8  personal, codex, codex-win          
+ Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× Opus 4.8  personal, codex-win, codex, work    
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  2 days        399K    331K    12.3M     $14.64*                                                                        
                                                                                                                         
@@ -370,7 +370,7 @@ exports[`120×45 view 4 (accounts) 1`] = `
  ACCOUNTS         ○ inactive here  │  codex-win · codex                                         limits fetched 11:37:00 
                                    │                                                                                    
  ● codex-win           codex   58% │  root      ~/.codex-win  (watched)                                                 
- ● codex               codex   83% │  history   1,610 records since Aug 2                                               
+ ● codex               codex   83% │  history   1,610 requests since Aug 2                                              
  ● personal            claude  78% │                                                                                    
  ● work                claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50         
  ○ old-laptop          claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40     
@@ -427,7 +427,7 @@ exports[`80×24 view 1 (overview) 1`] = `
    pace $0.04/h → week ends ~89%                                                
  ● codex-win · codex    5h ━━━━━━━━  44%  2h10m  week ━━━━━━━━  58%  1d03h      
    pace $0.04/h → safe until reset                                              
- ◆ MCP  claude session  work  limits                                         <1m
+ ◆ MCP  demo-app        work  limits                                         <1m
  ◆ MCP  claude session  personal  should_wait                                 3m
                                                                                 
  SPEND                                                  * not all tokens priced 
@@ -503,7 +503,7 @@ exports[`80×24 view 4 (accounts) 1`] = `
  ACCOUNTS ○ inactive here  │  codex-win · codex         limits fetched 11:37:00 
                            │                                                    
  ● codex-win   codex   58% │  root      ~/.codex-win  (watched)                 
- ● codex       codex   83% │  history   1,610 records since Aug 2               
+ ● codex       codex   83% │  history   1,610 requests since Aug 2              
  ● personal    claude  78% │                                                    
  ● work        claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━   44%   resets 13:50    
  ○ old-laptop  claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
@@ -535,7 +535,7 @@ exports[`160×50 view 1 (overview) 1`] = `
  │ pace $1.3/h → hits 100% at 12:59                 │  │ pace $0/h   → idle                              │  │ pace $0/h   → idle                              │ 
  ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯ 
  ╭─ codex · codex ──────────────────────────────────╮  ╭─ codex-win · codex ─────────────────────────────╮  ╭─ agents · MCP ──────────────────────────────────╮ 
- │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● claude session  work  limits              <1m │ 
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   8%  4h31m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  44%  2h10m │  │ ● demo-app        work  limits              <1m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  83% 19h05m │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  58%  1d03h │  │ ● claude session  personal  should_wait      3m │ 
  │ pace $0.04/h → week ends ~89%                    │  │ pace $0.04/h → safe until reset                 │  │                                                 │ 
  ╰──────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯  ╰─────────────────────────────────────────────────╯ 
@@ -586,16 +586,16 @@ exports[`160×50 view 2 (history) 1`] = `
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ─────────────────────────────────────────────────────────╮                     
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                                       │                     
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M                               │                     
-     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   claude-opus-4-8 71% · gpt-5.6-sol 17% · gpt-5.5 12%                 │                     
+     ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ models   Opus 4.8 71% · gpt-5.6-sol 17% · gpt-5.5 12%                        │                     
  Wed ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ accounts personal $6.04* · codex $2.41 · codex-win $0.02                     │                     
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │ limits   work 5h hit 100% at 09:30                                           │                     
  Fri ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                                              │                     
      ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     │                                                                              │                     
  Sun ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■     ╰──────────────────────────────────────────────────────────────────────────────╯                     
                                                                                                                                                                 
- date         input  output    cache        cost vs 30-day avg            top model       accounts                                                              
- Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× claude-opus-4-8 personal, codex, codex-win                                            
- Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× claude-opus-4-8 personal, codex-win, codex, work                                      
+ date         input  output    cache        cost vs 30-day avg            top model accounts                                                                    
+ Tue Sep 29    180K    194K     7.1M      $8.47* ━━━━━━━━━━━━━━━━━━  1.6× Opus 4.8  personal, codex, codex-win                                                  
+ Mon Sep 28    219K    137K     5.2M      $6.17* ━━━━━━━━━━━━━━━━━━  1.1× Opus 4.8  personal, codex-win, codex, work                                            
  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  2 days        399K    331K    12.3M     $14.64*                                                                                                                
                                                                                                                                                                 
@@ -693,7 +693,7 @@ exports[`160×50 view 4 (accounts) 1`] = `
  ACCOUNTS         ○ inactive here  │  codex-win · codex                                                                                 limits fetched 11:37:00 
                                    │                                                                                                                            
  ● codex-win           codex   58% │  root      ~/.codex-win  (watched)                                                                                         
- ● codex               codex   83% │  history   1,610 records since Aug 2                                                                                       
+ ● codex               codex   83% │  history   1,610 requests since Aug 2                                                                                      
  ● personal            claude  78% │                                                                                                                            
  ● work                claude  12% │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50                                                 
  ○ old-laptop          claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40                                             
@@ -755,7 +755,7 @@ exports[`narrow 50×20 view 1 (overview): every number whole 1`] = `
    pace $0.04/h → week ends ~89%                  
  ● codex-win   5h  44%  2h10m  week  58%  1d03h   
    pace $0.04/h → safe until reset                
- ◆ MCP  claude session  work  limits           <1m
+ ◆ MCP  demo-app        work  limits           <1m
  ◆ MCP  claude session  personal  should_wait   3m
                                                   
                                                   
@@ -825,7 +825,7 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
  codex-win · codex        limits fetched 11:37:00 
                                                   
  root      ~/.codex-win  (watched)                
- history   1,610 records since Aug 2              
+ history   1,610 requests since Aug 2             
                                                   
  5-HOUR  ━━━━━━━━━━━━━━━━   44%   resets 13:50    
  WEEKLY  ━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
@@ -851,7 +851,7 @@ exports[`narrow 60×20 view 1 (overview): every number whole 1`] = `
    pace $0.04/h → week ends ~89%                            
  ● codex-win · codex    5h  44%  2h10m  week  58%  1d03h    
    pace $0.04/h → safe until reset                          
- ◆ MCP  claude session  work  limits                     <1m
+ ◆ MCP  demo-app        work  limits                     <1m
  ◆ MCP  claude session  personal  should_wait             3m
                                                             
                                                             
@@ -921,7 +921,7 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
  codex-win · codex                  limits fetched 11:37:00 
                                                             
  root      ~/.codex-win  (watched)                          
- history   1,610 records since Aug 2                        
+ history   1,610 requests since Aug 2                       
                                                             
  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50    
  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
@@ -943,7 +943,7 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$1.3/h [dim/bg]→ [high/bg/b]hits 100% at 12:59[-/bg]  [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg] 
 [-/bg] [border/bg]╭─ [head/bg/b]codex · codex[border/bg] ────────────────────╮[-/bg]  [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ────────────────╮[-/bg]  [border/bg]╭─ [live/bg/b]agents · MCP[border/bg] ─────────────────────╮[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━[empty/bg]━━━━━━━━━━━━━━━━[low/bg/b]   8%[dim/bg]  4h31m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━[empty/bg]━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  limits       [dim/bg]<1m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━[empty/bg]━━━━━━━━━━━━━━━━[low/bg/b]   8%[dim/bg]  4h31m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━[empty/bg]━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]demo-app        limits       [dim/bg]<1m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]week [high/bg]━━━━━━━━━━━━━━[empty/bg]━━━[high/bg/b]  83%[dim/bg] 19h05m[border/bg] │[-/bg]  [border/bg]│ [mute/bg]week [cost|mid/bg]━━━━━━━━━━[empty/bg]━━━━━━━[cost|mid/bg/b]  58%[dim/bg]  1d03h[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  should_wait   [dim/bg]3m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [cost|mid/bg]week ends ~89%[-/bg]     [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [mute/bg]safe until reset[-/bg]   [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                  [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────╯[-/bg] 
@@ -996,7 +996,7 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0/h   [dim/bg]→ idle[-/bg]                             [border/bg] │[-/bg]  [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [cost|mid/bg]week ends ~89%[-/bg]                 [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
 [-/bg] [border/bg]╭─ [head/bg/b]codex-win · codex[border/bg] ─────────────────────────────╮[-/bg]  [border/bg]╭─ [live/bg/b]agents · MCP[border/bg] ─────────────────────────────────╮[-/bg] 
-[-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  [mute/bg]work  [fg/bg]limits             [dim/bg]<1m[border/bg] │[-/bg] 
+[-/bg] [border/bg]│ [mute/bg]5h   [low/bg]━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━━━━━[low/bg/b]  44%[dim/bg]  2h10m[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]demo-app        [mute/bg]work  [fg/bg]limits             [dim/bg]<1m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]week [cost|mid/bg]━━━━━━━━━━━━━━━━━[rule|empty/bg]━━━━━━━━━━━━━[cost|mid/bg/b]  58%[dim/bg]  1d03h[border/bg] │[-/bg]  [border/bg]│ [live/bg]● [fg/bg]claude session  [mute/bg]personal  [fg/bg]should_wait     [dim/bg]3m[border/bg] │[-/bg] 
 [-/bg] [border/bg]│ [mute/bg]pace [cost|mid/bg]$0.04/h [dim/bg]→ [mute/bg]safe until reset[-/bg]                [border/bg] │[-/bg]  [border/bg]│ [-/bg]                                              [border/bg] │[-/bg] 
 [-/bg] [border/bg]╰─────────────────────────────────────────────────╯[-/bg]  [border/bg]╰────────────────────────────────────────────────╯[-/bg] 
@@ -1086,8 +1086,8 @@ exports[`states help overlay: how to move, this view's keys with its tab names, 
      │   enter                On a week or month, list its days; on a day, list its limit events    │    
      │   esc                  Close the limit events, then the open week or month, then clear the   │    
      │                        filter                                                                │    
-     │   f  /                 Filter every number by model: type part of a model id, enter applies  │    
-     │                        it                                                                    │    
+     │   f  /                 Filter every number by model: type part of its name or id, enter      │    
+     │                        applies it                                                            │    
      │                                                                                              │    
      │  GLOBAL                                                                                      │    
      │   1-4                  Switch view: Overview, History, Models, Accounts                      │    

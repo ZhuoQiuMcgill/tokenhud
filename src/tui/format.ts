@@ -109,6 +109,17 @@ export function clip(text: string, width: number): string {
   return out;
 }
 
+/**
+ * A model as people read it, the same in every view: cc-usage's `pretty_model_name`,
+ * `claude-opus-4-8` → `Opus 4.8`; other ids as they are. Only `tokenhud json` keeps the ids.
+ */
+export function modelName(model: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?$/.exec(model);
+  if (m === null) return model === "" ? "(unknown)" : model;
+  const family = `${(m[1] as string).charAt(0).toUpperCase()}${(m[1] as string).slice(1)}`;
+  return m[3] === undefined ? `${family} ${m[2]}` : `${family} ${m[2]}.${m[3]}`;
+}
+
 /** Pads or truncates to exactly `width` cells. */
 export function fit(text: string, width: number, align: "left" | "right" = "left"): string {
   const cut = truncate(text, width);

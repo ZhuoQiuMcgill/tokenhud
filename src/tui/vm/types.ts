@@ -102,6 +102,8 @@ export interface AgentCall {
   readonly tool: string;
   /** The account label the call resolved to, or null. */
   readonly account: string | null;
+  /** The name of the directory the session runs in (never its path), or null. */
+  readonly project: string | null;
   readonly at: number;
 }
 
@@ -163,7 +165,7 @@ export interface HistoryTotal extends Priced {
  * filter can show one model's numbers alone.
  */
 export interface HistoryShare extends HistoryTotal {
-  /** A model id, or an account's display label. */
+  /** A model id (shown by its `modelName`), or an account's display label. */
   readonly name: string;
 }
 

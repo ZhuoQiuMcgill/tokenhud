@@ -8,6 +8,7 @@ import { dedupeEvents } from "../../limits/events.ts";
 import type { AccountLimits, LimitWindow } from "../../limits/index.ts";
 import { windowScope } from "../../mcp/decide.ts";
 import type { Range } from "../../query/types.ts";
+import { modelName } from "../format.ts";
 import {
   ALL_TIME,
   amount,
@@ -17,7 +18,6 @@ import {
   scoped,
   sharedGroups,
 } from "./compute.ts";
-import { modelName } from "./models.ts";
 import type {
   AccountInfo,
   ActivitySeries,
@@ -250,7 +250,7 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
           servers: mcp.servers,
           calls: mcp.latest
             .filter((c) => scope === null || (c.account !== null && scopeLabels.has(c.account)))
-            .map((c) => ({ tool: c.tool, account: c.account, at: c.at })),
+            .map((c) => ({ tool: c.tool, account: c.account, project: c.project, at: c.at })),
         };
 
   const vm: OverviewVM = {

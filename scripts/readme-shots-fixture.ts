@@ -391,8 +391,8 @@ export const MCP: McpActivity = {
     { at: NOW - 7 * MIN, tool: "usage", account: "home" },
   ],
   latest: [
-    { at: NOW - 40_000, tool: "limits", account: "work" },
-    { at: NOW - 7 * MIN, tool: "usage", account: "home" },
+    { at: NOW - 40_000, tool: "limits", account: "work", project: "api-server" },
+    { at: NOW - 7 * MIN, tool: "usage", account: "home", project: "web-app" },
   ],
 };
 

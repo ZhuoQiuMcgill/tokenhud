@@ -10,8 +10,8 @@ import type { McpActivity } from "../../mcp/heartbeat.ts";
 import type { Range } from "../../query/types.ts";
 import { addDays } from "../../query/tz.ts";
 import { onWindowsDrive, type Root } from "../../sources/roots.ts";
+import { modelName } from "../format.ts";
 import { ALL_TIME, amount, type ComputeContext, type Computed } from "./compute.ts";
-import { modelName } from "./models.ts";
 import type { AccountInfo, Priced } from "./types.ts";
 
 export const SPARK_DAYS = 30;
@@ -84,7 +84,7 @@ export interface AccountRow extends AccountInfo, Priced {
   } | null;
   readonly firstSeen: number | null;
   readonly lastSeen: number | null;
-  /** All-time usage rows. */
+  /** All-time usage rows: requests, as every view calls them. */
   readonly records: number;
   /** Share of all accounts' all-time cost. */
   readonly share: number;

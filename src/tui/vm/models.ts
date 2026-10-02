@@ -14,6 +14,7 @@ import type { Tier } from "../../pricing/schema.ts";
 import { bundledPricing, PriceTable } from "../../pricing/table.ts";
 import type { Period } from "../../query/periods.ts";
 import type { PriceStatus, Range } from "../../query/types.ts";
+import { modelName } from "../format.ts";
 import {
   amount,
   type ComputeContext,
@@ -118,14 +119,6 @@ let bundledTable: PriceTable | undefined;
 function bundled(): PriceTable {
   bundledTable ??= new PriceTable(bundledPricing().models, bundledPricing().aliases);
   return bundledTable;
-}
-
-/** cc-usage's `pretty_model_name`: `claude-opus-4-8` → `Opus 4.8`; other ids as they are. */
-export function modelName(model: string): string {
-  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?$/.exec(model);
-  if (m === null) return model === "" ? "(unknown)" : model;
-  const family = `${(m[1] as string).charAt(0).toUpperCase()}${(m[1] as string).slice(1)}`;
-  return m[3] === undefined ? `${family} ${m[2]}` : `${family} ${m[2]}.${m[3]}`;
 }
 
 function pair(rates: Rates | Unpriced): RatePair | null {

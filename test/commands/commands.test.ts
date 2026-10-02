@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { type JsonOptions, runJson } from "../../src/commands/json.ts";
 import { groupId, pairKey } from "../../src/limits/groups.ts";
 import { lockPath, WriterLock } from "../../src/lock.ts";
+import { Heartbeat } from "../../src/mcp/heartbeat.ts";
 import { loadPriceTable } from "../../src/pricing/overrides.ts";
 import type {
   JsonAccountsDocument,
@@ -363,6 +364,25 @@ describe("json", () => {
       ["codex", "codex", 3],
     ]);
     expect(accounts.accounts[0]?.first_seen).toMatch(/^2026-05-\d\dT.*-04:00$/);
+  });
+
+  test("an MCP agent's project, in its heartbeat for the TUI, never reaches the JSON", () => {
+    const env = home();
+    run(env, "import-cc-usage");
+    const beat = new Heartbeat(join(env.xdg, "tokenhud", "mcp"), {
+      cwd: join(env.home, "code", "demo-app-7f3"),
+    });
+    beat.record("limits", "personal");
+    try {
+      expect(readFileSync(beat.path, "utf8")).toContain("demo-app-7f3");
+      for (const query of ["usage", "models", "accounts"]) {
+        const out = run(env, "json", query);
+        expect(out.code).toBe(0);
+        expect(out.stdout).not.toContain("demo-app-7f3");
+      }
+    } finally {
+      beat.stop();
+    }
   });
 
   test("a malformed overrides file is a warning, not an error", () => {

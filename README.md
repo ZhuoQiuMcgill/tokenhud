@@ -131,7 +131,7 @@ shows the keys of the view you are in.
 | `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
 | `enter` | On a week or month, list its days; on a day, list its limit events |
 | `esc` | Close the limit events, then the open week or month, then clear the filter |
-| `f` or `/` | Filter every number by model: type part of a model id, `enter` applies it |
+| `f` or `/` | Filter every number by model: type part of its name or id, `enter` applies it |
 
 ### Models
 
@@ -491,7 +491,7 @@ pricing.overrides.json    your prices, if any
 limits.json               the last limits fetched
 update-check.json         when GitHub was last asked about a newer release, and its answer
 logs/tokenhud.log         errors, for tokenhud doctor and bug reports
-mcp/                      which MCP servers are running, for the Overview
+mcp/                      which MCP servers are running, and their projects' names, for the Overview
 ingest.lock.db            which tokenhud process writes the store
 ```
 

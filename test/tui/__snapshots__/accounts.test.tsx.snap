@@ -7,7 +7,7 @@ exports[`frames 105×50, personal selected 1`] = `
  ACCOUNTS        ○ inactive here  │  personal · claude                           limits fetched 11:38:30 
                                   │                                                                      
  ● codex              codex   83% │  root      ~/.claude  (watched)                                      
- ● personal           claude  62% │  history   1,630 records since Jul 31                                
+ ● personal           claude  62% │  history   1,630 requests since Jul 31                               
  ● work               claude  92% │                                                                      
  ○ codex-win          codex     — │  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28    
  ○ old-laptop         claude    — │  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00
@@ -61,7 +61,7 @@ exports[`frames 120×45, personal selected 1`] = `
  ACCOUNTS         ○ inactive here  │  personal · claude                                         limits fetched 11:38:30 
                                    │                                                                                    
  ● codex               codex   83% │  root      ~/.claude  (watched)                                                    
- ● personal            claude  62% │  history   1,630 records since Jul 31                                              
+ ● personal            claude  62% │  history   1,630 requests since Jul 31                                             
  ● work                claude  92% │                                                                                    
  ○ codex-win           codex     — │  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28    
  ○ old-laptop          claude    — │  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00
@@ -110,7 +110,7 @@ exports[`frames 80×24, personal selected 1`] = `
  ACCOUNTS ○ inactive here  │  personal · claude         limits fetched 11:38:30 
                            │                                                    
  ● codex       codex   83% │  root      ~/.claude  (watched)                    
- ● personal    claude  62% │  history   1,630 records since Jul 31              
+ ● personal    claude  62% │  history   1,630 requests since Jul 31             
  ● work        claude  92% │                                                    
  ○ codex-win   codex     — │  5-HOUR       ━━━━━━━━━━━━   62%   resets 13:28    
  ○ old-laptop  claude    — │  WEEKLY       ━━━━━━━━━━━━   27%   resets Mon 09:00
@@ -138,7 +138,7 @@ exports[`frames 160×50, personal selected 1`] = `
  ACCOUNTS         ○ inactive here  │  personal · claude                                                                                 limits fetched 11:38:30 
                                    │                                                                                                                            
  ● codex               codex   83% │  root      ~/.claude  (watched)                                                                                            
- ● personal            claude  62% │  history   1,630 records since Jul 31                                                                                      
+ ● personal            claude  62% │  history   1,630 requests since Jul 31                                                                                     
  ● work                claude  92% │                                                                                                                            
  ○ codex-win           codex     — │  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28                                            
  ○ old-laptop          claude    — │  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00                                        
@@ -192,7 +192,7 @@ exports[`frames 105×50, old-laptop: not signed in here 1`] = `
  ACCOUNTS        ○ inactive here  │  old-laptop · claude                                                 
                                   │                                                                      
  ● codex              codex   83% │  root      ~/.claude-old  (watched, history only)                    
- ● personal           claude  62% │  history   795 records since Aug 2                                   
+ ● personal           claude  62% │  history   795 requests since Aug 2                                  
  ● work               claude  92% │                                                                      
  ○ codex-win          codex     — │  not signed in here                                                  
  ○ old-laptop         claude    — │                                                                      
@@ -246,7 +246,7 @@ exports[`frames 105×50, codex-win: this root is disabled 1`] = `
  ACCOUNTS        ○ inactive here  │  codex-win · codex                                                   
                                   │                                                                      
  ● codex              codex   83% │  root      /mnt/c/Users/someone/.codex  (disabled)                   
- ● personal           claude  62% │  history   1,609 records since Aug 2                                 
+ ● personal           claude  62% │  history   1,609 requests since Aug 2                                
  ● work               claude  92% │                                                                      
  ○ codex-win          codex     — │  limits    not fetched: this root is disabled (enter, then Enable)   
  ○ old-laptop         claude    — │                                                                      
@@ -300,7 +300,7 @@ exports[`frames 105×50, work: last fetch failed: HTTP 429 1`] = `
  ACCOUNTS        ○ inactive here  │  work · claude                               limits fetched 11:38:30 
                                   │                                                                      
  ● codex              codex   83% │  root      /mnt/c/Users/someone/.claude  (polled)                    
- ● personal           claude  62% │  history   1,483 records since Aug 1                                 
+ ● personal           claude  62% │  history   1,483 requests since Aug 1                                
  ● work               claude  92% │                                                                      
  ○ codex-win          codex     — │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   92%   resets 12:15    
  ○ old-laptop         claude    — │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Fri 12:00
@@ -360,7 +360,7 @@ exports[`frames 60×20: the detail under the list, numbers whole 1`] = `
  personal · claude                  limits fetched 11:38:30 
                                                             
  root      ~/.claude  (watched)                             
- history   1,630 records since Jul 31                       
+ history   1,630 requests since Jul 31                      
                                                             
  5-HOUR       ━━━━━━━━━━━━━━━━━━━━━   62%   resets 13:28    
  WEEKLY       ━━━━━━━━━━━━━━━━━━━━━   27%   resets Mon 09:00
@@ -378,7 +378,7 @@ exports[`frames 105×50: the action menu over the view 1`] = `
  ACCOUNTS        ○ inactive here  │                                              limits fetched 11:38:30 
                                   │   ╭─ personal · claude ──────╮                                       
  ● codex              codex   83% │   │   Show only this account │                                       
- ● personal           claude  62% │   │ › Disable                │ Jul 31                                
+ ● personal           claude  62% │   │ › Disable                │  Jul 31                               
  ● work               claude  92% │   │   Rename…                │                                       
  ○ codex-win          codex     — │   │   History only: off      │ ━━━━━━━━━━━━━   62%   resets 13:28    
  ○ old-laptop         claude    — │   ╰──────────────────────────╯ ━━━━━━━━━━━━━   27%   resets Mon 09:00
