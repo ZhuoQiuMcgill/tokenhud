@@ -1433,7 +1433,8 @@ function toStoredRow(row: RawRow): StoredRow {
   };
 }
 
-function quickCheck(db: Database): string {
+/** `PRAGMA quick_check` of `db`: "ok", or what is wrong, one finding per "; ". */
+export function quickCheck(db: Database): string {
   return db
     .query<{ quick_check: string }, []>("PRAGMA quick_check")
     .all()

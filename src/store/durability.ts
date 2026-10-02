@@ -23,6 +23,7 @@ import {
   KEY_SCHEME_MIGRATIONS,
   type OpenOptions,
   PREVIOUS_BACKUP_SUFFIX,
+  quickCheck,
   type RecoveredData,
   type RecoveredLimitEvent,
   SALVAGE_SCRATCH_PREFIX,
@@ -436,14 +437,6 @@ export function backupDue(store: Store, now: number = Date.now()): boolean {
 export interface BackupOptions {
   /** The integrity check of the copy, "ok" when sound; tests inject a failing one. */
   verify?: (copy: Database) => string;
-}
-
-function quickCheck(db: Database): string {
-  return db
-    .query<{ quick_check: string }, []>("PRAGMA quick_check")
-    .all()
-    .map((r) => r.quick_check)
-    .join("; ");
 }
 
 /**
