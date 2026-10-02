@@ -1,7 +1,7 @@
 // `tokenhud json usage|models|accounts`: the query layer's answers as stable JSON for
 // scripts and agents. It reads the store as it is through a read-only connection, so it
 // never waits on or disturbs the TUI's writes. With --refresh it first runs one
-// incremental ingest pass, under the single-writer ingest lock when this build has one.
+// incremental ingest pass, under the single-writer ingest lock.
 //
 // Exit 0 with the document on stdout; 2 for bad arguments and 1 for a store problem, each
 // with a JSON error object on stderr.
@@ -12,7 +12,12 @@ import { parseArgs } from "node:util";
 import { configPath, loadConfig } from "../config.ts";
 import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
-import { type AcquireWriterLock, LOCK_HEARTBEAT_MS } from "../mcp/freshness.ts";
+import { lockPath, WriterLock } from "../lock.ts";
+import {
+  type AcquireWriterLock,
+  LOCK_HEARTBEAT_MS,
+  type WriterLockHandle,
+} from "../mcp/freshness.ts";
 import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import { UsageQueries } from "../query/engine.ts";
@@ -202,13 +207,8 @@ function parse(args: readonly string[]): Parsed | "help" {
 
 export interface JsonOptions {
   home?: string;
-  /**
-   * The single-writer ingest lock (T10's, through the MCP server's interface) for
-   * --refresh. Null while this build has none: the pass then runs unlocked, which is safe
-   * (SQLite serialises writers and every write is an idempotent max-merge) and at worst
-   * repeats work a running TUI is doing.
-   */
-  acquireWriterLock?: AcquireWriterLock | null;
+  /** Takes the single-writer ingest lock for --refresh; tests pass their own. */
+  acquireWriterLock?: AcquireWriterLock;
 }
 
 /**
@@ -217,23 +217,23 @@ export interface JsonOptions {
  * config creation stay with the TUI and `tokenhud import-cc-usage`.
  */
 async function refresh(env: Env, home: string, options: JsonOptions): Promise<string[]> {
-  const acquire = options.acquireWriterLock ?? null;
-  let lock: ReturnType<AcquireWriterLock> = null;
-  if (acquire !== null) {
-    try {
-      lock = acquire();
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? (error as Error).name;
-      return [`not refreshed: cannot take the ingest lock (${code})`];
-    }
-    if (lock === null) {
-      return [
-        "not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
-      ];
-    }
+  const acquire =
+    options.acquireWriterLock ??
+    (() => WriterLock.tryAcquire({ owner: "cli", path: lockPath(env, home) }));
+  let held: WriterLockHandle | null;
+  try {
+    held = acquire();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? (error as Error).name;
+    return [`not refreshed: cannot take the ingest lock (${code})`];
   }
-  const held = lock;
-  const beat = held === null ? null : setInterval(() => held.heartbeat(), LOCK_HEARTBEAT_MS);
+  if (held === null) {
+    return [
+      "not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
+    ];
+  }
+  const lock = held;
+  const beat = setInterval(() => lock.heartbeat(), LOCK_HEARTBEAT_MS);
   const problems: string[] = [];
   try {
     const engine = IngestEngine.open({
@@ -255,8 +255,8 @@ async function refresh(env: Env, home: string, options: JsonOptions): Promise<st
     if (!(error instanceof StoreError)) throw error;
     problems.push(`not refreshed: ${error.message}`);
   } finally {
-    if (beat !== null) clearInterval(beat);
-    held?.release();
+    clearInterval(beat);
+    lock.release();
   }
   return problems;
 }

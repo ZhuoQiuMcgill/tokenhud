@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { type JsonOptions, runJson } from "../../src/commands/json.ts";
+import { lockPath, WriterLock } from "../../src/lock.ts";
 import { loadPriceTable } from "../../src/pricing/overrides.ts";
 import type {
   JsonAccountsDocument,
@@ -561,6 +562,26 @@ describe("json --refresh and the configured time zone", () => {
     expect(json<JsonUsageDocument>(env, "usage", "--period", "today").period.tz).toBe(
       "America/Toronto", // the system's: TZ
     );
+  });
+
+  test("--refresh is skipped while another process holds T10's ingest lock", () => {
+    const env = home();
+    transcript(env, claudeLine("1", "1", 1000, 100));
+    const lock = WriterLock.tryAcquire({
+      owner: "tui",
+      path: lockPath({ XDG_CONFIG_HOME: env.xdg }, env.home),
+    });
+    expect(lock).not.toBeNull();
+    try {
+      const doc = json<JsonUsageDocument>(env, "usage", "--refresh");
+      expect(doc.totals.records).toBe(0);
+      expect(doc.warnings).toEqual([
+        "not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
+      ]);
+    } finally {
+      lock?.release();
+    }
+    expect(json<JsonUsageDocument>(env, "usage", "--refresh").totals.records).toBe(1);
   });
 
   test("--refresh runs under the ingest lock, and is skipped while another process holds it", async () => {
