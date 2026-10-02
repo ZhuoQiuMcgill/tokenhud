@@ -3,10 +3,18 @@
 // renders what comes out. It never queries the store (that is the view-model Worker's
 // job) and does no I/O itself: saving config and talking to Workers go through `Ports`.
 
-import type { Config } from "../config.ts";
+import { type Config, WINDOW_CHOICES } from "../config.ts";
 import type { McpActivity } from "../mcp/heartbeat.ts";
-import { initialSettings, type SettingsState, settingsKey } from "./settings.ts";
+import {
+  initialSettings,
+  SETTINGS_ROWS,
+  type SettingsState,
+  settingsKey,
+  toggleEnabled,
+  toggleHistoryOnly,
+} from "./settings.ts";
 import { VIEWS } from "./views/index.ts";
+import { type ViewCommand, viewAnswer } from "./views/types.ts";
 import {
   type AccountInfo,
   type IngestMode,
@@ -115,6 +123,8 @@ export class Controller {
   readonly #ports: Ports;
   readonly #listeners = new Set<() => void>();
   #accountsEdited = false;
+  /** Settings opened on a rename from a view: finishing it goes back to the view. */
+  #renameFromView = false;
   /** performance.now() of the last view-switch key, until its frame is drawn. */
   switchStartedAt: number | null = null;
   readonly zones: readonly string[];
@@ -217,24 +227,100 @@ export class Controller {
     }
   }
 
-  /** Hands a key to the active view (the key contract is described on `View`). */
+  /**
+   * Hands a key to the active view (the key contract is described on `View`), and carries
+   * out the command its answer may hold.
+   */
   #viewKey(name: string): void {
     const s = this.#state;
-    const next = VIEWS[s.view].keys(name, s.viewState[s.view], s.views[s.view]);
-    if (next !== undefined) this.#set({ viewState: { ...s.viewState, [s.view]: next } });
+    const answer = VIEWS[s.view].keys(name, s.viewState[s.view], s.views[s.view]);
+    if (answer === undefined) return;
+    const { state, command } = viewAnswer(answer);
+    this.#set({ viewState: { ...s.viewState, [s.view]: state } });
+    if (command !== null) this.#command(command);
   }
 
   #cycleScope(): void {
-    const { accounts, scope, config } = this.#state;
+    const { accounts, scope } = this.#state;
     if (accounts.length === 0) return;
     const at = scope === null ? -1 : accounts.findIndex((a) => a.id === scope);
-    const next = at + 1 >= accounts.length ? null : (accounts[at + 1] as AccountInfo).id;
-    const label =
-      next === null ? "all" : (accounts.find((a) => a.id === next) as AccountInfo).label;
+    this.#setScope(at + 1 >= accounts.length ? null : (accounts[at + 1] as AccountInfo).id);
+  }
+
+  #setScope(next: number | null): void {
+    const { accounts, config } = this.#state;
+    const label = next === null ? "all" : accounts.find((a) => a.id === next)?.label;
+    if (label === undefined) return;
     const saved = { ...config, account_scope: label };
     this.#save(saved);
     this.#set({ scope: next, config: saved });
     this.#ports.vmSettings(vmSettingsOf(saved, next));
+  }
+
+  #command(command: ViewCommand): void {
+    const s = this.#state;
+    switch (command.type) {
+      case "window": {
+        const n = WINDOW_CHOICES.length;
+        const at = WINDOW_CHOICES.indexOf(s.config.default_window);
+        const window = WINDOW_CHOICES[(at + command.step + n) % n] as Config["default_window"];
+        const config = { ...s.config, default_window: window };
+        this.#save(config);
+        this.#set({ config });
+        this.#ports.vmSettings(vmSettingsOf(config, s.scope));
+        return;
+      }
+      case "scope":
+        // Asking for the scope already set goes back to every account.
+        this.#setScope(command.account === s.scope ? null : command.account);
+        return;
+      case "settings":
+        this.#ports.vmRoots();
+        this.#set({
+          overlay: "settings",
+          settings: {
+            screen: "accounts",
+            cursor: SETTINGS_ROWS.indexOf("accounts"),
+            pick: 0,
+            message: null,
+          },
+        });
+        return;
+      case "root":
+        this.#rootEdit(command);
+        return;
+    }
+  }
+
+  /** An account's root edited from a view, exactly as the settings account editor does it. */
+  #rootEdit(command: Extract<ViewCommand, { type: "root" }>): void {
+    const { roots, config } = this.#state;
+    const pick = roots.findIndex((r) => r.identity === command.identity);
+    const root = roots[pick];
+    if (root === undefined) {
+      this.#set({ error: `${command.label} has no root on this machine: nothing to change` });
+      return;
+    }
+    if (command.edit === "rename") {
+      this.#renameFromView = true;
+      this.#set({
+        overlay: "settings",
+        settings: {
+          screen: "rename",
+          cursor: SETTINGS_ROWS.indexOf("accounts"),
+          pick,
+          text: root.label,
+          message: null,
+        },
+      });
+      return;
+    }
+    const after =
+      command.edit === "enable" ? toggleEnabled(config, root) : toggleHistoryOnly(config, root);
+    if (!this.#save(after)) return;
+    this.#set({ config: after });
+    this.#ports.vmConfig(after);
+    this.#ports.accountsEdited();
   }
 
   #save(config: Config): boolean {
@@ -267,7 +353,10 @@ export class Controller {
       }
       if (result.accountsChanged) this.#ports.vmConfig(after);
     }
-    if (result.state === null) {
+    // A rename started from a view ends back in it, saved or not.
+    const back = this.#renameFromView && result.state?.screen !== "rename";
+    if (back) this.#renameFromView = false;
+    if (result.state === null || back) {
       this.#set({ overlay: "none", settings: initialSettings() });
       if (this.#accountsEdited) {
         this.#accountsEdited = false;

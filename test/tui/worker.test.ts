@@ -47,7 +47,7 @@ test("views on start, a reported change recomputed, a clean stop", async () => {
   });
   const views = () =>
     messages.filter((m) => m.type === "views") as Extract<VmMessage, { type: "views" }>[];
-  await until(() => views().length === 1, "the first views");
+  await until(() => views().length >= 1, "the first views");
   expect(Object.keys(views()[0]?.views ?? {}).sort()).toEqual([
     "accounts",
     "history",
@@ -82,8 +82,11 @@ test("views on start, a reported change recomputed, a clean stop", async () => {
     toTs: NOW - 5000,
     accounts: ["fixture-identity-work"],
   });
-  await until(() => views().length === 2, "the recompute");
-  const second = views()[1] as Extract<VmMessage, { type: "views" }>;
+  // Roots found after the first frame recompute the Accounts view on their own; the
+  // change's recompute is the one with the Overview in it.
+  const recomputed = () => views().find((v, i) => i > 0 && v.views.overview !== undefined);
+  await until(() => recomputed() !== undefined, "the recompute");
+  const second = recomputed() as Extract<VmMessage, { type: "views" }>;
   expect((second.views.overview as OverviewVM).spend.today.tokens).toBe(before + 777);
 
   await vm.stop();

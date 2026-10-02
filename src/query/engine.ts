@@ -469,6 +469,44 @@ export class UsageQueries {
     });
   }
 
+  /**
+   * When each model (normalised id, as `byModel` names it) was first used, epoch ms, by the
+   * given accounts (default every account). Raw ids that normalise alike count as one model.
+   */
+  modelsFirstSeen(args: Pick<QueryArgs, "accounts"> = {}): Map<string, number> {
+    return this.#read(() => {
+      this.#ensureMaps();
+      const ids = args.accounts?.filter((id) => Number.isInteger(id)) ?? null;
+      const accts = ids === null ? "" : `acct IN (${ids.join(",")}) AND`;
+      if (ids !== null && ids.length === 0) return new Map();
+      const firsts = this.#db
+        .query<{ model: bigint; hour: bigint }, []>(
+          `SELECT model, min(hour) AS hour FROM roll_hour WHERE ${accts} 1 GROUP BY model`,
+        )
+        .all();
+      if (firsts.some(({ model }) => Number(model) >= this.#modelNames.length)) {
+        // A model written since the names were read.
+        this.#mapsLoaded = false;
+        this.#ensureMaps();
+      }
+      const out = new Map<string, number>();
+      for (const { model, hour } of firsts) {
+        // The rollup has the hour; the row inside it has the instant.
+        const h = Number(hour) * HOUR;
+        const ts = this.#db
+          .query<{ ts: bigint | null }, [bigint, number, number]>(
+            `SELECT min(ts) AS ts FROM usage WHERE ${accts} model = ?1 AND ts >= ?2 AND ts < ?3`,
+          )
+          .get(model, h, h + HOUR)?.ts;
+        if (ts === null || ts === undefined) continue;
+        const name = this.#modelKeyNames[this.#modelKeyOfStoreId(Number(model))] ?? "";
+        const seen = out.get(name);
+        if (seen === undefined || Number(ts) < seen) out.set(name, Number(ts));
+      }
+      return out;
+    });
+  }
+
   // ── plumbing ───────────────────────────────────────────────────────────────────
 
   /** Runs `fn` in one read transaction, so every statement sees the same snapshot. */

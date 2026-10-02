@@ -3,8 +3,11 @@
 // current. Driven by messages, so tests run it in-process with fake timers.
 
 import type { Database } from "bun:sqlite";
+import { statSync } from "node:fs";
 import type { Config } from "../../config.ts";
-import { readMcpActivity } from "../../mcp/heartbeat.ts";
+import { Limits, spendFromQueries } from "../../limits/index.ts";
+import { codexSnapshotsFrom } from "../../limits/snapshots.ts";
+import { type McpActivity, readMcpActivity } from "../../mcp/heartbeat.ts";
 import { loadPriceTable } from "../../pricing/overrides.ts";
 import type { PriceTable } from "../../pricing/table.ts";
 import { UsageQueries } from "../../query/engine.ts";
@@ -13,10 +16,12 @@ import {
   discoverClaudeRoots,
   discoverCodexRoots,
   expandPath,
+  isWsl,
   type Root,
   rootIdentity,
 } from "../../sources/roots.ts";
 import { emptyStoreDatabase, openStoreReader } from "../../store/store.ts";
+import type { AccountSources } from "./accounts.ts";
 import {
   affectedViews,
   COMPUTE,
@@ -130,6 +135,7 @@ export function displayAccounts(
     id: a.id,
     label: labels.get(`${a.provider}\0${a.identity}`) ?? a.label,
     provider: a.provider,
+    identity: a.identity,
     historyOnly: historyOnly.has(a.identity),
   }));
 }
@@ -178,12 +184,18 @@ export class VmSession {
   #accounts: AccountInfo[] = [];
   #labels: ReadonlyMap<string, string> = new Map();
   #roots: Root[] = [];
+  /** What the Accounts view shows of the roots (none yet), to notice when it changes. */
+  #rootsKey = "[]";
   readonly #computed = new Map<ViewId, Computed<unknown>>();
   readonly #dirty = new Set<ViewId>(VIEW_IDS);
   #dataVersion: bigint | null = null;
   #imports: string | null = null;
   #validity: unknown = null;
   #mcp = "";
+  #activity: McpActivity | null = null;
+  /** limits.json's mtime when last read (0: missing). */
+  #limitsMtime = 0;
+  readonly #wsl = isWsl();
   #scopeLabel: string | null;
   #closed = false;
 
@@ -233,6 +245,7 @@ export class VmSession {
       this.#dataVersion = this.#pragmaVersion();
       this.#imports = this.#importsRecord();
     });
+    this.#limitsChanged();
     this.#recompute();
     this.#discover();
     this.#pollMcp();
@@ -331,6 +344,13 @@ export class VmSession {
         this.#applyLabels();
         this.#markAll();
       }
+      const rootsKey = JSON.stringify(
+        this.#roots.map((r) => [r.provider, r.identity, r.path, r.enabled, r.historyOnly]),
+      );
+      if (rootsKey !== this.#rootsKey) {
+        this.#rootsKey = rootsKey;
+        this.#mark("accounts");
+      }
       this.#post({
         type: "roots",
         roots: rootInfos(this.#roots, this.#config, options.home),
@@ -386,6 +406,11 @@ export class VmSession {
     this.#coalescer.request();
   }
 
+  #mark(id: ViewId): void {
+    this.#dirty.add(id);
+    this.#coalescer.request();
+  }
+
   /**
    * Opens the store if it didn't exist (or couldn't be read) before: the first ingest
    * creates it. Returns true when it was just opened, with every view due for a recompute.
@@ -434,6 +459,26 @@ export class VmSession {
     });
     this.#expire();
     this.#pollMcp();
+    this.#pollLimits();
+  }
+
+  /** The limits fetcher (the ingest Worker, an MCP server) rewrote limits.json. */
+  #pollLimits(): void {
+    if (this.#limitsChanged()) this.#mark("accounts");
+  }
+
+  #limitsChanged(): boolean {
+    const path = this.#start.limitsPath;
+    if (path === undefined) return false;
+    let mtime = 0;
+    try {
+      mtime = statSync(path).mtimeMs;
+    } catch {
+      // not there (yet)
+    }
+    if (mtime === this.#limitsMtime) return false;
+    this.#limitsMtime = mtime;
+    return true;
   }
 
   #pollMcp(): void {
@@ -442,7 +487,13 @@ export class VmSession {
       const key = JSON.stringify(activity);
       if (key === this.#mcp) return;
       this.#mcp = key;
+      const before = this.#activity;
+      this.#activity = activity;
       this.#post({ type: "mcp", activity });
+      // The Accounts view shows each account's last call, and whether a server runs.
+      const shown = (a: McpActivity | null) =>
+        JSON.stringify([(a?.servers ?? 0) > 0, a?.recent ?? []]);
+      if (shown(activity) !== shown(before)) this.#mark("accounts");
     });
   }
 
@@ -474,6 +525,29 @@ export class VmSession {
     }, delay);
   }
 
+  /** What the Accounts view reads besides usage (T13): roots, limits, MCP activity. */
+  #accountSources(): AccountSources {
+    const { limitsPath, cachePath } = this.#start;
+    const roots = this.#roots;
+    return {
+      roots,
+      limits:
+        limitsPath === undefined
+          ? null
+          : new Limits({
+              limitsPath,
+              roots: () => roots,
+              db: this.#db,
+              spend: spendFromQueries(this.#queries),
+              ...(cachePath === undefined ? {} : { snapshots: codexSnapshotsFrom(cachePath) }),
+              now: () => this.#now(),
+            }),
+      mcp: this.#activity,
+      wsl: this.#wsl,
+      home: this.#start.discover.home,
+    };
+  }
+
   #context(): ComputeContext {
     return {
       q: this.#queries,
@@ -483,6 +557,8 @@ export class VmSession {
       scope: this.#settings.scope,
       window: this.#settings.window,
       limitEvents: (range) => readAccountEvents(this.#db, this.#storeAccounts, range),
+      prices: this.#prices,
+      sources: this.#accountSources(),
     };
   }
 

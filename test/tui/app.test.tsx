@@ -119,7 +119,8 @@ describe.each([
       name === "models"
         ? [...(views.models as ModelsVM).rows]
         : name === "accounts"
-          ? [...(views.accounts as AccountsVM).rows]
+          ? // The detail of the selected (first) account: its 30-day spend.
+            [((views.accounts as AccountsVM).rows[0] as AccountsVM["rows"][number]).last30]
           : name === "overview"
             ? (views.overview as OverviewVM).accounts.flatMap((a) => [a.today, a.last24h])
             : [];

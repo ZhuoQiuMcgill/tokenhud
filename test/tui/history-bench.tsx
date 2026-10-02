@@ -69,6 +69,8 @@ try {
           scope: null,
           window: "all",
           limitEvents: (range) => readAccountEvents(db, stored, range),
+          prices: table,
+          sources: null,
         }).vm,
     );
 

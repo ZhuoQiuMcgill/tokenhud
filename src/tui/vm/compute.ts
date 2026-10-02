@@ -4,28 +4,20 @@
 // date by the clock alone (a new day, the next 20-minute bucket).
 
 import type { Window } from "../../config.ts";
+import type { PriceTable } from "../../pricing/table.ts";
 import type { UsageQueries } from "../../query/engine.ts";
 import { type Period, resolvePeriod } from "../../query/periods.ts";
 import type { Range, Usage } from "../../query/types.ts";
-import { addDays, type Zone } from "../../query/tz.ts";
+import type { Zone } from "../../query/tz.ts";
+import { type AccountSources, computeAccounts } from "./accounts.ts";
 import { type AccountEvent, computeHistory } from "./history.ts";
-import type {
-  AccountInfo,
-  AccountRow,
-  AccountsVM,
-  Amount,
-  ModelRow,
-  ModelsVM,
-  OverviewVM,
-  SpendPeriod,
-  ViewId,
-} from "./types.ts";
+import { computeModels } from "./models.ts";
+import type { AccountInfo, Amount, OverviewVM, SpendPeriod, ViewId } from "./types.ts";
 
 export const ACTIVITY_BUCKETS = 72;
 export const ACTIVITY_BUCKET_MS = 20 * 60_000;
-export const SPARK_DAYS = 30;
 /** Rolling windows (1h, 5h, 24h) move with the clock; their views refresh this often. */
-const ROLLING_REFRESH_MS = 60_000;
+export const ROLLING_REFRESH_MS = 60_000;
 /** Every range: a view of all-time data depends on any change. */
 export const ALL_TIME: Range = { from: Number.NEGATIVE_INFINITY, to: Number.POSITIVE_INFINITY };
 
@@ -40,6 +32,10 @@ export interface ComputeContext {
   readonly window: Window;
   /** T8's limit events with `from <= at < to`, oldest first; none when absent. */
   readonly limitEvents?: (range: Range) => readonly AccountEvent[];
+  /** The table the queries price with: the Models view's rate cards. */
+  readonly prices: PriceTable;
+  /** Roots, limits and MCP activity for the Accounts view; null where none are read. */
+  readonly sources: AccountSources | null;
 }
 
 export interface Computed<V> {
@@ -50,7 +46,7 @@ export interface Computed<V> {
   readonly validUntil: number;
 }
 
-const amount = (u: Usage): Amount => ({
+export const amount = (u: Usage): Amount => ({
   cost: u.cost,
   tokens: u.tokens.total,
   pricedShare: u.coverage.pricedShare,
@@ -61,7 +57,7 @@ function scoped(ctx: ComputeContext): { accounts?: readonly number[] } {
   return ctx.scope === null ? {} : { accounts: [ctx.scope] };
 }
 
-function periodRange(ctx: ComputeContext, period: Period): Range {
+export function periodRange(ctx: ComputeContext, period: Period): Range {
   return period === "all" ? ALL_TIME : resolvePeriod(period, ctx.now, ctx.zone, null);
 }
 
@@ -123,79 +119,6 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
     vm,
     deps: [ranges.today, ranges.this_week, ranges.this_month, ranges.all, day],
     validUntil: Math.min(day.to, ranges.today.to),
-  };
-}
-
-export function computeModels(ctx: ComputeContext): Computed<ModelsVM> {
-  const filter = { period: ctx.window as Period, ...scoped(ctx) };
-  const models = ctx.q.byModel(filter);
-  const totals = ctx.q.totals(filter);
-  const rows: ModelRow[] = models.map((m) => {
-    const t = m.usage.tokens;
-    return {
-      ...amount(m.usage),
-      model: m.model,
-      tier: m.tier,
-      input: t.input,
-      output: t.output,
-      cache: t.cacheRead + t.cacheWrite,
-      share: m.share,
-      status: m.status,
-      rates:
-        m.rates === null
-          ? null
-          : { input: m.rates.input, output: m.rates.output, cacheRead: m.rates.cacheRead },
-    };
-  });
-  const t = totals.usage.tokens;
-  const range = periodRange(ctx, ctx.window as Period);
-  const rolling = ctx.window === "1h" || ctx.window === "5h" || ctx.window === "24h";
-  return {
-    vm: {
-      window: ctx.window,
-      rows,
-      total: {
-        ...amount(totals.usage),
-        input: t.input,
-        output: t.output,
-        cache: t.cacheRead + t.cacheWrite,
-      },
-      pricedShare: totals.usage.coverage.pricedShare,
-    },
-    deps: [range],
-    validUntil: rolling ? ctx.now + ROLLING_REFRESH_MS : range.to,
-  };
-}
-
-export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
-  const { q } = ctx;
-  const summaries = new Map(q.accounts().map((a) => [a.id, a]));
-  const usage = new Map(q.byAccount({ period: "all" }).map((a) => [a.account.id, a]));
-  const today = ctx.zone.dateAt(ctx.now);
-  const sparkRange: Range = {
-    from: ctx.zone.startOf(addDays(today, -(SPARK_DAYS - 1))),
-    to: ctx.zone.startOf(addDays(today, 1)),
-  };
-  const rows: AccountRow[] = ctx.accounts.map((a) => {
-    const s = summaries.get(a.id);
-    const u = usage.get(a.id);
-    return {
-      ...a,
-      firstSeen: s?.firstSeen ?? null,
-      lastSeen: s?.lastSeen ?? null,
-      ...(u === undefined
-        ? { cost: 0, tokens: 0, pricedShare: 1, estimatedCost: 0 }
-        : amount(u.usage)),
-      records: u?.usage.records ?? 0,
-      share: u?.share ?? 0,
-      spark: q.byDay({ range: sparkRange, accounts: [a.id] }).map((d) => d.usage.cost),
-    };
-  });
-  rows.sort((x, y) => y.cost - x.cost || y.tokens - x.tokens || x.id - y.id);
-  return {
-    vm: { rows, asOf: ctx.now, tz: ctx.zone.name },
-    deps: [ALL_TIME],
-    validUntil: sparkRange.to,
   };
 }
 
