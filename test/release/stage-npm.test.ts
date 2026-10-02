@@ -101,9 +101,8 @@ describe("staging the npm packages", () => {
       "package.json",
       "preinstall.cjs",
     ]);
-    expect(readFileSync(join(out, "tokenhud", "bin", "tokenhud.cjs"), "utf8")).toStartWith(
-      "#!/usr/bin/env bun\n",
-    );
+    const launcher = readFileSync(join(out, "tokenhud", "bin", "tokenhud.cjs"), "utf8");
+    expect(launcher.split(/\r?\n/)[0]).toBe("#!/usr/bin/env bun");
   });
 
   test("only the platforms asked for, from where they are; the launcher lists them all", () => {

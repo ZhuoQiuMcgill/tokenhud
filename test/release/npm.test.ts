@@ -42,7 +42,8 @@ const RUNTIMES: ReadonlyArray<readonly [name: string, path: string]> = [
 ];
 
 test("the launcher starts with Bun's line: bun links it as published, with no Node", () => {
-  expect(readFileSync(SHIM, "utf8").split("\n")[0]).toBe("#!/usr/bin/env bun");
+  // A Windows checkout may have CRLF line ends; bun and npm both drop the CR from this line.
+  expect(readFileSync(SHIM, "utf8").split(/\r?\n/)[0]).toBe("#!/usr/bin/env bun");
 });
 
 test("the launcher knows exactly the platforms releases are built for", () => {
@@ -250,7 +251,9 @@ describe("the preinstall", () => {
       const run = preinstall(NODE as string);
       expect([run.exitCode, run.stderr.toString()]).toEqual([0, ""]);
       const text = readFileSync(launcher, "utf8");
-      expect(text).toBe(published.replace("#!/usr/bin/env bun\n", "#!/usr/bin/env node\n"));
+      // The line ends with LF alone, whatever the checkout's line ends (a CR would make
+      // POSIX look for `node\r`); the rest is untouched.
+      expect(text).toBe(published.replace(/^#!\/usr\/bin\/env bun\r?\n/, "#!/usr/bin/env node\n"));
       if (process.platform !== "win32") expect(statSync(launcher).mode & 0o777).toBe(0o755);
       expect(readdirSync(join(pkg, "bin"))).toEqual(["tokenhud.cjs"]);
       // Again (a reinstall over it): unchanged.

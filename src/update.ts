@@ -3,7 +3,15 @@
 // one only once its SHA-256 matches the release's SHA256SUMS, and the command that updates
 // a bun or npm install through its package manager.
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { open } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { REPO, SUMS_FILE, sumFor } from "./release.ts";
@@ -76,19 +84,32 @@ export function isCompiled(main: string = Bun.main): boolean {
 
 const isWindowsPath = (path: string) => /^[A-Za-z]:[/\\]/.test(path);
 
+/** `path` with links resolved, slashes forward and no trailing slash; as given if it can't be. */
+function canonical(path: string): string {
+  let real = path;
+  try {
+    real = realpathSync(path);
+  } catch {}
+  return real.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
 /**
  * The bun install root (BUN_INSTALL) whose global packages (`<root>/install/global`) hold
- * `path`, or null: `~/.bun`, or wherever BUN_INSTALL points. Returned as `path` spells it.
+ * `path`, or null: `~/.bun`, or wherever BUN_INSTALL points, through links too (macOS's
+ * /var is /private/var, and a binary's own path has its links resolved). Returned as `path`
+ * spells it.
  */
 export function bunGlobalRoot(path: string, bunInstall: string | undefined): string | null {
   const slashed = path.replaceAll("\\", "/");
   const at = slashed.indexOf("/install/global/node_modules/");
   if (at < 0) return null;
   const root = slashed.slice(0, at);
+  if (root.endsWith("/.bun")) return path.slice(0, at);
   const custom = bunInstall?.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!custom) return null;
   const fold = (p: string) => (isWindowsPath(path) ? p.toLowerCase() : p);
-  if (root.endsWith("/.bun") || (custom && fold(root) === fold(custom))) return path.slice(0, at);
-  return null;
+  const same = fold(root) === fold(custom) || fold(canonical(root)) === fold(canonical(custom));
+  return same ? path.slice(0, at) : null;
 }
 
 /**

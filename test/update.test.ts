@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -177,6 +178,28 @@ describe("install method", () => {
       root: "D:\\Bun",
     });
   });
+
+  test.skipIf(process.platform === "win32")(
+    "BUN_INSTALL through a link: the binary's own path has the link resolved",
+    () => {
+      const real = join(dir, "real-bun");
+      mkdirSync(join(real, "install", "global", "node_modules"), { recursive: true });
+      symlinkSync(real, join(dir, "linked-bun"));
+      const exe = join(
+        real,
+        "install",
+        "global",
+        "node_modules",
+        "@tokenhud",
+        "linux-x64",
+        "bin",
+        "tokenhud",
+      );
+      expect(
+        installMethod(exe, true, prefix(null).ask, { BUN_INSTALL: join(dir, "linked-bun") }),
+      ).toEqual({ kind: "bun-global", root: real });
+    },
+  );
 
   test("the platform package a binary comes from", () => {
     expect(
