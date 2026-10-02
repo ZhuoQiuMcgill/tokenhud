@@ -12,6 +12,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -25,11 +26,12 @@ import {
   moveAside,
   openDurableStore,
   processPending,
+  queueOrphans,
   type RecoveryReport,
   readSource,
   replaceCorruptStore,
 } from "../../src/store/durability.ts";
-import { StoreCorrupt } from "../../src/store/errors.ts";
+import { StoreCorrupt, StoreUnavailable } from "../../src/store/errors.ts";
 import { KEY_SCHEME, ledgerKey } from "../../src/store/key.ts";
 import { fileIdOf, openStore, type Store, type UsageRow } from "../../src/store/store.ts";
 import { corruptUsageLeaf, scribblePage, usagePages } from "./damage.ts";
@@ -89,6 +91,23 @@ function stored(store: Store): Map<bigint, number> {
   return new Map(store.rows([...store.keys()]).map((r) => [r.key, r.inp]));
 }
 
+/**
+ * A store whose damage the open does not see, found as the engine's daily check finds it
+ * (`quick_check`) and replaced: moved aside, a fresh store opened, the moved file queued.
+ */
+function replaceDamaged(path: string): { store: Store; movedTo: string | null } {
+  const store = track(openStore(path));
+  let check: string;
+  try {
+    check = store.quickCheck();
+  } catch (error) {
+    expect(error).toBeInstanceOf(StoreCorrupt); // too damaged to even run the check
+    check = "unreadable";
+  }
+  expect(check).not.toBe("ok");
+  return { store, movedTo: replaceCorruptStore(store) };
+}
+
 function scratchIn(dir: string): () => string {
   return () => mkdtempSync(join(dir, "salvage-"));
 }
@@ -111,8 +130,7 @@ describe("salvage", () => {
     make(path, original);
     corruptUsageLeaf(path);
 
-    const { store, movedTo } = openDurableStore(path, { verify: true });
-    track(store);
+    const { store, movedTo } = replaceDamaged(path);
     expect(movedTo).not.toBeNull();
     const report = processPending(store) as RecoveryReport;
     const source = only(report.sources); // no backup existed
@@ -138,8 +156,7 @@ describe("salvage", () => {
     const lost = new Set(corruptUsageLeaf(path, index));
     expect(lost.size).toBeGreaterThan(50);
 
-    const { store, movedTo } = openDurableStore(path, { verify: true });
-    track(store);
+    const { store, movedTo } = replaceDamaged(path);
     expect(existsSync(movedTo as string)).toBe(true); // set aside, never deleted
     expect(store.pendingRecovery()).toEqual([
       { file: basename(movedTo as string), why: "damaged" },
@@ -373,6 +390,10 @@ describe("backups", () => {
 
     const report = processPending(store) as RecoveryReport;
     expect(only(report.sources)).toMatchObject({ status: "merged", newRows: 50, complete: true });
+    expect(report.summary).toContain(
+      "a backup file held history this store did not have, and it is merged now",
+    );
+    expect(report.summary).not.toContain("may be lost");
     expect(store.mergedLineages().size).toBe(1);
     expect(backup(store)).toBe(true); // covered now: rotated, not destroyed
     expect(readFileSync(prev).equals(foreign)).toBe(true);
@@ -427,8 +448,7 @@ describe("recovery", () => {
     const good = readFileSync(bak);
     corruptUsageLeaf(path);
 
-    const { store, movedTo } = openDurableStore(path, { verify: true });
-    track(store);
+    const { store, movedTo } = replaceDamaged(path);
     const destinations: string[] = [];
     const fullDisk = (_from: string, to: string) => {
       destinations.push(to);
@@ -647,8 +667,7 @@ describe("recovery", () => {
     );
     db.close();
     scribblePage(path, accountsRoot, usagePages(path).pageSize);
-    const { store: fresh } = openDurableStore(path, { verify: true });
-    track(fresh);
+    const { store: fresh } = replaceDamaged(path);
     const report = processPending(fresh) as RecoveryReport;
     const damaged = report.sources.find((s) => s.why === "damaged");
     expect(damaged).toMatchObject({ status: "merged", rows: 2000, complete: false });
@@ -670,10 +689,10 @@ describe("mergeRecovered", () => {
     ...over,
   });
 
-  test("tombstones block the source's rows but never delete a live row; labels are not renamed", () => {
+  test("tombstones are applied: their rows go and stay out; labels are not renamed", () => {
     const store = track(openStore(storePath()));
     store.upsert([row(1n, { label: "renamed" }), row(2n, { label: "renamed" })]);
-    const { newRows } = store.mergeRecovered({
+    const { newRows, removed } = store.mergeRecovered({
       rows: [
         row(3n, { label: "old" }),
         row(4n, { label: "old" }),
@@ -688,14 +707,16 @@ describe("mergeRecovered", () => {
       limitEvents: [],
     });
     expect(newRows).toBe(1); // key 3; key 4 is tombstoned
+    expect(removed).toBe(1); // key 1's live row: the source judged it not usage
     expect(stored(store)).toEqual(
       new Map([
-        [1n, 10],
         [2n, 999],
         [3n, 10],
       ]),
     );
-    expect(store.droppedKeys()).toEqual(new Set([4n])); // key 1 keeps its live row
+    expect(store.droppedKeys()).toEqual(new Set([1n, 4n]));
+    store.upsert([row(1n), row(4n)]); // and nothing writes them back
+    expect(stored(store).has(1n) || stored(store).has(4n)).toBe(false);
     expect([...store.accounts().values()].map((a) => a.label)).toEqual(["renamed"]);
     expect(store.meta.codexRekeyPending).toEqual(["id-codex"]);
   });
@@ -743,4 +764,175 @@ test("statSync on a backup is unaffected by reading its lineage", () => {
   backup(store); // reads .bak's lineage, then rotates it
   expect(statSync(backupPaths(path).prev).mtimeMs).toBe(before);
   expect(existsSync(`${bak}-wal`) || existsSync(`${bak}-shm`)).toBe(false);
+});
+
+// ── files no queue knows about, and leftovers ──────────────────────────────────────
+
+describe("files beside the store", () => {
+  /** A store moved aside whose queue entry was never written: a crash in between. */
+  function crashedAfterMove(n = 1000): { path: string; moved: string } {
+    const path = storePath();
+    make(path, rows(n));
+    const moved = moveAside(path, fileIdOf(path)) as string;
+    expect(existsSync(path)).toBe(false);
+    return { path, moved };
+  }
+
+  // M3: a crash between the rename and the queue write
+  test("a store moved aside but never queued is found and recovered on the next open", () => {
+    const { path, moved } = crashedAfterMove();
+    const { store } = openDurableStore(path);
+    track(store);
+    expect(store.pendingRecovery()).toEqual([{ file: basename(moved), why: "damaged" }]);
+    const report = processPending(store) as RecoveryReport;
+    expect(only(report.sources)).toMatchObject({ status: "merged", rows: 1000, complete: true });
+    expect(store.rowCounts().get(1)).toBe(1000);
+  });
+
+  // M3: the fresh store could not be created then (a full disk left an empty file)
+  test("so is one whose fresh store could not be created at the time", () => {
+    const { path, moved } = crashedAfterMove();
+    writeFileSync(path, "");
+    const { store } = openDurableStore(path);
+    track(store);
+    expect(store.pendingRecovery().map((e) => e.file)).toEqual([basename(moved)]);
+    processPending(store);
+    expect(store.rowCounts().get(1)).toBe(1000);
+  });
+
+  test("a file a store has processed is not queued again; a store that starts over looks again", () => {
+    const { path, moved } = crashedAfterMove(10);
+    const first = openDurableStore(path).store;
+    processPending(first);
+    expect(first.recoveredFiles()).toEqual(new Set([basename(moved)]));
+    first.close();
+    const again = openDurableStore(path).store;
+    expect(again.pendingRecovery()).toEqual([]); // recorded as done
+    again.close();
+    for (const suffix of ["", "-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
+    const lost = track(openDurableStore(path).store); // the store lost: start over
+    expect(lost.pendingRecovery().map((e) => e.file)).toEqual([basename(moved)]);
+    processPending(lost);
+    expect(lost.rowCounts().get(1)).toBe(10);
+  });
+
+  test("only the names recovery itself gives are picked up", () => {
+    const path = storePath();
+    const dir = dirname(path);
+    const store = track(openStore(path));
+    for (const name of [
+      "tokenhud.db.corrupt-notes.txt",
+      "tokenhud.db.corrupt-20260101-000000-wal",
+      "tokenhud.db.bak.4242.tmp",
+      "other.db.corrupt-20260101-000000",
+      "tokenhud.db.bak",
+    ]) {
+      writeFileSync(join(dir, name), "x");
+    }
+    expect(queueOrphans(store)).toEqual([]);
+    for (const name of [
+      "tokenhud.db.corrupt-20260101-000000",
+      "tokenhud.db.corrupt-20260101-000000-2",
+      "tokenhud.db.bak.unmerged-20260101-000000",
+      "tokenhud.db.bak.prev.damaged-20260101-000000",
+    ]) {
+      writeFileSync(join(dir, name), "x");
+    }
+    expect(queueOrphans(store)).toEqual([
+      "tokenhud.db.bak.prev.damaged-20260101-000000",
+      "tokenhud.db.bak.unmerged-20260101-000000",
+      "tokenhud.db.corrupt-20260101-000000",
+      "tokenhud.db.corrupt-20260101-000000-2",
+    ]);
+    expect(store.pendingRecovery().find((e) => e.file.includes(".bak."))?.why).toBe("held");
+    expect(queueOrphans(store)).toEqual([]); // queued already
+  });
+
+  // m3: a killed backup's temp file
+  test("a killed backup's temp files are swept once an hour old, and nothing else", () => {
+    const path = storePath();
+    const dir = dirname(path);
+    make(path, rows(3));
+    const old = (Date.now() - 2 * 3_600_000) / 1000;
+    const names = {
+      stale: "tokenhud.db.bak.4242.tmp",
+      staleJournal: "tokenhud.db.bak.4242.tmp-journal",
+      fresh: "tokenhud.db.bak.4243.tmp",
+      other: "tokenhud.db.bak.notes.tmp",
+      bak: "tokenhud.db.bak",
+    };
+    for (const name of Object.values(names)) writeFileSync(join(dir, name), "x");
+    for (const name of [names.stale, names.staleJournal, names.other, names.bak]) {
+      utimesSync(join(dir, name), old, old);
+    }
+    track(openStore(path));
+    const left = new Set(readdirSync(dir));
+    expect(left.has(names.stale) || left.has(names.staleJournal)).toBe(false);
+    expect([names.fresh, names.other, names.bak].every((n) => left.has(n))).toBe(true);
+  });
+
+  test.skipIf(process.platform === "win32")("the sweep never follows a symlink", () => {
+    const path = storePath();
+    const dir = dirname(path);
+    make(path, rows(3));
+    const target = join(tempDir(), "elsewhere.tmp");
+    writeFileSync(target, "keep");
+    const link = join(dir, "tokenhud.db.bak.4244.tmp");
+    symlinkSync(target, link);
+    track(openStore(path));
+    expect(existsSync(link)).toBe(true);
+    expect(readFileSync(target, "utf8")).toBe("keep");
+  });
+});
+
+describe("a damaged application_id", () => {
+  /** Overwrites the header's application_id (bytes 68-71). */
+  function damageApplicationId(file: string): void {
+    const bytes = readFileSync(file);
+    bytes.writeUInt32BE(0x01020304, 68);
+    writeFileSync(file, bytes);
+  }
+
+  // m4: our own store, recognisable by its schema, is damaged, not foreign
+  test("on our own store is damage: moved aside and recovered", () => {
+    const path = storePath();
+    make(path, rows(500));
+    damageApplicationId(path);
+    const before = readFileSync(path);
+    const { store, movedTo } = openDurableStore(path);
+    track(store);
+    expect(readFileSync(movedTo as string).equals(before)).toBe(true); // moved as found
+    const report = processPending(store) as RecoveryReport;
+    expect(only(report.sources)).toMatchObject({ why: "damaged", status: "merged", rows: 500 });
+    expect(store.rowCounts().get(1)).toBe(500);
+  });
+
+  test("on another app's database still means foreign: refused, untouched", () => {
+    const dir = tempDir();
+    const path = join(dir, "tokenhud.db");
+    exec(
+      path,
+      "CREATE TABLE usage (key INTEGER PRIMARY KEY, acct INTEGER); CREATE TABLE meta (k TEXT, v TEXT)",
+    );
+    const before = readFileSync(path);
+    expect(() => openDurableStore(path)).toThrow(StoreUnavailable);
+    expect(readFileSync(path).equals(before)).toBe(true);
+    expect(readdirSync(dir)).toEqual(["tokenhud.db"]);
+  });
+
+  test("on a backup slot: merged, then set aside so a backup can take the slot", () => {
+    const path = storePath();
+    const store = track(openStore(path));
+    store.upsert(rows(20));
+    backup(store);
+    store.upsert(rows(5, 20));
+    const { bak } = backupPaths(path);
+    damageApplicationId(bak);
+    expect(backup(store)).toBe(false); // not recognisable as covered: held
+    const report = processPending(store) as RecoveryReport;
+    expect(only(report.sources)).toMatchObject({ status: "merged", rows: 20 });
+    expect(only(report.sources).keptAs).toMatch(/^tokenhud\.db\.bak\.merged-/);
+    expect(backup(store)).toBe(true);
+    expect(count(bak)).toBe(25);
+  });
 });

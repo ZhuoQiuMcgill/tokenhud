@@ -598,6 +598,25 @@ describe("json --refresh and the configured time zone", () => {
   });
 });
 
+describe("import-cc-usage while recovery is pending", () => {
+  test("does not import: queued files may hold tombstones the import would undo", () => {
+    const env = home();
+    const store = openStore(env.store);
+    store.updateRecovery({ addPending: [{ file: "tokenhud.db.bak", why: "missing" }] });
+    store.close();
+    const out = run(env, "import-cc-usage");
+    expect(out.code).toBe(1);
+    expect(out.stdout).toContain("usage       not imported: the store is still recovering");
+    const after = openStore(env.store);
+    try {
+      expect(after.meta.imports).toEqual([]);
+      expect(after.rowCounts().size).toBe(0);
+    } finally {
+      after.close();
+    }
+  });
+});
+
 describe("import-cc-usage: config", () => {
   test("creates tokenhud's config from cc-usage's, only while tokenhud has none", () => {
     const env = home();

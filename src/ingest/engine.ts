@@ -54,10 +54,11 @@ import { defaultPoolSize } from "./pool.ts";
  *
  * The engine keeps the store durable (src/store/durability.ts), always here in the ingest
  * worker and never on the UI thread:
- * - **An unreadable store** is moved aside, never deleted, whether found on open or in a
- *   pass; a fresh store takes its place and the moved file and the backups are queued.
+ * - **An unreadable store** is moved aside, never deleted, whether found on open, in a pass
+ *   or by the daily check before the backup; a fresh store takes its place and the moved
+ *   file and the backups are queued.
  * - **The recovery queue** is worked before the first pass and retried on every full pass
- *   while anything is left (a full disk, say).
+ *   while anything is left (a full disk, say). The first-run cc-usage import waits for it.
  * - **A store the cursors were not written for** (recovered, or replaced by another
  *   process) has every transcript read again, so it is backfilled from what is on disk.
  * - **The daily backup** follows a full pass once a day, and at once after a completed
@@ -112,6 +113,8 @@ export function transcriptDirs(root: Root): string[] {
     : [root.projects];
 }
 
+/** The whole store is checked at most this often, before a backup. */
+const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 /** Margin for coarse directory mtimes when deciding what changed during a walk. */
 const MTIME_SLACK_MS = 2000;
 
@@ -145,6 +148,8 @@ export class IngestEngine {
   #codexSessions: Record<string, string[]> = {};
   /** A backup is owed now, not just daily: after a key-scheme migration or a completed recovery. */
   #backupNow: boolean;
+  /** The first-run cc-usage import is waiting for recovery to complete. */
+  #importDeferred = false;
   /** The last backup failure logged, so a failing backup warns once, not every sweep. */
   #backupError: string | null = null;
 
@@ -167,12 +172,12 @@ export class IngestEngine {
   }
 
   /**
-   * Opens the store, checking it whole, and the cursor cache. An unreadable store is moved
-   * aside and a fresh one opened (call `recover()` next). Throws `StoreError` when no store
-   * can be used.
+   * Opens the store and the cursor cache. A store that cannot be opened because it is
+   * unreadable is moved aside and a fresh one opened (call `recover()` next). Throws
+   * `StoreError` when no store can be used.
    */
   static open(options: EngineOptions): IngestEngine {
-    const { store, movedTo } = openDurableStore(options.storePath, { verify: true });
+    const { store, movedTo } = openDurableStore(options.storePath);
     try {
       const engine = new IngestEngine(options, store, CursorCache.open(options.cachePath));
       if (movedTo !== null) {
@@ -222,7 +227,10 @@ export class IngestEngine {
     const report = processPending(this.store, this.#options.recovery);
     if (report === null) return null;
     this.#log("warn", `usage store recovery: ${report.summary}`);
-    if (report.stillPending.length === 0) this.#backupNow = true;
+    if (report.stillPending.length === 0) {
+      this.#backupNow = true;
+      if (this.#importDeferred) this.importIfFirstRun();
+    }
     if (mergedAny(report)) {
       const accounts = [...this.store.accounts().values()].map((a) => a.identity);
       this.#options.onChanged?.({
@@ -298,16 +306,23 @@ export class IngestEngine {
   }
 
   /**
-   * Takes the daily backup when due, or at once when owed, after checking the whole store
-   * (the daily integrity check; passes only touch the rows they write). An unreadable store
-   * throws `StoreCorrupt`, for `#withRecovery`; any other failure is logged, once.
+   * The daily backup, after a full pass, when due (or at once when owed). Before it, at most
+   * once a day, the whole store is checked (`quick_check`): passes touch only the rows they
+   * write, so a damaged page of old history is found here, not when the store is opened
+   * (which must not wait on reading the whole file: ~2.6 s cold at 1M rows). An unreadable
+   * store throws `StoreCorrupt`, for `#withRecovery`; any other failure is logged, once.
    */
   #maybeBackup(): void {
     try {
       if (!this.#backupNow && !backupDue(this.store)) return;
-      const check = this.store.quickCheck();
-      if (check !== "ok") {
-        throw new StoreCorrupt(`the store failed its integrity check: ${check.slice(0, 200)}`);
+      const now = Date.now();
+      const checked = this.store.lastCheckedAt();
+      if (checked === null || now - checked >= CHECK_INTERVAL_MS) {
+        const check = this.store.quickCheck();
+        if (check !== "ok") {
+          throw new StoreCorrupt(`the store failed its integrity check: ${check.slice(0, 200)}`);
+        }
+        this.store.markChecked(now);
       }
       // False: a slot held history not merged yet; it is queued, and the next full pass
       // merges it and then backs up.
@@ -325,11 +340,33 @@ export class IngestEngine {
   /**
    * Imports cc-usage's ledger (only read, through a snapshot copy) when the store has no
    * cc-usage import yet. Returns null when there is nothing to do.
+   *
+   * Never while recovery is pending: the files still queued may hold the record of an
+   * earlier import and tombstones of replayed Codex rows, and an import first would bring
+   * those rows back. It is deferred, and runs once recovery completes.
    */
   importIfFirstRun(): ImportOutcome | null {
     const ledger = this.#options.importLedger;
     if (ledger === null || !existsSync(ledger)) return null;
-    if (this.store.meta.imports.some((record) => record.source === "cc-usage")) return null;
+    let imported: boolean;
+    let pending: number;
+    try {
+      imported = this.store.meta.imports.some((record) => record.source === "cc-usage");
+      pending = this.store.pendingRecovery().length;
+    } catch (error) {
+      if (!(error instanceof StoreError)) throw error;
+      this.#log("warn", `cc-usage history was not imported: ${error.message}`);
+      return null;
+    }
+    if (imported) return null;
+    if (pending > 0) {
+      if (!this.#importDeferred) {
+        this.#log("info", "the cc-usage import waits until the store's recovery is complete");
+      }
+      this.#importDeferred = true;
+      return null;
+    }
+    this.#importDeferred = false;
     try {
       const outcome = importCcUsage(this.store, ledger);
       if (outcome.status === "deferred") this.#log("warn", outcome.warning);

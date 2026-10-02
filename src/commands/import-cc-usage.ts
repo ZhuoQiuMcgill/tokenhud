@@ -200,7 +200,17 @@ export function runImportCcUsage(args: readonly string[], env: Env = process.env
   let store: ReturnType<typeof openStore> | undefined;
   try {
     store = openStore(storePath(env));
-    const outcome = importCcUsage(store, join(dir, "ledger.sqlite3"));
+    // Files still queued for recovery may hold an earlier import and the tombstones of
+    // replayed Codex rows: importing first would bring those rows back.
+    const outcome =
+      store.pendingRecovery().length > 0
+        ? {
+            status: "deferred" as const,
+            warning:
+              "the store is still recovering its history; run tokenhud, which finishes " +
+              "the recovery, then import again",
+          }
+        : importCcUsage(store, join(dir, "ledger.sqlite3"));
     if (outcome.status === "deferred") {
       say(`  usage       not imported: ${outcome.warning}`);
       code = 1;

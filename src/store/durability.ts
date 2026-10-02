@@ -5,6 +5,7 @@ import {
   existsSync,
   fsyncSync,
   openSync,
+  readdirSync,
   readSync,
   renameSync,
   rmSync,
@@ -19,6 +20,7 @@ import {
   BACKUP_SUFFIX,
   emptyStoreDatabase,
   fileIdOf,
+  hasOurSchema,
   type ImportRecord,
   KEY_SCHEME_MIGRATIONS,
   type OpenOptions,
@@ -187,6 +189,10 @@ export function describeRecovery(report: Pick<RecoveryReport, "directory" | "sou
     parts.push("recovery is NOT complete");
   } else if (damaged.length > 0 && damaged.every((s) => s.status === "merged" && s.complete)) {
     parts.push("history intact");
+  } else if (sources.every((s) => s.why === "held")) {
+    if (sources.some((s) => s.status === "merged")) {
+      parts.push("a backup file held history this store did not have, and it is merged now");
+    }
   } else if (sources.some((s) => s.status === "merged" && s.why !== "damaged")) {
     parts.push(
       damaged.length === 0
@@ -256,10 +262,10 @@ function setAside(path: string, label: string): string | null {
  * store is created in its place (which queues the backups), and the moved file is queued
  * first; `movedTo` names it. Nothing is recovered here: `processPending` does that.
  *
- * With `verify` (see `OpenOptions`), a store that opens but fails `quick_check` counts as
- * unreadable too. tokenhud's passes touch only the rows they write, so without it a damaged
- * page of old history could go unnoticed for long (cc-usage's full diff read every row).
- * The check reads the whole file: about 30 ms for 140k rows, 200 ms for 1M.
+ * Files beside the store that may hold history no queue knows about are queued too (see
+ * `queueOrphans`). Opening never reads the whole file: a damaged page the open does not
+ * touch is found by a pass or by the engine's daily check, which then calls
+ * `replaceCorruptStore`.
  *
  * Throws `StoreError` when no store can be opened.
  */
@@ -273,6 +279,7 @@ export function openDurableStore(
     try {
       const store = Store.open(path, options);
       if (movedTo !== null) queueDamaged(store, movedTo);
+      queueOrphans(store);
       return { store, movedTo };
     } catch (error) {
       if (!(error instanceof StoreCorrupt) || attempt >= 2) throw error;
@@ -297,6 +304,47 @@ export function replaceCorruptStore(store: Store): string | null {
 
 function queueDamaged(store: Store, moved: string): void {
   store.updateRecovery({ addPending: [{ file: basename(moved), why: "damaged" }] });
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Queues the files beside the store that only recovery itself creates and that may hold
+ * history no queue knows about: stores moved aside (`<store>.corrupt-<ts>`) and backups set
+ * aside (`<store>.bak.<label>-<ts>`, `<store>.bak.prev.<label>-<ts>`), unless this store has
+ * them queued or has processed them (`meta.recovered`). A crash between moving a store
+ * aside and queueing it, or a fresh store that could not be created then (a full disk),
+ * leaves such a file unqueued; and a store that starts over (the old one lost) looks again
+ * at everything the old one kept. The backup slots themselves are queued when a store is
+ * created and by `backup`. Returns the names queued.
+ */
+export function queueOrphans(store: Store): string[] {
+  const directory = dirname(store.path);
+  const base = escapeRegExp(basename(store.path));
+  const stamp = "\\d{8}-\\d{6}(-\\d+)?";
+  const ours = new RegExp(
+    `^${base}\\.(corrupt-${stamp}|bak(\\.prev)?\\.(damaged|merged|unmerged)-${stamp})$`,
+  );
+  let names: string[];
+  try {
+    names = readdirSync(directory, { withFileTypes: true })
+      .filter((e) => e.isFile() && ours.test(e.name))
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+  if (names.length === 0) return [];
+  const known = new Set([...store.pendingRecovery().map((e) => e.file), ...store.recoveredFiles()]);
+  const orphans = names.filter((name) => !known.has(name)).sort();
+  if (orphans.length > 0) {
+    store.updateRecovery({
+      addPending: orphans.map((file) => ({
+        file,
+        why: file.includes(".corrupt-") ? "damaged" : "held",
+      })),
+    });
+  }
+  return orphans;
 }
 
 // ── the recovery queue ───────────────────────────────────────────────────────────
@@ -326,6 +374,7 @@ export function processPending(store: Store, options: RecoveryOptions = {}): Rec
   const results: SourceResult[] = [];
   const done = new Set<string>();
   const merged = new Set<string>();
+  const processed: string[] = [];
   for (const { file, why } of entries) {
     const path = join(directory, file);
     const result: SourceResult = {
@@ -358,16 +407,24 @@ export function processPending(store: Store, options: RecoveryOptions = {}): Rec
     done.add(file);
     const fully = result.status === "merged" && result.complete;
     if (fully && lineage !== null) merged.add(lineage);
-    if (slots.has(file) && !(fully && lineage !== null)) {
+    const recognised = fully && lineage !== null && readTables(path)?.lineage === lineage;
+    if (slots.has(file) && !recognised) {
       // A slot may only keep a file a later backup can recognise as covered; anything
-      // else is renamed aside (kept) so it can never block, or be overwritten by, a
-      // rotation.
+      // else (unmerged, damaged, or with a damaged header) is renamed aside (kept) so it
+      // can never block, or be overwritten by, a rotation.
       const label = result.status === "refused" ? "unmerged" : fully ? "merged" : "damaged";
       result.keptAs = setAside(path, label);
     }
+    // The slots' names are reused by every backup, so only other files are remembered.
+    if (!slots.has(file)) processed.push(file);
+    if (result.keptAs !== null) processed.push(result.keptAs);
     results.push(result);
   }
-  const queue = store.updateRecovery({ dropPending: done, addMerged: merged });
+  const queue = store.updateRecovery({
+    dropPending: done,
+    addMerged: merged,
+    addRecovered: processed,
+  });
   const partial = { directory, sources: results };
   const report: RecoveryReport = {
     at: (options.now ?? Date.now)(),
@@ -739,7 +796,11 @@ function salvageConnection(db: Database, name: string): Salvaged {
     damageOrRaise(error, name);
     return emptySalvage({ unreadable: true });
   }
-  if (applicationId !== BigInt(APPLICATION_ID)) return emptySalvage({ foreign: true });
+  // A damaged application_id on our own store is damage like any other; a database without
+  // tokenhud's schema is someone else's.
+  if (applicationId !== BigInt(APPLICATION_ID) && !hasOurSchema(db)) {
+    return emptySalvage({ foreign: true });
+  }
   let complete = true;
   const read = <T>(sql: string): T[] | null => {
     try {

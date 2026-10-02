@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import {
   closeSync,
+  copyFileSync,
   type Dirent,
   existsSync,
   lstatSync,
@@ -13,6 +14,7 @@ import {
   type Stats,
   statSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { guard, SchemeRefused, StoreCorrupt, StoreUnavailable } from "./errors.ts";
 import { KEY_SCHEME } from "./key.ts";
@@ -77,7 +79,11 @@ export const PREVIOUS_BACKUP_SUFFIX = ".bak.prev";
 // Meta keys of backups and recovery.
 const PENDING = "pending";
 const MERGED = "merged";
+const RECOVERED = "recovered";
 const RECOVERY_REPORT = "recovery_report";
+const CHECKED_AT = "checked_at";
+/** A backup's temp file: `<store>.bak.<pid>.tmp`, and SQLite's journal of it. */
+const BACKUP_TEMP = /^\.bak\.\d+\.tmp(-journal)?$/;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -179,6 +185,8 @@ export interface StoreMeta {
   pending: PendingSource[];
   /** Lineages (`store_id`s) whose rows this store has fully absorbed. */
   merged: string[];
+  /** Files beside the store this store has processed (merged, refused, set aside), by name. */
+  recovered: string[];
   /** The last recovery pass's report (durability.ts `RecoveryReport`), or null. */
   recoveryReport: unknown;
 }
@@ -242,12 +250,6 @@ export interface WriteBatch {
 export interface OpenOptions {
   /** How long a write waits for another writer. Tests shorten it. */
   busyTimeoutMs?: number;
-  /**
-   * Check the whole file (`quick_check`) before anything is written to it, and throw
-   * `StoreCorrupt` if it fails, so a damaged store is moved aside as it was found, never
-   * migrated or repaired in place. It reads the whole file: about 30 ms for 140k rows.
-   */
-  verify?: boolean;
 }
 
 /**
@@ -653,6 +655,7 @@ export class Store {
         migrationReport: parseJson(getMeta(db, MIGRATION_REPORT)),
         pending: pendingSources(db),
         merged: mergedLineages(db),
+        recovered: stringList(db, RECOVERED),
         recoveryReport: parseJson(getMeta(db, RECOVERY_REPORT)),
       };
     });
@@ -670,15 +673,22 @@ export class Store {
     return guard(() => new Set(mergedLineages(this.#db)));
   }
 
+  /** The files beside the store it has already processed (see `StoreMeta.recovered`). */
+  recoveredFiles(): Set<string> {
+    return guard(() => new Set(stringList(this.#db, RECOVERED)));
+  }
+
   /**
-   * Edits the recovery queue and the merged lineages under the write lock, against
-   * whatever another process wrote meanwhile: `addPending` entries go to the front (unless
-   * queued already), `dropPending` names leave it. Returns the queue as it then is.
+   * Edits the recovery queue, the merged lineages and the processed files under the write
+   * lock, against whatever another process wrote meanwhile: `addPending` entries go to the
+   * front (unless queued already), `dropPending` names leave it. Returns the queue as it
+   * then is.
    */
   updateRecovery(change: {
     addPending?: readonly PendingSource[];
     dropPending?: ReadonlySet<string>;
     addMerged?: ReadonlySet<string>;
+    addRecovered?: Iterable<string>;
   }): PendingSource[] {
     const db = this.#db;
     return writeTransaction(db, () => {
@@ -692,8 +702,26 @@ export class Store {
         const merged = new Set([...mergedLineages(db), ...change.addMerged]);
         setMeta(db, MERGED, JSON.stringify([...merged].sort()));
       }
+      if (change.addRecovered !== undefined) {
+        const done = new Set([...stringList(db, RECOVERED), ...change.addRecovered]);
+        setMeta(db, RECOVERED, JSON.stringify([...done].sort()));
+      }
       return queue;
     });
+  }
+
+  /** When the whole store last passed `quick_check` (epoch ms), or null if never recorded. */
+  lastCheckedAt(): number | null {
+    return guard(() => {
+      const raw = getMeta(this.#db, CHECKED_AT);
+      return raw !== null && /^\d+$/.test(raw) ? Number(raw) : null;
+    });
+  }
+
+  /** Records a clean `quick_check` at `at` (epoch ms), so the daily check knows it is done. */
+  markChecked(at: number): void {
+    const db = this.#db;
+    writeTransaction(db, () => setMeta(db, CHECKED_AT, String(at)));
   }
 
   /** Keeps `report` as the last recovery report, for `doctor`. */
@@ -704,27 +732,32 @@ export class Store {
 
   /**
    * Merges what recovery read back from another copy of a store, in one transaction, and
-   * returns how many usage rows the store did not have before.
+   * returns how many usage rows the store did not have before, and how many rows the
+   * source's tombstones removed.
    *
-   * - Tombstones first, so a row the source removed as not being usage cannot come back
-   *   through it, nor through a later cc-usage import. A key this store holds a row for
-   *   keeps its row: the store may have given the key back since (a trigger turn), and a
-   *   wrongly kept replay row is the Codex re-key's to remove, never a recovery's guess.
+   * - Tombstones first, and applied: the rows of those keys are deleted and the keys
+   *   tombstoned, so a row the source removed as not being usage cannot come back, whether
+   *   through the source or through a cc-usage import (which recovery always precedes; see
+   *   the engine). A key a later read gives back (a trigger turn) is restored by that read.
    * - Rows merge by the usual rules (field-wise max, tier max). Accounts the store already
    *   has keep their labels: an old copy must not rename a live account.
    * - Codex accounts whose rows await the re-key, import records and limit events are
    *   carried over; limit events dedupe on (account, kind, window, reset time).
    */
-  mergeRecovered(data: RecoveredData): { newRows: number } {
+  mergeRecovered(data: RecoveredData): { newRows: number; removed: number } {
     validate(data.rows);
     const db = this.#db;
     return writeTransaction(db, () => {
-      const has = db.query<{ hit: bigint }, [bigint]>("SELECT 1 AS hit FROM usage WHERE key = ?1");
       const tombstone = db.query(
         "INSERT INTO dropped_keys (key, reason, at) VALUES (?1, ?2, ?3) ON CONFLICT (key) DO NOTHING",
       );
+      const remove = db.query<{ hit: bigint }, [bigint]>(
+        "DELETE FROM usage WHERE key = ?1 RETURNING 1 AS hit",
+      );
+      let removed = 0;
       for (const t of data.tombstones) {
-        if (has.get(t.key) === null) tombstone.run(t.key, storedText(t.reason), t.at);
+        tombstone.run(t.key, storedText(t.reason), t.at);
+        if (remove.get(t.key) !== null) removed++;
       }
       // An old copy names a new account but never renames a live one.
       const live = untombstoned(db, data.rows).map((r) => ({ ...r, derivedLabel: true }));
@@ -742,7 +775,7 @@ export class Store {
         setMeta(db, "imports", JSON.stringify(imports));
       }
       mergeLimitEvents(db, data.limitEvents);
-      return { newRows };
+      return { newRows, removed };
     });
   }
 
@@ -884,12 +917,6 @@ function connect(path: string, options: OpenOptions): Connection {
       // recursive triggers on; without it the rollup would drift.
       db.exec("PRAGMA recursive_triggers = ON");
     });
-    if (options.verify === true && pragmaInt(db, "user_version") > 0) {
-      const check = guard(() => quickCheck(db));
-      if (check !== "ok") {
-        throw new StoreCorrupt(`the store failed its integrity check: ${check.slice(0, 200)}`);
-      }
-    }
     // A new store is created before WAL is switched on, so its first commit (which sets
     // application_id) lands in the main file itself; the header check relies on that.
     ensureSchema(db, path);
@@ -897,6 +924,7 @@ function connect(path: string, options: OpenOptions): Connection {
     const migrated = ensureKeyScheme(db);
     ensureRollups(db);
     sweepScratch(scratchDirOf(path));
+    sweepBackupTemps(path);
     return { db, fileId, storeId: guard(() => getMeta(db, "store_id")), migrated };
   } catch (error) {
     db.close();
@@ -964,7 +992,66 @@ function refuseForeign(path: string): void {
     throw new StoreCorrupt("file is not a database");
   }
   if (head.readUInt32BE(APPLICATION_ID_OFFSET) !== APPLICATION_ID) {
+    // Damaged header bytes, or someone else's database? Only a copy is opened to tell.
+    if (copyHasOurSchema(path)) {
+      throw new StoreCorrupt("its header does not name tokenhud, but its tables are tokenhud's");
+    }
     throw new StoreUnavailable(`this file is not a tokenhud store; ${untouched}`);
+  }
+}
+
+/**
+ * Whether a database has tokenhud's schema: a `usage` table with the `tier` column, the
+ * `roll_hour` rollup and a `meta.store_id`. A cc-usage ledger (no tier, no rollup, a
+ * `ledger_id`) or any other database does not. Recovery uses this to accept its own store
+ * whose `application_id` bytes were damaged, while every other file stays foreign.
+ */
+export function hasOurSchema(db: Database): boolean {
+  try {
+    const tables = new Set(
+      db
+        .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all()
+        .map((t) => t.name),
+    );
+    if (!["usage", "roll_hour", "accounts", "models", "meta"].every((t) => tables.has(t))) {
+      return false;
+    }
+    const columns = db
+      .query<{ name: string }, []>("SELECT name FROM pragma_table_info('usage')")
+      .all()
+      .map((c) => c.name);
+    const storeId = db
+      .query<{ v: unknown }, []>("SELECT v FROM meta WHERE k = 'store_id'")
+      .get()?.v;
+    return columns.includes("tier") && typeof storeId === "string" && storeId !== "";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `hasOurSchema` of the file at `path`, judged on a private copy in the OS temp dir: never
+ * by opening the file itself, which could write to it or its side files. Not ours when the
+ * copy cannot be made or read.
+ */
+function copyHasOurSchema(path: string): boolean {
+  let dir: string | undefined;
+  try {
+    dir = mkdtempSync(join(tmpdir(), "tokenhud-schema-"));
+    const copy = join(dir, "copy.db");
+    copyFileSync(path, copy);
+    if (existsSync(`${path}-wal`)) copyFileSync(`${path}-wal`, `${copy}-wal`);
+    const db = new Database(copy, { readwrite: true, safeIntegers: true, strict: true });
+    try {
+      return hasOurSchema(db);
+    } finally {
+      db.close();
+    }
+  } catch {
+    return false;
+  } finally {
+    if (dir !== undefined) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
   }
 }
 
@@ -1001,6 +1088,34 @@ function sweepScratch(dir: string): void {
       if (lstatSync(path).mtimeMs < cutoff) rmSync(path, { recursive: true, force: true });
     } catch {
       // in use or already gone; the next open tries again
+    }
+  }
+}
+
+/**
+ * Deletes backup temp files a killed backup left beside the store (`<store>.bak.<pid>.tmp`
+ * and its journal), once they are an hour old: only regular files named exactly so,
+ * directly beside the store; never a symlink, nothing else. Best effort.
+ */
+function sweepBackupTemps(storePath: string): void {
+  const dir = dirname(storePath);
+  const base = basename(storePath);
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const cutoff = Date.now() - SCRATCH_MAX_AGE_MS;
+  for (const entry of entries) {
+    // Dirent types come from lstat: a symlink is not a file here.
+    if (!entry.isFile() || !entry.name.startsWith(base)) continue;
+    if (!BACKUP_TEMP.test(entry.name.slice(base.length))) continue;
+    const path = join(dir, entry.name);
+    try {
+      if (lstatSync(path).mtimeMs < cutoff) rmSync(path, { force: true });
+    } catch {
+      // in use or already gone
     }
   }
 }
@@ -1499,7 +1614,12 @@ function pendingSources(db: Database): PendingSource[] {
 }
 
 function mergedLineages(db: Database): string[] {
-  const value = parseJson(getMeta(db, MERGED));
+  return stringList(db, MERGED);
+}
+
+/** A meta key holding a JSON list, as strings; anything unreadable counts as empty. */
+function stringList(db: Database, key: string): string[] {
+  const value = parseJson(getMeta(db, key));
   return Array.isArray(value) ? value.map(String) : [];
 }
 

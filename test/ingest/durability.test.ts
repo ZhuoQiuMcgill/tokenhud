@@ -141,6 +141,16 @@ function age(path: string): void {
   utimesSync(path, old, old);
 }
 
+/**
+ * Makes the next full pass run the daily step: the backup a day old and no recent check of
+ * the whole store, so a damaged page the pass itself does not touch is found.
+ */
+function dailyStepDue(w: World): void {
+  exec(w.storePath, "DELETE FROM meta WHERE k = 'checked_at'");
+  const { bak } = backupPaths(w.storePath);
+  if (existsSync(bak)) age(bak);
+}
+
 /** The store's own files (the store, its WAL and SHM), not its backups. */
 function removeStore(w: World): void {
   for (const suffix of ["", "-wal", "-shm"]) rmSync(`${w.storePath}${suffix}`, { force: true });
@@ -159,6 +169,7 @@ describe("an unreadable store", () => {
   test("is restored from the backup, with the history only it held", async () => {
     const w = world();
     const before = await historyWorld(w);
+    dailyStepDue(w);
     corruptUsageLeaf(w.storePath);
 
     const e = await w.scanned("fresh.db");
@@ -209,17 +220,17 @@ describe("an unreadable store", () => {
   });
 
   // test_damaged_old_scheme_ledger_is_migrated_before_its_rows_are_merged
-  test("of an older key scheme is moved aside as found and migrated before its rows merge", async () => {
+  test("of an older key scheme has its rows migrated before they merge", async () => {
     const w = world();
     const codex = history(25, 5000, { provider: "codex", identity: "id-codex", label: "codex" });
     const before = await historyWorld(w, 3000, codex);
     for (const slot of Object.values(backupPaths(w.storePath))) rmSync(slot, { force: true });
     exec(w.storePath, "UPDATE meta SET v = '1' WHERE k = 'key_scheme'");
+    dailyStepDue(w);
     corruptUsageLeaf(w.storePath);
 
     const e = await w.scanned("fresh.db");
-    const moved = join(w.state, corruptFiles(w)[0] as string);
-    expect(metaOf(moved, "key_scheme")).toBe("1"); // never migrated in place
+    expect(corruptFiles(w)).toHaveLength(1);
     // Scheme 1 -> 2 ran on the salvaged rows: the Codex account awaits the re-key.
     expect(e.store.meta.codexRekeyPending).toEqual(["id-codex"]);
     const now = new Set(contents(e.store));
@@ -267,12 +278,11 @@ describe("an unreadable store", () => {
     const e = await w.scanned();
     e.store.upsert(history(3000));
     const before = contents(e.store);
-    // Damage the main file under the running engine, then let another connection commit,
-    // so the engine's page cache is dropped and it reads the damaged page.
+    // Damage the main file under the running engine; the daily step's commit (clearing the
+    // last check) also drops the engine's page cache, so it reads the damaged page.
     exec(w.storePath, "PRAGMA wal_checkpoint(TRUNCATE)");
     corruptUsageLeaf(w.storePath);
-    exec(w.storePath, "UPDATE meta SET v = v WHERE k = 'created_at'");
-    age(backupPaths(w.storePath).bak);
+    dailyStepDue(w);
     await e.fullPass();
     expect(corruptFiles(w)).toHaveLength(1);
     const now = new Set(contents(e.store));
@@ -408,6 +418,59 @@ describe("a lost store", () => {
   });
 });
 
+describe("recovery and the cc-usage import", () => {
+  // M2 (the T7 critique's sequence): recovery fails once, the import waits, recovery succeeds.
+  test("the first-run import waits for recovery, so a replayed row tombstoned before never comes back", async () => {
+    const w = world();
+    const ledger = join(w.dir, "ledger.sqlite3");
+    copyFileSync(
+      join(import.meta.dir, "..", "fixtures", "store", "cc-usage-ledger.sqlite3"),
+      ledger,
+    );
+    // The live store: cc-usage's history imported, one of its Codex rows then judged a
+    // replay and tombstoned, and backed up. The backup lacks the import record, so the
+    // import really runs again once recovery is done.
+    const first = w.engine("cache.db", { importLedger: ledger });
+    first.recover();
+    expect(first.importIfFirstRun()?.status).toBe("imported");
+    await first.fullPass();
+    const codex = [...storedRows(first.store).values()].filter(
+      (r) => r.identity !== undefined && r.label === "codex",
+    );
+    expect(codex.length).toBeGreaterThan(0);
+    const replayed = codex[0]?.key as bigint;
+    first.store.write({ drop: { keys: [replayed], reason: "codex-replay" } });
+    const rows = storedRows(first.store).size;
+    backup(first.store);
+    await first.stop();
+    exec(backupPaths(w.storePath).bak, "UPDATE meta SET v = '[]' WHERE k = 'imports'");
+    // The store is lost: its first page is zeroed.
+    const bytes = readFileSync(w.storePath);
+    bytes.fill(0, 0, 4096);
+    writeFileSync(w.storePath, bytes);
+
+    let diskFull = true;
+    const copyFile = (from: string, to: string) => {
+      if (diskFull) throw enospc();
+      copyFileSync(from, to);
+    };
+    const e = w.engine("fresh.db", { importLedger: ledger, recovery: { copyFile } });
+    e.recover(); // cannot read anything yet
+    expect(e.importIfFirstRun()).toBeNull(); // so the import waits
+    await e.fullPass();
+    expect(e.store.meta.imports).toEqual([]);
+    expect(w.logs.some((l) => l.includes("the cc-usage import waits"))).toBe(true);
+
+    diskFull = false;
+    await e.fullPass(); // recovery succeeds, its tombstones are applied, then the import runs
+    expect(e.store.meta.pending).toEqual([]);
+    expect(e.store.meta.imports.map((i) => i.source)).toEqual(["cc-usage"]);
+    expect(e.store.rows([replayed])).toEqual([]); // the replayed row stays out
+    expect(e.store.droppedKeys().has(replayed)).toBe(true);
+    expect(storedRows(e.store).size).toBe(rows); // and everything else is back
+  });
+});
+
 describe("recovery that cannot finish", () => {
   // test_failed_salvage_copy_is_reported_retried_and_never_mistaken_for_empty
   test("a failed salvage copy is reported, retried, and never mistaken for empty", async () => {
@@ -415,6 +478,7 @@ describe("recovery that cannot finish", () => {
     const before = await historyWorld(w);
     const { bak, prev } = backupPaths(w.storePath);
     const good = readFileSync(bak);
+    dailyStepDue(w);
     corruptUsageLeaf(w.storePath);
     let diskFull = true;
     const copyFile = (from: string, to: string) => {
