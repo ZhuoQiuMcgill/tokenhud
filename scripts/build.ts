@@ -19,6 +19,12 @@ const { values } = parseArgs({
 const target = values.target as Bun.Build.CompileTarget | undefined;
 
 const windows = target === undefined ? process.platform === "win32" : target.includes("windows");
+const linux = target === undefined ? process.platform === "linux" : target.includes("linux");
+// OpenTUI picks its native library by process.platform/arch and, on Linux, by
+// OPENTUI_LIBC. Defined at build time, the bundler keeps only the matching library's
+// import, so the binary embeds the right one (ARCHITECTURE §9.1). Host builds on Linux are
+// glibc; musl binaries come from the *-musl targets.
+const libc = target?.includes("musl") ? "musl" : "glibc";
 const root = join(import.meta.dir, "..");
 const outfile = join(root, "dist", windows ? "tokenhud.exe" : "tokenhud");
 
@@ -30,7 +36,9 @@ const result = await Bun.build({
     join(root, "src", "cli.ts"),
     join(root, "src", "ingest", "worker.ts"),
     join(root, "src", "ingest", "parse-worker.ts"),
+    join(root, "src", "tui", "vm", "worker.ts"),
   ],
+  define: linux ? { "process.env.OPENTUI_LIBC": JSON.stringify(libc) } : {},
   // Identifiers stay unmangled: stack frames take function names from the runtime, which a
   // sourcemap does not rename back (`keepNames` doesn't either), so mangling would turn
   // `main` into `f` in every crash report. Mangling saves about a fifth of our own JS (420
@@ -53,7 +61,8 @@ const result = await Bun.build({
 // Bun also writes the map next to the binary. The binary doesn't need it, so keep dist/ to
 // the one file that ships.
 for (const output of result.outputs) {
-  if (output.kind === "sourcemap") await rm(output.path);
+  // Two entrypoints named worker.ts share a map name, so the second rm finds it gone.
+  if (output.kind === "sourcemap") await rm(output.path, { force: true });
 }
 
 const bytes = Bun.file(outfile).size;

@@ -57,11 +57,17 @@ export interface IngestWorker {
 
 const WORKER_URL = workerUrl("ingest/worker.ts");
 
+/**
+ * `onExit` hears of the Worker ending without being asked to (an uncaught error, an exit),
+ * with its exit code, so the caller can say so and start another.
+ */
 export function startIngestWorker(
   options: WorkerOptions,
   onMessage: (message: IngestMessage) => void,
+  onExit?: (code: number) => void,
 ): IngestWorker {
   const worker = new Worker(WORKER_URL);
+  let stopping = false;
   let resolveStopped: () => void = () => {};
   const stopped = new Promise<void>((resolve) => {
     resolveStopped = resolve;
@@ -72,9 +78,10 @@ export function startIngestWorker(
     for (const resolve of pending.values()) resolve([]);
     pending.clear();
   };
-  worker.addEventListener("close", () => {
+  worker.addEventListener("close", (event) => {
     settlePending();
     resolveStopped();
+    if (!stopping) onExit?.((event as CloseEvent).code);
   });
   worker.onmessage = (event: MessageEvent<IngestMessage>) => {
     const message = event.data;
@@ -101,6 +108,7 @@ export function startIngestWorker(
       return reply;
     },
     stop() {
+      stopping = true;
       send({ type: "stop" });
       return stopped;
     },

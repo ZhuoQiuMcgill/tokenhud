@@ -2,6 +2,7 @@
 // takes no options: Claude Code passes the session's environment, which picks the account,
 // and XDG_CONFIG_HOME, as everywhere, moves tokenhud's store and config.
 
+import { WriterLock } from "../lock.ts";
 import { runMcpServer } from "../mcp/server.ts";
 
 export const MCP_HELP = `Usage:
@@ -22,5 +23,7 @@ export async function runMcp(args: readonly string[]): Promise<number> {
     process.stderr.write(`tokenhud mcp: unexpected argument '${args[0]}'\n${MCP_HELP}\n`);
     return 2;
   }
-  return runMcpServer();
+  // The single-writer lock (src/lock.ts): with it free, a stale store is refreshed by one
+  // pass here; while a TUI holds it, answers come from the store as it is, with stale_s.
+  return runMcpServer({ acquireWriterLock: () => WriterLock.tryAcquire({ owner: "mcp" }) });
 }

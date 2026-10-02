@@ -145,26 +145,32 @@ export interface CacheUpdate {
 /**
  * Re-reads the file, applies `updates` (a capture replaces the stored one only when it is
  * fresher), and writes it back, all under the file's lock (`limits.json.lock`), so another
- * process's update made in between is never lost. Returns the merged file.
+ * process's update made in between is never lost. Returns the merged file. Throws
+ * `LeaseTimeoutError` when the lock stays taken (the file is then left as it was).
  */
 export function updateLimitsCache(
   path: string,
   updates: ReadonlyMap<string, CacheUpdate>,
+  lockTtlMs?: number,
 ): LimitsFile {
   mkdirSync(dirname(path), { recursive: true });
-  return withLock(`${path}.lock`, () => {
-    const file = loadLimitsCache(path);
-    for (const [id, update] of updates) {
-      if (update.capture) {
-        // On a tie the update wins: it was decided (snapshot over last-good) after the read.
-        const best = freshest([update.capture, file.providers[id]]);
-        if (best !== null) file.providers[id] = best;
+  return withLock(
+    `${path}.lock`,
+    () => {
+      const file = loadLimitsCache(path);
+      for (const [id, update] of updates) {
+        if (update.capture) {
+          // On a tie the update wins: it was decided (snapshot over last-good) after the read.
+          const best = freshest([update.capture, file.providers[id]]);
+          if (best !== null) file.providers[id] = best;
+        }
+        if (update.status) file.status[id] = update.status;
       }
-      if (update.status) file.status[id] = update.status;
-    }
-    saveLimitsCache(file, path);
-    return file;
-  });
+      saveLimitsCache(file, path);
+      return file;
+    },
+    lockTtlMs,
+  );
 }
 
 /** Where one account's fetch lease lives: beside limits.json, in `.limits-leases/`. */

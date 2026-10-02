@@ -487,8 +487,10 @@ export class LimitsService {
     try {
       return updateLimitsCache(this.#o.limitsPath, new Map([[id, update]]));
     } catch (error) {
+      // limits.json keeps what it had (a busy lock, an unwritable dir): this round's
+      // update is shown from memory and saved on the next one.
       const code = (error as NodeJS.ErrnoException).code ?? "error";
-      this.#log("warn", `limits: cannot save limits.json (${code})`);
+      this.#log("warn", `limits: cannot save limits.json (${code}); serving the cached limits`);
       return null;
     }
   }

@@ -300,6 +300,11 @@ function candidates(
  * default, or derived; Windows-side roots get a `-win` suffix, an assumption of tokenhud's)
  * and dedupe labels against `reserved`. A root is enabled unless its config entry says
  * `enabled: false` or its path is in `disabled_roots`.
+ *
+ * Unlike cc-usage, a config entry's `label` and `enabled` apply to the root it resolves
+ * to wherever that root was found: a config entry for `~/.claude` (or for the
+ * `CLAUDE_CONFIG_DIR` root) relabels it, although discovery lists it before any config
+ * entry. That is how the settings screen renames every account (a PM ruling for T10).
  */
 function discover(
   spec: ProviderSpec,
@@ -315,6 +320,16 @@ function discover(
       .map((raw) => expandPath(raw, options.home, platform)),
   );
   const historyOnly = new Set(config.history_only_roots);
+  // Config entries by the root they resolve to; the first entry with a field wins.
+  const configured = new Map<string, { label: string | null; enabled: boolean | null }>();
+  for (const entry of config[spec.configKey] as RootEntry[]) {
+    const resolved = resolvePath(expandPath(entry.path, options.home, platform), platform, fs);
+    const known = configured.get(resolved) ?? { label: null, enabled: null };
+    configured.set(resolved, {
+      label: known.label ?? entry.label ?? null,
+      enabled: known.enabled ?? entry.enabled ?? null,
+    });
+  }
   const seen = new Set<string>();
   const used = new Set(reserved);
   const roots: Root[] = [];
@@ -324,19 +339,22 @@ function discover(
     if (candidate.source !== "auto" && !isDir(candidate.path)) continue;
     seen.add(resolved);
     const name = basename(candidate.path, platform);
+    const override = configured.get(resolved);
+    const explicit = override?.label ?? null;
     let label: string;
-    if (candidate.label) label = candidate.label;
+    if (explicit) label = explicit;
+    else if (candidate.label) label = candidate.label;
     else if (candidate.source === "wsl") label = `${deriveLabel(name, spec.stripPrefix)}-win`;
     else label = deriveLabel(name, spec.stripPrefix);
     const identity = createHash("sha256").update(resolved, "utf8").digest("hex").slice(0, 32);
     roots.push({
       provider: spec.provider,
       label: dedupeLabel(label, used),
-      labelExplicit: candidate.source === "config" && Boolean(candidate.label),
+      labelExplicit: Boolean(explicit),
       path: candidate.path,
       projects: joinPath(candidate.path, spec.projectsSubdir, platform),
       source: candidate.source,
-      enabled: candidate.enabled !== false && !disabled.has(candidate.path),
+      enabled: (override?.enabled ?? candidate.enabled) !== false && !disabled.has(candidate.path),
       identity,
       historyOnly: historyOnly.has(identity),
     });

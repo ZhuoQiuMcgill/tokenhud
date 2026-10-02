@@ -10,6 +10,7 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/react",
     "types": ["bun"],
     "strict": true,
     "noUncheckedIndexedAccess": true,

@@ -358,3 +358,89 @@ test("history_only_roots marks roots by identity", () => {
     ["old", true, true],
   ]);
 });
+
+// ── tokenhud: config labels apply by identity (PM ruling for T10) ────────────────────
+// cc-usage dropped a config entry that resolved to the default or env root, so those two
+// could never be renamed. tokenhud applies the entry's label and enabled flag to the
+// root it resolves to, wherever discovery found that root.
+
+describe("config entries apply to the root they resolve to", () => {
+  test("a config label renames the default root, which stays first and 'auto'", () => {
+    const home = join(tempDir(), "home");
+    makeRoot(home, ".claude");
+    for (const path of [join(home, ".claude"), "~/.claude", `${join(home, ".claude")}/`]) {
+      const roots = discoverClaudeRoots(
+        cfg({ claude_roots: [{ path, label: "main" }] }),
+        opts(home),
+      );
+      expect(roots.map((r) => [r.label, r.source, r.labelExplicit])).toEqual([
+        ["main", "auto", true],
+      ]);
+    }
+  });
+
+  test("a config label renames the CLAUDE_CONFIG_DIR root", () => {
+    const home = join(tempDir(), "home");
+    makeRoot(home, ".claude");
+    const company = join(tempDir(), "elsewhere", ".claude-company");
+    mkdirSync(join(company, "projects"), { recursive: true });
+    const roots = discoverClaudeRoots(
+      cfg({ claude_roots: [{ path: company, label: "client" }] }),
+      opts(home, { CLAUDE_CONFIG_DIR: company }),
+    );
+    expect(roots.map((r) => [r.label, r.source, r.labelExplicit])).toEqual([
+      ["personal", "auto", false],
+      ["client", "env", true],
+    ]);
+  });
+
+  test("through a symlink: the entry matches by resolved path", () => {
+    const base = tempDir();
+    const home = join(base, "home");
+    makeRoot(home, ".claude");
+    symlinkSync(join(home, ".claude"), join(base, "link"));
+    const roots = discoverClaudeRoots(
+      cfg({ claude_roots: [{ path: join(base, "link"), label: "main" }] }),
+      opts(home),
+    );
+    expect(roots.map((r) => r.label)).toEqual(["main"]);
+  });
+
+  test("an entry's enabled: false switches the default root off", () => {
+    const home = join(tempDir(), "home");
+    makeRoot(home, ".claude");
+    const roots = discoverClaudeRoots(
+      cfg({ claude_roots: [{ path: "~/.claude", enabled: false }] }),
+      opts(home),
+    );
+    expect(roots.map((r) => [r.label, r.enabled, r.labelExplicit])).toEqual([
+      ["personal", false, false],
+    ]);
+  });
+
+  test("a configured name is taken first; a later derived one is suffixed", () => {
+    const home = join(tempDir(), "home");
+    makeRoot(home, ".claude");
+    makeRoot(home, ".claude-work");
+    const roots = discoverClaudeRoots(
+      cfg({ claude_roots: [{ path: "~/.claude", label: "work" }] }),
+      opts(home),
+    );
+    expect(roots.map((r) => [r.label, r.source])).toEqual([
+      ["work", "auto"],
+      ["work-2", "home"],
+    ]);
+  });
+
+  test("Codex: a config label renames ~/.codex", () => {
+    const home = join(tempDir(), "home");
+    codexRoot(home, ".codex");
+    const roots = discoverCodexRoots(
+      cfg({ codex_roots: [{ path: "~/.codex", label: "openai" }] }),
+      opts(home),
+    );
+    expect(roots.map((r) => [r.label, r.source, r.labelExplicit])).toEqual([
+      ["openai", "auto", true],
+    ]);
+  });
+});

@@ -6,13 +6,13 @@
  * is and says how old that is (`stale_s`).
  *
  * The lock is T10's (`src/lock.ts`), reached through `AcquireWriterLock` so this module
- * doesn't define a second one. Until that lock exists in this build, `acquireWriterLock`
- * is null and the server never ingests.
+ * doesn't define a second one; `tokenhud mcp` passes it. With `acquireWriterLock` null
+ * (tests) the server never ingests.
  */
 
 /** A held single-writer lock: T10's `WriterLock` has exactly these methods. */
 export interface WriterLockHandle {
-  /** Refreshes the lock's heartbeat; false once another process has taken it over. */
+  /** Refreshes the holder record; true while held (an OS lock can't be taken over). */
   heartbeat(): boolean;
   release(): void;
 }
@@ -21,11 +21,11 @@ export interface WriterLockHandle {
 export type AcquireWriterLock = () => WriterLockHandle | null;
 
 export const STALE_AFTER_MS = 2 * 60_000;
-/** T10's heartbeat interval, well inside its 30 s stale limit, so a long pass keeps the lock. */
+/** T10's heartbeat interval: it keeps the lock's "who holds it" record current during a pass. */
 export const LOCK_HEARTBEAT_MS = 10_000;
 
 export interface FreshnessOptions {
-  /** Null until the single-writer lock exists in this build: then the store is never refreshed here. */
+  /** Null: the store is never refreshed here (tests; `tokenhud mcp` passes T10's lock). */
   acquireWriterLock: AcquireWriterLock | null;
   /** One incremental ingest pass into the store; rejects when it could not store anything. */
   ingestOnce: () => Promise<void>;
@@ -106,9 +106,9 @@ export class Freshener {
           "the store was not refreshed: another tokenhud process holds the ingest lock and keeps the store current",
       };
     }
-    // A pass can't be stopped part-way; a lost lock (this process was stalled past the
-    // stale limit and another took over) is logged, and the store's max-merge keeps the
-    // double write harmless.
+    // The lock is held by the operating system until release, so heartbeat() only refreshes
+    // its "who holds it" record; a false (never expected) is logged, and the store's
+    // max-merge would keep a double write harmless anyway.
     let lost = false;
     const beat = setInterval(() => {
       if (!lost && !lock.heartbeat()) {
