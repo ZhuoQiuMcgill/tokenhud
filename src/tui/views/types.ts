@@ -33,7 +33,12 @@ export interface View<VM, S> {
   /** Footer and help entries for this view's own keys, most important first. */
   readonly hints: readonly Hint[];
   readonly initial: S;
-  /** The view's answer to a key it owns: its new state, or undefined if it isn't its key. */
+  /**
+   * The view's answer to a key it owns: its new state, or undefined if it isn't its key. A
+   * printable key comes as typed ("W", "/"), any other by name ("return", "space").
+   */
   keys(key: string, state: S, vm: VM | undefined): S | undefined;
+  /** True while a text field of the view has the keys: the shell's own keys pause. */
+  capturing?(state: S): boolean;
   sections(vm: VM, state: S, ctx: ViewContext): Section[];
 }

@@ -185,6 +185,8 @@ export class Controller {
       if (key.name === "escape" || key.name === "?" || key.name === "q" || key.name === "return") {
         this.#set({ overlay: "none" });
       }
+    } else if (VIEWS[s.view].capturing?.(s.viewState[s.view]) === true) {
+      this.#viewKey(key);
     } else if (VIEW_KEYS[key.name] !== undefined) {
       const view = VIEW_KEYS[key.name] as ViewId;
       if (view !== s.view) {
@@ -201,9 +203,17 @@ export class Controller {
     } else if (key.name === "?") {
       this.#set({ overlay: "help" });
     } else {
-      const next = VIEWS[s.view].keys(key.name, s.viewState[s.view], s.views[s.view]);
-      if (next !== undefined) this.#set({ viewState: { ...s.viewState, [s.view]: next } });
+      this.#viewKey(key);
     }
+  }
+
+  /** Hands a key to the active view: a printable one as typed ("W"), any other by name. */
+  #viewKey(key: Key): void {
+    const s = this.#state;
+    const printable = key.sequence.length === 1 && key.sequence > " " && key.sequence !== "\u007f";
+    const name = printable ? key.sequence : key.name;
+    const next = VIEWS[s.view].keys(name, s.viewState[s.view], s.views[s.view]);
+    if (next !== undefined) this.#set({ viewState: { ...s.viewState, [s.view]: next } });
   }
 
   #cycleScope(): void {

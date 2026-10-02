@@ -3,7 +3,7 @@ import {
   Renderable,
   type RenderableOptions,
   type RenderContext,
-  type RGBA,
+  RGBA,
   TextAttributes,
 } from "@opentui/core";
 import { clip, textWidth } from "../format.ts";
@@ -32,6 +32,27 @@ export function segsWidth(segs: readonly Seg[]): number {
   let w = 0;
   for (const s of segs) w += textWidth(s.text);
   return w;
+}
+
+const TRANSPARENT = RGBA.fromValues(0, 0, 0, 0);
+
+/**
+ * Draws one-cell `char` `count` times from (x, y), keeping the background. OpenTUI's
+ * drawText takes about 20 µs for any non-ASCII text and a cell write about 0.05 µs, and a
+ * heat map or a column of bars draws hundreds of them a frame (T12 measured 4 ms).
+ */
+export function drawRun(
+  buffer: OptimizedBuffer,
+  char: string,
+  x: number,
+  y: number,
+  count: number,
+  fg: RGBA,
+  attributes: number = TextAttributes.NONE,
+): void {
+  for (let i = 0; i < count; i++) {
+    buffer.setCellWithAlphaBlending(x + i, y, char, fg, TRANSPARENT, attributes);
+  }
 }
 
 /**

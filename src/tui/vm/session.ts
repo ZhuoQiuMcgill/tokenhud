@@ -24,6 +24,7 @@ import {
   type Computed,
   changeRange,
 } from "./compute.ts";
+import { readAccountEvents } from "./history.ts";
 import type {
   AccountInfo,
   IngestMode,
@@ -481,6 +482,7 @@ export class VmSession {
       accounts: this.#accounts,
       scope: this.#settings.scope,
       window: this.#settings.window,
+      limitEvents: (range) => readAccountEvents(this.#db, this.#storeAccounts, range),
     };
   }
 

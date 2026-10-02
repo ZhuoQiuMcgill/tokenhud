@@ -3,7 +3,13 @@
 import { describe, expect, test } from "bun:test";
 import { type Config, defaultConfig } from "../../src/config.ts";
 import { Controller, initialState, type Key, type Ports } from "../../src/tui/controller.ts";
-import type { AccountInfo, HistoryVM, RootInfo, VmSettings } from "../../src/tui/vm/types.ts";
+import type {
+  AccountInfo,
+  HistoryDay,
+  HistoryVM,
+  RootInfo,
+  VmSettings,
+} from "../../src/tui/vm/types.ts";
 
 const key = (name: string, sequence = name.length === 1 ? name : ""): Key => ({
   name,
@@ -101,37 +107,76 @@ describe("global keys", () => {
 
   test("other keys go to the active view, whose state the shell keeps", () => {
     const { c, s } = setup();
-    const history: HistoryVM = {
-      weeks: 26,
-      days: Array.from({ length: 182 }, (_, i) =>
-        i > 100
-          ? null
-          : {
-              key: `d${i}`,
-              cost: 0,
-              tokens: 0,
-              pricedShare: 1,
-              estimatedCost: 0,
-              input: 0,
-              output: 0,
-              cache: 0,
-              topModel: null,
-            },
-      ),
-      today: 100,
-    };
-    c.vmMessage({ type: "views", views: { history }, accounts, scope: null, ms: 1 });
+    c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
     c.key(key("2"));
-    c.key(key("down"));
+    c.key(key("up"));
     c.key(key("left"));
-    expect(s().viewState.history).toEqual({ selected: 92 });
+    expect(s().viewState.history).toMatchObject({ day: "2026-09-21" });
     c.key(key("1"));
     c.key(key("2"));
-    expect(s().viewState.history).toEqual({ selected: 92 }); // kept across switches
+    expect(s().viewState.history).toMatchObject({ day: "2026-09-21" }); // kept across switches
     c.key(key("x"));
-    expect(s().viewState.history).toEqual({ selected: 92 });
+    expect(s().viewState.history).toMatchObject({ day: "2026-09-21" });
+  });
+
+  test("a printable key reaches the view as typed, so W is not w", () => {
+    const { c, s } = setup();
+    c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
+    c.key(key("2"));
+    c.key({ name: "w", sequence: "W", ctrl: false });
+    expect(s().viewState.history).toMatchObject({ group: "day", open: "week" });
+    c.key({ name: "w", sequence: "w", ctrl: false });
+    expect(s().viewState.history).toMatchObject({ group: "week", open: null });
+  });
+
+  test("while a view types into a field, the shell's keys go to it; Ctrl-C still quits", () => {
+    const { c, s, calls } = setup();
+    c.vmMessage({ type: "views", views: { history: historyVM() }, accounts, scope: null, ms: 1 });
+    c.key(key("2"));
+    for (const k of ["/", "q", "1", "a", "s", "?"]) c.key(key(k));
+    expect(s()).toMatchObject({ view: "history", overlay: "none", scope: null });
+    expect(s().viewState.history).toMatchObject({ typing: true, filter: "q1as?" });
+    expect(calls).toEqual([]);
+    c.key(key("return"));
+    c.key(key("1"));
+    expect(s().view).toBe("overview");
+    c.key(key("2"));
+    c.key(key("/"));
+    c.key({ name: "c", sequence: "\u0003", ctrl: true });
+    expect(calls).toEqual(["quit"]);
   });
 });
+
+/** History's view model: 59 empty days, Aug 2 to Tue Sep 29, all on the heat map. */
+function historyVM(): HistoryVM {
+  const first = Date.UTC(2026, 7, 2);
+  const zero = {
+    cost: 0,
+    tokens: 0,
+    pricedShare: 1,
+    estimatedCost: 0,
+    input: 0,
+    output: 0,
+    cache: 0,
+  };
+  const day = (i: number): HistoryDay => ({
+    ...zero,
+    key: new Date(first + i * 86_400_000).toISOString().slice(0, 10),
+    days: 1,
+    models: [],
+    accounts: [],
+    events: [],
+  });
+  return {
+    days: Array.from({ length: 59 }, (_, i) => day(i)),
+    gridStart: 0,
+    weeks: [],
+    months: [],
+    weeksTotal: zero,
+    monthsTotal: zero,
+    average: { cost: 0, tokens: 0 },
+  };
+}
 
 describe("Worker messages", () => {
   test("views merge into what's there; an error shows until the next views", () => {

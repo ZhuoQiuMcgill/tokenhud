@@ -60,21 +60,63 @@ export interface OverviewVM {
   readonly pricedShare: number;
 }
 
-export interface HistoryDay extends Priced {
-  /** YYYY-MM-DD, local. */
-  readonly key: string;
+/** A model's or an account's part of a period: what History's shares and filter use. */
+export interface HistoryShare extends Priced {
+  /** A model id, or an account's display label. */
+  readonly name: string;
+}
+
+/** Tokens split as History's table shows them, with their cost. */
+export interface HistoryTotal extends Priced {
   readonly input: number;
   readonly output: number;
   readonly cache: number;
-  readonly topModel: string | null;
+}
+
+/** A local day, Monday-start week or calendar month of usage, as History lists it. */
+export interface HistoryPeriod extends HistoryTotal {
+  /** YYYY-MM-DD for a day or a week (its Monday), YYYY-MM for a month. */
+  readonly key: string;
+  /** Its days up to today (1 for a day): the base of its "vs average" ratio. */
+  readonly days: number;
+  /** Every model used, most cost first, then most tokens. */
+  readonly models: readonly HistoryShare[];
+  /** Every account with usage, most cost first, then most tokens. */
+  readonly accounts: readonly HistoryShare[];
+}
+
+/** A limit event (T8) as the day detail shows it. */
+export interface HistoryEvent {
+  /** The account's display label. */
+  readonly account: string;
+  /** Reached 100 %, or a weekly window passed 80 %. */
+  readonly kind: "reached" | "passed_80";
+  /** The window's label when the event was recorded ("5-HOUR", "WEEKLY"). */
+  readonly window: string;
+  readonly at: number;
+  /** For `reached`: when the window was found usable again, or null. */
+  readonly resumedAt: number | null;
+}
+
+export interface HistoryDay extends HistoryPeriod {
+  /** Its limit events, oldest first. */
+  readonly events: readonly HistoryEvent[];
 }
 
 export interface HistoryVM {
-  readonly weeks: number;
-  /** Week-major, Monday first: `weeks * 7` days, null after today. */
-  readonly days: readonly (HistoryDay | null)[];
-  /** Index of today in `days`. */
-  readonly today: number;
+  /** Every day from the 1st of the heat map's first month to today, oldest first. */
+  readonly days: readonly HistoryDay[];
+  /** Index in `days` of the heat map's first day: the Monday 25 weeks before this week's. */
+  readonly gridStart: number;
+  /** The heat map's 26 weeks, oldest first; the last runs to today. */
+  readonly weeks: readonly HistoryPeriod[];
+  /** Whole months from the heat map's first, oldest first; the last runs to today. */
+  readonly months: readonly HistoryPeriod[];
+  /** The 26 weeks together, and all the months together: the tables' totals rows. */
+  readonly weeksTotal: HistoryTotal;
+  readonly monthsTotal: HistoryTotal;
+  /** Daily cost and tokens averaged over the 30 days before today: the ratios' baseline. */
+  readonly average: { readonly cost: number; readonly tokens: number };
 }
 
 export interface ModelRow extends Priced {
