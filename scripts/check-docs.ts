@@ -4,13 +4,16 @@
 //   query is one json's help lists;
 // - every TOKENHUD_* variable is read somewhere in src/ or the installers;
 // - every key the README names (its "Keys" tables and inline code in its prose) is one the
-//   TUI binds, and every key the TUI's footer and help show is in the "Keys" tables.
+//   TUI binds; every key the TUI's footer and help show is in the "Keys" tables; and the
+//   global keys and each view's own keys are listed where they belong (the first table, and
+//   under `### <view title>`).
 //
 //   bun scripts/check-docs.ts      # prints the problems, exit 1 if any
 //
 // test/docs.test.ts runs it in `bun run check`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { VIEWS } from "../src/tui/views/index.ts";
 
 const root = join(import.meta.dir, "..");
 const cli = join(root, "src", "cli.ts");
@@ -237,20 +240,50 @@ export function keymap(): { bound: Set<string>; shown: Set<string> } {
   return { bound, shown };
 }
 
-/** The keys a "## Keys" section documents: the code spans in its tables' first column. */
-export function documentedKeys(text: string): Array<{ line: number; key: string }> {
+/**
+ * The keys a "## Keys" section documents: the code spans in its tables' first column, with
+ * the `### ` heading they are under ("" for the section's first tables, the global keys).
+ */
+export function documentedKeys(
+  text: string,
+): Array<{ line: number; key: string; section: string }> {
   const lines = text.split("\n");
   const start = lines.findIndex((l) => /^## Keys\b/.test(l));
   if (start < 0) return [];
-  const out: Array<{ line: number; key: string }> = [];
+  const out: Array<{ line: number; key: string; section: string }> = [];
+  let section = "";
   for (let i = start + 1; i < lines.length && !/^## /.test(lines[i] as string); i++) {
+    const heading = /^### (.+)$/.exec(lines[i] as string);
+    if (heading !== null) {
+      section = (heading[1] as string).trim();
+      continue;
+    }
     const cells = (lines[i] as string).split("|");
     if (cells.length < 3 || /^\s*-+\s*$/.test(cells[1] as string)) continue;
     for (const m of (cells[1] as string).matchAll(/`([^`]+)`/g)) {
-      out.push({ line: i + 1, key: m[1] as string });
+      out.push({ line: i + 1, key: m[1] as string, section });
     }
   }
   return out;
+}
+
+/**
+ * Where each key the TUI shows belongs in the README: the global keys (app.tsx's `GLOBAL`)
+ * in the Keys section's first table (""), each view's own keys (its `hints`) under a
+ * `### <view title>` heading.
+ */
+export function keySections(): Map<string, string[]> {
+  const app = readFileSync(join(root, "src", "tui", "app.tsx"), "utf8");
+  const block = /const GLOBAL = \{([\s\S]*?)\} as const/.exec(app)?.[1] ?? "";
+  const sections = new Map([
+    ["", [...block.matchAll(/key: "([^"]+)"/g)].map((m) => m[1] as string)],
+  ]);
+  for (const view of Object.values(VIEWS))
+    sections.set(
+      view.title,
+      view.hints.map((h) => h.key),
+    );
+  return sections;
 }
 
 export function checkDocs(): string[] {
@@ -280,6 +313,13 @@ export function checkDocs(): string[] {
   const listed = new Set(documented.map((d) => d.key));
   for (const key of keys.shown) {
     if (!listed.has(key)) problems.push(`README.md: the TUI shows key '${key}', ## Keys doesn't`);
+  }
+  for (const [section, shown] of keySections()) {
+    const there = new Set(documented.filter((d) => d.section === section).map((d) => d.key));
+    const where = section === "" ? "the global keys" : `### ${section}`;
+    for (const key of shown) {
+      if (!there.has(key)) problems.push(`README.md: ## Keys doesn't list '${key}' under ${where}`);
+    }
   }
   return problems;
 }

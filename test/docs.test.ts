@@ -5,8 +5,12 @@ import {
   cliSpec,
   documentedKeys,
   invocations,
+  keySections,
   proseKeys,
 } from "../scripts/check-docs.ts";
+import { guard } from "./guard.ts";
+
+guard();
 
 describe("the user docs", () => {
   test("mention only commands, options, variables and keys that exist", () => {
@@ -59,21 +63,30 @@ describe("the docs checker", () => {
     expect(proseKeys(md).map((k) => k.key)).toEqual(["z", "Ctrl-X", "↑/↓"]);
   });
 
-  test("reads keys from the first column of the Keys section's tables only", () => {
+  test("reads keys from the first column of the Keys section's tables, by subsection", () => {
     const md = [
       "## Keys",
       "",
       "| Key | Does |",
       "|---|---|",
       "| `a` | account scope (not `b`) |",
+      "### History",
       "| `q` or `Ctrl-C` | quit |",
       "## Other",
       "| `z` | not a key |",
     ].join("\n");
     expect(documentedKeys(md)).toEqual([
-      { line: 5, key: "a" },
-      { line: 6, key: "q" },
-      { line: 6, key: "Ctrl-C" },
+      { line: 5, key: "a", section: "" },
+      { line: 7, key: "q", section: "History" },
+      { line: 7, key: "Ctrl-C", section: "History" },
     ]);
+  });
+
+  test("knows the global keys and every view's own keys", () => {
+    const sections = keySections();
+    expect([...sections.keys()]).toEqual(["", "Overview", "History", "Models", "Accounts"]);
+    expect(sections.get("")).toEqual(["1-4", "a", "s", "?", "q"]);
+    for (const [section, keys] of sections)
+      expect([section, keys.length > 0]).toEqual([section, true]);
   });
 });
