@@ -260,8 +260,8 @@ export interface WiringOptions {
   env?: Env;
   home?: string;
   /**
-   * The single-writer ingest lock (T10's `src/lock.ts`). Null until it exists in this
-   * build: the server then answers usage from the store as it is.
+   * The single-writer ingest lock (T10's `src/lock.ts`); `tokenhud mcp` passes it. Null:
+   * the server answers usage from the store as it is.
    */
   acquireWriterLock?: AcquireWriterLock | null;
   /** Tests: a fake clock for waits, a fixed now and zone, and T8's fetching mocked. */
