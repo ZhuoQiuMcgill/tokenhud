@@ -55,8 +55,10 @@ host_libc() {
 }
 
 # fetch URL FILE: 0 when downloaded, 1 when the server has no such file (HTTP 404), 2 when
-# the download failed otherwise, with the reason in $why. Over https only, redirects
-# included, unless TOKENHUD_INSECURE_TEST=1.
+# the download failed otherwise, with the reason in $why. Unless TOKENHUD_INSECURE_TEST=1,
+# curl is held to https, redirects included; wget only starts at an https URL (GNU wget's
+# --https-only doesn't stop a redirect, busybox's wget has no such option), which GitHub
+# never redirects away from.
 fetch() {
   if [ "$downloader" = curl ]; then
     if [ "$insecure" = 1 ]; then

@@ -164,7 +164,7 @@ The footer shows the keys of the view you are in.
 
 | Key | Does |
 |---|---|
-| `←/→` | Change the window: today, this week, this month or all time (and the last 1, 5 or 24 hours on a wide screen) |
+| `←/→` | Change the window: today, this week, this month or all time, then the last 1, 5 or 24 hours (their tabs show on a wide screen) |
 | `↑/↓` | Select a model |
 | `enter` | Show or hide the selected model's rates and who used it |
 | `o` | Sort by cost, tokens or name |
