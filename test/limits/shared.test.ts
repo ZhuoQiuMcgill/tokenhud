@@ -216,6 +216,27 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     expect(h.calls.length).toBeLessThanOrEqual(24 + 2 + 2 * 5);
   });
 
+  test("a round held back by the 30 s gap alone is timed to its end (T18 critique M1)", async () => {
+    // win-like is due for its 30-minute verification just after an on-demand fetch of
+    // personal-like (another process's, say) that came too early to verify it.
+    const [p, w] = pair() as [Root, Root];
+    const h = harness([p, w]);
+    h.state.links = { same: [[p.identity, w.identity]], separate: [] };
+    await h.rounds(0);
+    h.clock.now = T0 + 30 * MIN - 10 * S;
+    await h.service.refresh(p_, 60);
+    expect(h.calls).toEqual([p_, w_, p_]);
+    // 15 s later the verification is due, but personal-like is in its 30 s gap: nothing is
+    // fetched, and the next round comes at the gap's end, not with personal-like's next
+    // fetch 4 min 45 s on, which another process's next on-demand fetch could beat again.
+    h.clock.now += 15 * S;
+    expect(await h.service.refreshDue()).toBe(15 * S);
+    expect(h.calls).toEqual([p_, w_, p_]);
+    h.clock.now += 15 * S;
+    await h.service.refreshDue();
+    expect(h.calls).toEqual([p_, w_, p_, p_, w_]);
+  });
+
   test("the cross-process lease is the group's, not a member's", async () => {
     const [p, w] = pair() as [Root, Root];
     const h = harness([p, w]);
@@ -225,8 +246,8 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     const member = tryLease(leasePath(h.limitsPath, p.identity), ttl, () => h.clock.now);
     await h.service.refresh(null, 0);
     member?.release();
-    // (On demand, the account only: win-like, never asked yet, waits for a round, T18.)
-    expect(h.calls).toEqual([p_]);
+    // (win-like, never asked yet, is verified right after, on demand too.)
+    expect(h.calls).toEqual([p_, w_]);
     // ...while one fetching the group does, for either member.
     h.clock.now += 5 * MIN;
     const group = tryLease(
@@ -237,11 +258,10 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     expect(group).not.toBeNull();
     await h.service.refresh(w_, 0);
     await h.service.refreshDue();
-    expect(h.calls).toEqual([p_]);
+    expect(h.calls).toEqual([p_, w_]);
     group?.release();
-    // The round fetches the group and verifies win-like back to back.
-    await h.service.refreshDue();
-    expect(h.calls).toEqual([p_, p_, w_]);
+    await h.service.refresh(w_, 0);
+    expect(h.calls).toEqual([p_, w_, p_]);
   });
 
   test("a manual link: one fetch a round from the first; the next round is 5 minutes off", async () => {
@@ -378,11 +398,11 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     h.clock.now += 30 * S;
     const [outcome] = await h.service.refresh(w_, 60);
     expect(outcome).toEqual({ account: w.identity, fetched: true, error: null });
-    // Through the group's first member, once each time: no verification on demand (T18).
-    expect(h.calls).toEqual([p_, p_]);
+    // Through the group's first member; win-like, never asked, verified with the first.
+    expect(h.calls).toEqual([p_, w_, p_]);
   });
 
-  test("on demand: one fetch for the account, no partner fetch, no auto-detection (T18)", async () => {
+  test("on demand, a root on its own: one fetch, no partner fetch, no auto-detection (T18)", async () => {
     // Two roots whose resets agree, not linked yet: partners.
     const [p, w] = pair() as [Root, Root];
     const h = harness([p, w]);
@@ -510,8 +530,10 @@ describe("requests per hour stay bounded", () => {
     // an hour.
     expect(count(h.calls, w_)).toBe(12);
     expect(count(h.calls, p_)).toBe(52);
-    // personal-like's own round fetch at 0, its first; no partner fetch after.
-    expect(partnered).toEqual([0]);
+    // personal-like's own round fetch at 0, its first, and a partner fetch or two while
+    // the pair is being proven; none after.
+    expect(partnered.length).toBeLessThanOrEqual(3);
+    expect(Math.max(...partnered)).toBeLessThanOrEqual(600);
     // A new 5-hour instance for personal-like between two rounds: still nothing on demand,
     // and at most one partner fetch in a round.
     const calls = h.calls.length;
@@ -546,76 +568,181 @@ describe("requests per hour stay bounded", () => {
   });
 });
 
-describe("requests per hour, with and without an MCP server polling (T18's cap)", () => {
-  /** Use and resets that never move: an idle account, for both roots. */
-  const idle = (ms: number) =>
-    capture("claude", ms / 1000, {
-      session: { pct: 20, resets: FIVE_HOUR, label: "5-HOUR" },
-      weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
+/**
+ * The TUI's limits service and an MCP server's, as they run: two processes on one
+ * limits.json and one clock. The TUI's rounds run on its own timer, each after the delay
+ * the last `refreshDue` returned; the MCP server refreshes one root, for data at most 60 s
+ * old, every `poll` seconds, as an agent polling `should_wait` asks. Not a fixed grid: the
+ * two cadences drift against each other as they do live (T18 critique M1).
+ */
+function twoProcesses(roots: Root[]) {
+  const dir = tempDir();
+  const limitsPath = join(dir, "limits.json");
+  const clock = { now: T0 };
+  /** Every request: which process, which root, and when. */
+  const calls: { by: "tui" | "mcp"; label: string; at: number }[] = [];
+  let requests = 0;
+  const state = {
+    fetch: (async () => account(clock.now, requests)) as (root: Root) => Promise<Capture>,
+    mtimes: new Map<string, number>(),
+  };
+  const service = (by: "tui" | "mcp") =>
+    new LimitsService({
+      limitsPath,
+      roots: () => roots,
+      fetchClaude: (root) => {
+        calls.push({ by, label: root.label, at: clock.now });
+        requests++;
+        return state.fetch(root);
+      },
+      credentialsMtime: (root) => state.mtimes.get(root.label) ?? 1,
+      now: () => clock.now,
     });
-
+  const tui = service("tui");
+  const mcp = service("mcp");
+  let tuiAt = T0;
+  let mcpAt = T0;
   /**
-   * Requests in the third hour of three: a scheduled round every 5 minutes and, with `mcp`,
-   * a refresh of personal-like every 10 s for data at most 60 s old, as an MCP server
-   * polling `should_wait` asks. Split into on-demand requests (the MCP's own) and the
-   * rounds'.
+   * Runs until `until` (ms after T0): the TUI when `withTui`, the MCP server's refresh of
+   * `asked` every `poll` seconds. `each` runs before every event.
    */
-  async function perHour(kind: "linked" | "candidate" | "different", mcp: boolean) {
-    const [p, w] = pair() as [Root, Root];
-    const h = harness([p, w]);
-    if (kind === "linked") h.state.links = { same: [[p.identity, w.identity]], separate: [] };
-    h.state.fetch = async (root) => {
-      if (kind !== "different") return idle(h.clock.now);
-      // Two accounts that share only the weekly reset hour.
-      return root === w
-        ? capture("claude", h.clock.now / 1000, {
-            weekly_all: { pct: 12, resets: WEEK + 0.3, label: "WEEKLY" },
-          })
-        : capture("claude", h.clock.now / 1000, {
-            session: { pct: 30, resets: FIVE_HOUR, label: "5-HOUR" },
-            weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
-          });
-    };
-    let demand = 0;
-    let rounds = 0;
-    for (let t = 0; t < 3 * 3600; t += 10) {
-      h.clock.now = T0 + t * S;
-      const counted = t >= 2 * 3600;
-      if (t % 300 === 0) {
-        const before = h.calls.length;
-        await h.service.refreshDue();
-        if (counted) rounds += h.calls.length - before;
-      }
-      if (mcp) {
-        const before = h.calls.length;
-        await h.service.refresh(p_, 60);
-        if (counted) demand += h.calls.length - before;
+  const run = async (
+    until: number,
+    o: { withTui: boolean; poll: number; asked: string },
+    each?: () => void,
+  ) => {
+    if (!o.withTui) tuiAt = Number.POSITIVE_INFINITY;
+    for (;;) {
+      const t = Math.min(tuiAt, mcpAt);
+      if (t >= T0 + until) break;
+      clock.now = t;
+      each?.();
+      if (t === tuiAt) tuiAt = t + (await tui.refreshDue());
+      if (t === mcpAt) {
+        await mcp.refresh(o.asked, 60);
+        mcpAt = t + o.poll * S;
       }
     }
-    const state = h.file().pairs?.[pairKey(p.identity, w.identity)];
-    const grouped = h.limits().getLimits(w.identity)?.group !== null;
-    return { demand, rounds, grouped, proven: provenDifferent(state) };
+    clock.now = T0 + until;
+  };
+  const limits = () =>
+    new Limits({ limitsPath, roots: () => roots, db: null, spend: null, now: () => clock.now });
+  const file = () => loadLimitsCache(limitsPath);
+  return { clock, calls, state, run, limits, file };
+}
+
+describe("verification can't be starved, and the requests it costs (T18 critique M1, M2)", () => {
+  /**
+   * A pair linked in the first hour, with the TUI and an MCP server polling personal-like.
+   * At 2 h win-like signs in to another account: by a credential file that changes, or
+   * silently (a token kept in the system keychain, say). From 1 h the TUI runs on, or only
+   * the MCP server does.
+   */
+  async function switched(poll: number, withTui: boolean, credentialFile: boolean) {
+    const [p, w] = pair() as [Root, Root];
+    const h = twoProcesses([p, w]);
+    const asked = { poll, asked: p_ };
+    await h.run(HOUR, { ...asked, withTui: true });
+    const key = pairKey(p.identity, w.identity);
+    expect(h.file().pairs?.[key]).toMatchObject({ linked: true, disagree: 0 });
+    await h.run(2 * HOUR, { ...asked, withTui });
+    h.state.fetch = async (root) => (root === w ? other(h.clock.now) : account(h.clock.now, 0));
+    if (credentialFile) h.state.mtimes.set(w_, 2);
+    /** How long after the switch win-like first showed apart (ms). */
+    const seen: { apart: number | null } = { apart: null };
+    await h.run(3 * HOUR, { ...asked, withTui }, () => {
+      if (seen.apart === null && h.limits().getLimits(w.identity)?.group === null) {
+        seen.apart = h.clock.now - (T0 + 2 * HOUR);
+      }
+    });
+    return {
+      apart: seen.apart,
+      state: h.file().pairs?.[key],
+      shown: h.limits().getLimits(w.identity),
+    };
   }
 
-  // Before T18, with MCP polling: linked 54, a candidate 104 (52 + 52 mirrored partner
-  // fetches), proven different 64. Without MCP polling nothing changes: 14, 24, 24.
   test.each([
-    ["linked (manual)", false, 0, 14, "linked"],
-    ["linked (manual)", true, 50, 4, "linked"],
-    ["an idle candidate", false, 0, 24, "candidate"],
-    ["an idle candidate", true, 50, 14, "candidate"],
-    ["proven different", false, 0, 24, "different"],
-    ["proven different", true, 52, 12, "different"],
+    [10, true],
+    [15, true],
+    [60, true],
+    [10, false],
+    [15, false],
+    [60, false],
   ] as const)(
-    "%s, MCP polling %p: %i on demand + %i in rounds",
-    async (_, mcp, demand, rounds, kind) => {
-      const got = await perHour(kind, mcp);
-      expect([got.demand, got.rounds]).toEqual([demand, rounds]);
-      // The cap: at most 30 an hour besides the MCP's own, and those one a minute at most.
-      expect(got.rounds).toBeLessThanOrEqual(30);
-      expect(got.demand).toBeLessThanOrEqual(60);
-      // One card for the linked pair, two for the others; the different pair proven so.
-      expect([got.grouped, got.proven]).toEqual([kind === "linked", kind === "different"]);
+    "MCP polling every %i s, TUI running %p: a root switched silently shows apart within one 30-minute verification",
+    async (poll, withTui) => {
+      const got = await switched(poll, withTui, false);
+      // Within 30 minutes of its last check, plus the MCP's or the round's next fetch.
+      // Before (T18 as first written), with the TUI and a 10 s poll: never, in 2 hours.
+      expect(got.apart).not.toBeNull();
+      expect(got.apart as number).toBeLessThanOrEqual(30 * MIN + 2 * poll * S);
+      expect(got.shown?.windows.map((x) => x.utilization)).toEqual([0.03, 0.11]);
+      // With the TUI, its rounds see a second mismatch and unlink; without it, the link
+      // stays suspended, which shows the roots apart just the same.
+      if (withTui) expect(provenDifferent(got.state)).toBe(true);
+      else expect(got.state).toMatchObject({ linked: true, disagree: 1 });
+    },
+  );
+
+  test.each([
+    [10, true],
+    [60, true],
+    [10, false],
+    [60, false],
+  ] as const)(
+    "MCP polling every %i s, TUI running %p: a credential file that changes is checked at once",
+    async (poll, withTui) => {
+      const got = await switched(poll, withTui, true);
+      expect(got.apart).not.toBeNull();
+      expect(got.apart as number).toBeLessThanOrEqual(2 * poll * S);
+    },
+  );
+
+  /**
+   * Requests in the third hour: the first with the TUI and an MCP server polling
+   * personal-like every 10 s, then the TUI on or off. Split into the MCP's and the TUI's.
+   */
+  async function perHour(kind: "linked" | "idle", withTui: boolean) {
+    const [p, w] = pair() as [Root, Root];
+    const h = twoProcesses([p, w]);
+    if (kind === "idle") {
+      // One account whose use never moves: it never links (T16), so it stays two roots.
+      h.state.fetch = async () =>
+        capture("claude", h.clock.now / 1000, {
+          session: { pct: 20, resets: FIVE_HOUR, label: "5-HOUR" },
+          weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
+        });
+    }
+    const asked = { poll: 10, asked: p_ };
+    await h.run(HOUR, { ...asked, withTui: true });
+    await h.run(2 * HOUR, { ...asked, withTui });
+    const from = h.calls.length;
+    await h.run(3 * HOUR, { ...asked, withTui });
+    const hour = h.calls.slice(from);
+    const linked = h.limits().getLimits(w.identity)?.group !== null;
+    return {
+      mcp: hour.filter((c) => c.by === "mcp").length,
+      tui: hour.filter((c) => c.by === "tui").length,
+      linked,
+    };
+  }
+
+  // Before T18: linked 54, idle 104 (52 + 52 partner fetches mirroring the MCP's). The
+  // linked pair is verified by the MCP's own fetches, so the TUI's rounds have nothing to do.
+  test.each([
+    ["a linked pair", true, 53, 0, "linked"],
+    ["a linked pair", false, 53, 0, "linked"],
+    ["an idle shared account", true, 48, 18, "idle"],
+    ["an idle shared account", false, 52, 0, "idle"],
+  ] as const)(
+    "%s, MCP every 10 s, TUI running %p: %i requests from the MCP + %i from the TUI",
+    async (_, withTui, mcp, tui, kind) => {
+      const got = await perHour(kind, withTui);
+      expect([got.mcp, got.tui]).toEqual([mcp, tui]);
+      // The cap: at most 30 an hour besides the MCP's own.
+      expect(got.tui).toBeLessThanOrEqual(30);
+      expect(got.linked).toBe(kind === "linked");
     },
   );
 });

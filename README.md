@@ -361,9 +361,10 @@ directories on an idle account show apart until it is used. Once they are linked
 other directory is still fetched every 30 minutes, and once more right away when its
 credential file changes. If a reset differs, the two show apart straight away, and a second
 difference in a row unlinks them; a difference in use alone is checked again next round.
-These checks happen in the limits fetches the TUI makes every 5 minutes while it runs; the
-MCP server fetches only the account it is asked about, so an agent asking often adds no
-fetches of the other directory.
+These checks ride on the account's own fetches, the TUI's and the MCP server's alike.
+Finding two directories on one account in the first place is left to the fetches the TUI
+makes every 5 minutes: the MCP server fetches only the account it is asked about, so an
+agent asking often adds no fetches of a directory not linked to it.
 
 An account's menu (`enter` on it, in the Accounts view or in settings under Accounts) links
 it to another by hand ("Same account as…") and unlinks it ("Unlink"). These are saved as
