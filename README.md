@@ -10,50 +10,9 @@ wait for a reset instead of failing halfway through a task.
 tokenhud succeeds [cc-usage](https://github.com/ZhuoQiuMcgill/cc-usage) and imports its
 history on first run.
 
-```
- tokenhud   1 Overview   2 History   3 Models   4 Accounts              scope all accounts   as of 15:10
-─────────────────────────────────────────────────────────────────────────────────────────────────────────
+![tokenhud's Overview on made-up accounts: a limits card per account, spend from the last hour to all time, a 24-hour cost chart, the top models and the week's limit events](docs-public/images/hero.png)
 
- LIMITS                                     pace = spend rate over the last 30 min · times are estimates
- ╭─ personal · claude ─────────────────────────────╮  ╭─ old-laptop · claude ──────────────────────────╮
- │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━         78%  1h47m │  │ not signed in here                             │
- │ week ━━━━━━━━                        27%  4d05h │  │                                                │
- │ pace $1.3/h → hits 100% at 16:29                │  │ pace $0/h   → idle                             │
- ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯
- ╭─ work · claude (47m old) ───────────────────────╮  ╭─ codex · codex ────────────────────────────────╮
- │ 5h   ━━━━                            12%  3h54m │  │ 5h   ━━                              8%  4h30m │
- │ week ━━━                              9%  2d10h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━       83% 19h04m │
- │ pace $0/h   → idle                              │  │ pace $0.04/h → week ends ~89%                  │
- ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯
-
- SPEND                                                                           * not all tokens priced
-                today    this week   this month     all-time
-  cost        $10.07*      $21.38*      $13.48*     $226.19*
-  tokens         8.5M        20.7M        12.5M       240.9M
-
- ACTIVITY · cost per 15 min · 24h                                                    peak $1.46 at 01:00
- $1.46                                        █                                             ▃ ▃ ▃ ▃
-                                              █                                             █ █ █ █
-                                              █                             ▄               █ █ █ █
- $0.73                                        █                             █               █ █ █ █
-                                              █                            ▂█           ▁▃  █ █ █ █  ▁
-                                              █                            ██           ██  █ █ █ █  █▁
-     0                                        █▆                           ██           ██  █ █ █ █  ██
-       -24h                    -18h                    -12h                   -6h                   now
-
- TOP MODELS · 24h
- Opus 4.8                    $7.66  76% ━━━━━
- gpt-5.6-sol                 $1.42  14% ━
- gpt-5.5                     $0.99  10% ━
- Mystery 9                unpriced   0%
-
- LIMIT EVENTS · 7 days
-  Fri 12:10  work      5-hour limit reached  —
-  Mon 13:10  personal  5-hour limit reached  resumed 15:10
-  Wed 01:10  codex     weekly passed 80%     —
-```
-
-<sub>`tokenhud --once --width 105` on made-up accounts and usage.</sub>
+<sub>The Overview on made-up accounts. [Views](#views) explains every part of every screen.</sub>
 
 ## Install
 
@@ -194,27 +153,130 @@ accounts. They are saved in `~/.config/tokenhud/config.json`.
 
 ## Views
 
-1. **Overview**: a card per account with its 5-hour and weekly limits (how full, and how
-   long until each resets), its spend pace over the last 30 minutes, and what that pace
-   leads to: the time it hits 100 %, where the week ends, or "safe until reset". A card
-   says when its limits are stale, or "not signed in here" for an account that isn't. Then
-   the agents using tokenhud's MCP server, spend for today, this week, this month and all
-   time (also the last 1 and 5 hours on a wide screen), activity over the last 5 hours, 24
-   hours or 7 days, the top models, and the past week's limit events.
-2. **History**: a 26-week calendar heat map of daily cost, a card for the selected day
-   (cost, tokens, models and any limit hits), and a table by day, week or month with each
-   period compared to the 30-day average. A model filter narrows every number to one model.
-3. **Models**: a rate board: every model's input, output and cache tokens with the rate it
-   is billed at, its cost and its share, for the window you pick. The selected model's card
-   shows all of its rates, where they come from, and how its use splits across accounts.
-4. **Accounts**: every account with its status and highest limit use; the selected one in
-   detail: its config directory and history, its limit windows and when they reset, its
-   weekly usage at the last 8 resets, 30 days of spend, its models, and its agents' recent
-   MCP calls.
+tokenhud has four views; the number keys switch between them (see [Keys](#keys)). The
+screenshots below are tokenhud at 120 × 45, the top half of a portrait monitor, on made-up
+accounts. In each legend, the numbers and colours match the boxes in the picture above it.
+
+### Overview screen
+
+How close each account is to its limits, and what your usage is costing right now.
+
+<!-- shots:overview -->
+![The Overview with seven numbered boxes: header, limits cards, MCP agents, spend, activity chart, top models, limit events](docs-public/images/overview.png)
+
+1. 🟥 **Header.** The four views, the one you are on highlighted. On the right, the account scope: `all accounts`, or the one account that every number in every view is narrowed to. Then the status dot. `● live · 5s` (teal): this tokenhud reads new transcript lines as Claude Code and Codex write them, and refreshes its clock-driven numbers every 5 seconds (the refresh interval setting). `● stale` (amber): it isn't reading transcripts itself, because another tokenhud is (this one shows what that one stores), or it is still starting, or reading failed. `● error` (red): the numbers have stopped updating while tokenhud restarts the part that computes them.
+2. 🟧 **Limits.** A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder that pace is measured over the last 30 minutes and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.
+3. 🟨 **Agents.** Shown while tokenhud's MCP server runs for a Claude Code session (see [Use with Claude Code](#use-with-claude-code)). One line per agent session that called a tool in the last 10 minutes: the account the call was about, the tool, and how long ago. With no recent calls, it says how many servers are running.
+4. 🟩 **Spend.** What your usage would cost at the providers' API prices (not what your subscription costs), and its tokens: input, output, cache reads and cache writes together. `1h` and `5h` are the last 60 minutes and the last 5 hours (shown on screens 120 columns wide or more). `today`, `this week` and `this month` start at local midnight, on Monday and on the 1st. `all-time` is everything tokenhud has stored, including usage whose transcripts are gone. For `*` and `≈`, see [Glyphs and colours](#glyphs-and-colours).
+5. 🟦 **Activity.** Cost over the last 24 hours, one bar per time slot (the view can switch to the last 5 hours or 7 days, and to tokens). The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.
+6. 🟪 **Top models.** The five models with the most cost in the last 24 hours: the cost, its share of the 24 hours' cost, and a bar of that share. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced` and comes last. Under the list, the chart's tallest slot and when it started.
+7. 🟫 **Limit events.** Limits hit in the last 7 days: day and time, account, and what happened. `5-hour limit reached` (red) is a window that reached 100 %; `weekly passed 80%` (amber) is a weekly window crossing 80 %. After a reached limit, `resumed 16:05` is when tokenhud first saw the window usable again after its reset; `resets` and a time, when a window that is still full will reset; `—`, that no fetch has seen it since. Limits reached come first, newest first, then the 80 % marks. Up to 8 lines; the rest are counted on the last one.
+<!-- /shots:overview -->
+
+#### Reading a limits card
+
+<!-- shots:overview-card -->
+![Close-up of four limits cards, with the account, meters, percentages and countdowns, pace, verdict, stale age and a not-signed-in account boxed and numbered](docs-public/images/overview-card.png)
+
+1. 🟥 **Account.** The account's label and its provider, `claude` or `codex`. The label comes from the account's config directory (`~/.claude-work` is `work`) unless you renamed it.
+2. 🟧 **Meters.** The `5h` row is the 5-hour window, the `week` row the weekly one. Each bar is how much of that limit is used: blue below 50 %, amber from 50 %, red-orange from 80 %. A model's own weekly limit isn't on the card; the Accounts view lists it.
+3. 🟨 **Used, and time to reset.** `84%` is the share of the 5-hour limit used, as the provider reported it the last time tokenhud fetched the limits; `1h52m` is the time left until that window resets. On the weekly row, `41%` used and `5d21h` (5 days 21 hours) to go. Once a window has reset, the card reads 0 % and `—` until the next fetch.
+4. 🟩 **Pace.** What this account spent in the last 30 minutes at API prices, as dollars per hour (tokens per hour with costs hidden). `$0/h`: nothing in the last 30 minutes.
+5. 🟦 **Verdict.** What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `hits 100% at 12:13`, the time the first window fills at this pace (with the day when it isn't today); `idle`, nothing spent in 30 minutes; `week ends ~89%`, the weekly window is on course to end its week at 80 % or more; `safe until reset`, both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.
+6. 🟪 **Stale limits.** The limits were fetched more than 15 minutes ago: `(52m old)` says how long ago, and the card shows them as they were then.
+7. 🟫 **Not signed in here.** A history-only account: one you marked history only, or one that isn't signed in on this machine (it runs on another computer now, say). Its limits can't be read here, so it has no meters, but its usage history stays. See [Accounts](#accounts).
+<!-- /shots:overview-card -->
+
+#### How the projection works
+
+The pace is what the account spent, at API prices, in the last 30 minutes, times two. For
+each of the account's windows, tokenhud estimates how much of the limit a dollar uses: the
+window's use when the limits were last fetched, divided by what the account had spent in
+that window by then (at least $0.50, or there is no estimate). It adds what was spent since
+that fetch, and works out how long the rest of the window lasts at the current pace. If that
+ends before the window resets, the card says when (`hits 100% at …`); if after, the window is
+safe. For the weekly window it also works out where the week would end at that pace: that is
+the `week ends ~N%` figure, shown from 80 %. Treat it as a rough guide:
+
+- tokenhud sees only the transcripts on this machine. Use of the same subscription elsewhere
+  (another computer, claude.ai) fills the meter without showing up here, which makes the
+  estimate too early.
+- API prices stand in for the provider's own accounting, which isn't published, so a change
+  in models or in cache use changes the estimate.
+- The pace covers only the last 30 minutes, so a burst or a break dominates it. For a weekly
+  window days from its reset, that can swing the estimate a long way.
+
+### History screen
+
+Your usage day by day, week by week and month by month, and the days you hit a limit.
+
+<!-- shots:history -->
+![The History view with five numbered boxes: heat map, day card, period table, totals, footer](docs-public/images/history.png)
+
+1. 🟥 **Heat map.** One square per day for the last 26 weeks: a column per week, Monday at the top. The shade is the day's cost against the busiest day shown: the darkest square is a day without usage, and the four lighter shades are under a quarter of the busiest day, under a half, under three quarters, and the rest. The selected day is white; days after today are blank.
+2. 🟧 **Day card.** The selected day. `cost`, and how it compares with your usual day: `2.4×` is the day's cost divided by your average daily cost over the 30 days before today (or fewer, if your usage started more recently). `tokens`, split into input, output and cache (reads and writes). `models`: its three most expensive models, with their share of the day's cost. `accounts`: each account's cost that day. `limits`: the day's limit events. `hit 100% at 14:10 (waited 1h55m)` is a window that reached its limit, and how long it was until tokenhud saw it usable again; a weekly window crossing 80 % reads passed 80%.
+3. 🟨 **Period table.** The tabs choose days, weeks (Monday to Sunday) or months; `This week` and `This month` list the days so far of the current week or month. Rows are newest first. `input`, `output` and `cache` (reads and writes) are tokens; `cost` is at API prices. `vs 30-day avg` compares the period with your average day times the period's days so far: the bar is full at 2.25 times, 1 times is a little under half of it, and it turns red-orange above 1.5 times; the ratio follows it. `top model` is the period's most expensive model, `accounts` those with usage, most cost first. The selected row holds the selected day. On the right of the tabs, what `*` and `≈` mean, and the model filter: with a filter, every number on the screen counts only the models whose id contains what you typed.
+4. 🟩 **Totals.** Every period listed, added up: here the `177 days` of the heat map's 26 weeks, today included.
+5. 🟦 **Footer.** The keys of the view you are on, then the keys every view has (all of them are in [Keys](#keys)). On the right, `MCP ● 2 agents`: tokenhud's MCP server is running (teal dot) and two agent sessions called it in the last 10 minutes; `MCP ○` means no server is running. A newer release, or another tokenhud reading the transcripts, is noted here too.
+<!-- /shots:history -->
+
+### Models screen
+
+What each model cost you, the rates it was billed at, and who used it.
+
+<!-- shots:models -->
+![The Models view with five numbered boxes: rate board, total, footnotes, rates card, who used it](docs-public/images/models.png)
+
+1. 🟥 **Rate board.** Every model used in the window, by cost (or by tokens, or by name). The tabs on the right are the windows: today, this week, this month and all time are calendar periods; the last 1, 5 and 24 hours show on screens 120 columns wide or more. One row per model and tier; a fast or priority tier is its own row, `(fast)`. For input, output and cache (reads and writes): the tokens used, and the `$/M` rate they are billed at today, in dollars per million tokens (`—`: no price). `cost` prices each request at the rate in effect on its date, so it can differ from tokens times today's rate. The bar and the percentage are the model's share of the window's cost. `*` after a name: some or all of its tokens have no published rate, so they are counted but not priced. The selected row is highlighted.
+2. 🟧 **Total.** All models together. Rates don't add up, so the total has none.
+3. 🟨 **Footnotes.** `$/M` is the base rate; cache writes, and requests over a model's long-context threshold, cost more. Then the share of the window's tokens that have a price, and which costs are estimates: `codex-auto-review` is priced as the model OpenAI said serves it.
+4. 🟩 **Rates.** The selected model's prices today, per million tokens: input and output; cache reads, and what fraction of the input rate they are; cache writes, for 5 minutes and for 1 hour (Anthropic) or one rate (OpenAI); the fast tier's prices; the long-context threshold and its multipliers, for models that have one; where the prices come from and when they were last checked; and any price change inside the window.
+5. 🟦 **Who used it.** Each account's share of the selected model's cost in the window, and that cost. Then the day the model was first used, and how many requests the window holds.
+<!-- /shots:models -->
+
+### Accounts screen
+
+Every account in detail: where its data comes from, its limits now and in past weeks, and
+its last 30 days.
+
+<!-- shots:accounts -->
+![The Accounts view with six numbered boxes: account list, selected account, where it comes from, limits, weekly history, last 30 days](docs-public/images/accounts.png)
+
+1. 🟥 **Accounts.** Every account tokenhud has usage for: those active on this machine first, then by all-time cost. The dot and the percentage show the account's most-used limit among its windows that haven't reset yet: blue below 50 %, amber from 50 %, red-orange from 80 %. `○` and a grey label: inactive here (history only, not signed in, turned off, or its config directory isn't on this machine). `+ add a root…` opens the account settings. Under the list, the keys for the selected account.
+2. 🟧 **Account.** The selected account, its provider, and when its limits were last fetched.
+3. 🟨 **Where it comes from.** `root` is the config directory its transcripts are read from, and how: `watched` (read as they are written), `polled` (checked at intervals, for a Windows drive under WSL) or `disabled`. `history`: how many requests tokenhud has stored for it, and the day of the first.
+4. 🟩 **Limits.** Every limit window of the account: 5-hour, weekly, then any of a model's own. The bar and the percentage are how much is used (colours as on the cards), then when the window resets: a time today, a weekday and a time within a week, else a date. A window that has reset since the last fetch shows an empty bar, `—`, and how long ago it reset. A failed fetch is noted under the meters.
+5. 🟦 **Weekly history.** The weekly window over the last 8 weeks, on a 0–100 % scale, each week labelled with the day it reset. The last bar (grey) is this week so far. Earlier weeks are known only from limit events: `100%` for a week that reached its limit, `≥80%` for one that passed 80 %, `—` for no record: under 80 %, or not seen by tokenhud.
+6. 🟪 **Last 30 days.** `spend 30d`: one bar per day for the last 30 days, today last, each against the busiest of them; then their total cost. `models`: the account's models over those 30 days, by share of cost. `agents`: its latest MCP tool call in the last 10 minutes, and how many calls it made.
+<!-- /shots:accounts -->
+
+### Glyphs and colours
+
+- `━` **bars**: a limit meter or a share. The coloured part is the share used, the dark
+  track the rest. Limit meters are blue below 50 %, amber from 50 % and red-orange from 80 %;
+  share bars are amber for cost and blue for tokens.
+- `▁▂▃▄▅▆▇█` **columns**: the activity chart, the 30-day bars and the weekly history, in
+  eighths of a row.
+- `■` **heat map**: the darkest square is a day without usage; the four lighter shades are
+  days under a quarter of the busiest day shown, under a half, under three quarters, and
+  the rest. White is the selected day.
+- `*` after a cost: some of its tokens have no price, so the cost leaves them out and is a
+  lower bound. After a model's name: some or all of its tokens have no published rate.
+  `unpriced`: none of its tokens has a price. See [Pricing](#pricing).
+- `≈` before a cost: part of it is priced from an estimate (`codex-auto-review`, priced as
+  the model OpenAI said serves it).
+- `~` in `week ends ~89%`: a projection. Every time on a limits card is an estimate too.
+- **Grey (dim) text** is secondary: labels, notes, and what is old or inactive, such as a
+  limits card's `(52m old)`, an inactive account's `○`, or a window past its reset.
+- **Dots**: teal `●` is live (the header) or an MCP server running (the footer); amber `●`
+  stale; red `●` an error. In Accounts, an account's dot takes its limit colour.
+- **Highlights**: a lighter background marks the selected row, and the active view, tab or
+  window.
 
 The layout adapts to the terminal: it is laid out for half of a 1080p screen (about 105 ×
-50), the top half of a portrait monitor (about 120 × 45), 80 × 24 and wider. Costs
-marked `*` include tokens with no price; see [Pricing](#pricing).
+50), the top half of a portrait monitor (about 120 × 45), 80 × 24 and wider. On narrower
+screens, columns and sections drop out, least important first, and the limits cards turn into
+two lines each; a number is never cut short.
 
 ## Accounts
 

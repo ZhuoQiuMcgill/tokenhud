@@ -18,7 +18,8 @@
     "bench:store": "bun test/store/bench.ts",
     "bench:query": "bun test/query/bench.ts",
     "bench:tui": "bun test/tui/bench.tsx",
-    "parity": "bun scripts/parity.ts"
+    "parity": "bun scripts/parity.ts",
+    "shots": "bun scripts/readme-shots.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
