@@ -24,6 +24,8 @@ export interface TuiPaths {
   readonly lock: string;
   readonly mcp: string;
   readonly ccUsageLedger: string;
+  /** cc-usage's provider-limits.json, imported once into limits.json (read-only). */
+  readonly ccUsageLimits: string;
   /** The log file (`<config dir>/logs/tokenhud.log`). */
   readonly log: string;
 }
@@ -122,6 +124,11 @@ export async function runApp(boot: Boot): Promise<number> {
       vm.send({ type: "invalidate" });
       return;
     }
+    // The Worker rewrote limits.json: the Overview's cards, at once.
+    if (message.type === "limits") {
+      vm.send({ type: "limits" });
+      return;
+    }
     if (message.type === "log" && message.level !== "info") {
       log.write(message.level, `ingest: ${message.message}`);
     }
@@ -151,6 +158,9 @@ export async function runApp(boot: Boot): Promise<number> {
         config: controller.getState().config,
         discover: { home: boot.home, env: { ...boot.env } },
         importLedger: paths.ccUsageLedger,
+        // T8's schedule: a fetch after the first scan, then every 5 minutes per account,
+        // with its back-off, history-only accounts left alone and the cross-process lease.
+        limits: { limitsPath: paths.limits, ccUsageLimits: paths.ccUsageLimits },
       },
       (message) => onIngest(own, message),
       (code) => {

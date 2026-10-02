@@ -284,6 +284,12 @@ export class VmSession {
       case "tick":
         this.#tick();
         break;
+      case "limits":
+        // Our ingest Worker fetched: the cards (Overview), the meters (Accounts), and the
+        // limit events it may have recorded (History, and the Overview's list).
+        this.#limitsChanged();
+        for (const id of ["overview", "accounts", "history"] as const) this.#mark(id);
+        break;
       case "roots":
         this.#discover();
         break;

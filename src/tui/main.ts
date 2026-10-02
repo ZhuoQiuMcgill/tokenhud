@@ -5,7 +5,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ccUsageDir, configPath, ensureConfig } from "../config.ts";
-import { limitsPath } from "../limits/cache.ts";
+import { ccUsageLimitsPath, limitsPath } from "../limits/cache.ts";
 import { lockFailure, lockPath, WriterLock } from "../lock.ts";
 import { mcpDir } from "../mcp/heartbeat.ts";
 import { configDir, pricingOverridesPath, storePath } from "../paths.ts";
@@ -28,6 +28,7 @@ export function tuiPaths(env: Env, home: string): TuiPaths {
     lock: lockPath(env, home),
     mcp: mcpDir(env, home),
     ccUsageLedger: join(ccUsageDir(env, home), "ledger.sqlite3"),
+    ccUsageLimits: ccUsageLimitsPath(env, home),
     log: logPath(env, home),
   };
 }

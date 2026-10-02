@@ -63,6 +63,27 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
     }
   }, 60_000);
 
+  // PM addendum to T11: the TUI's ingest Worker runs T8's limits schedule. This home has no
+  // Claude login, so the first round finds the account signed out without any request, and
+  // the card says so; before, it waited for limits that nothing fetched.
+  test("the TUI fetches limits itself: a home without a login is not signed in", async () => {
+    const home = makeHome();
+    const run = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+    try {
+      await run.waitFor((s) => LIVE(s) && s.includes("personal · claude"), "the card");
+      await run.waitFor((s) => s.includes("not signed in here"), "the first limits round");
+      const file = JSON.parse(readFileSync(join(home.configDir, "limits.json"), "utf8"));
+      const status = Object.values(file.status as Record<string, { history_only: unknown }>);
+      expect(status.map((s) => s.history_only)).toContain("detected");
+      run.send("q");
+      await run.exited;
+      expect(exitCode(run)).toBe(0);
+    } finally {
+      run.kill();
+      home.remove();
+    }
+  }, 60_000);
+
   // Critique m2: a lock journal that can't be used kept the TUI read-only for good. Here it
   // can't be moved aside either (the config dir is read-only): read-only with the reason,
   // logged once, retried, and live as soon as it can be fixed.

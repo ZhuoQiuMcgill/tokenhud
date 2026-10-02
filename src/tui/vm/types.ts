@@ -290,6 +290,8 @@ export type VmRequest =
   | { readonly type: "config"; readonly config: Config }
   | { readonly type: "mode"; readonly mode: IngestMode }
   | { readonly type: "tick" }
+  /** The ingest Worker rewrote limits.json (T8's `limits` message). */
+  | { readonly type: "limits" }
   | { readonly type: "roots" }
   | { readonly type: "stop" };
 

@@ -212,16 +212,22 @@ describe("VmSession", () => {
     expect(first.agents?.calls.map((c) => c.tool)).toEqual(["limits"]);
     expect(h.posted.map((m) => m.type)).toEqual(["views", "roots", "mcp"]);
 
-    // Someone else fetched: limits.json is rewritten. The next tick recomputes the views
-    // that show limits, and only those.
+    // Our ingest Worker fetched and says so: at once, the views that show limits or the
+    // limit events it records, and only those.
+    const card = () =>
+      (h.last().views.overview as OverviewVM).cards?.find((c) => c.label === "personal");
     save(70);
+    h.session.handle({ type: "limits" });
+    h.timers.advance(RECOMPUTE_INTERVAL_MS);
+    expect(Object.keys(h.last().views)).toEqual(["overview", "history", "accounts"]);
+    expect(card()?.fiveHour?.utilization).toBe(0.7);
+    // Another process fetched (an MCP server, the TUI that holds the lock): the next tick
+    // recomputes the views that show limits.
+    save(90);
     h.session.handle({ type: "tick" });
     h.timers.advance(RECOMPUTE_INTERVAL_MS);
     expect(Object.keys(h.last().views)).toEqual(["overview", "accounts"]);
-    const after = (h.last().views.overview as OverviewVM).cards?.find(
-      (c) => c.label === "personal",
-    );
-    expect(after?.fiveHour?.utilization).toBe(0.7);
+    expect(card()?.fiveHour?.utilization).toBe(0.9);
 
     // An agent calls a tool: the footer's activity and the agents card both move.
     const views = h.views().length;

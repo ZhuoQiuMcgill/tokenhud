@@ -10,7 +10,8 @@
 // - tick: ms the refresh tick takes on the UI thread.
 // Idle CPU is read from /proc/<pid>/stat over 60 s with nothing changing (Linux only).
 // The home also has a limits.json for its account and a running MCP server's heartbeat, so
-// the Overview draws its limit cards and agents card.
+// the Overview draws its limit cards and agents card. It has no Claude login, so the TUI's
+// limits schedule finds the account signed out without any request.
 // A second part times the same frames in-process (OpenTUI's test renderer), with view
 // models computed from the same store (the Overview's from its fixture, five cards and the
 // agents), and a tick that does change what's on screen.
@@ -128,7 +129,8 @@ try {
     const tracePath = join(base, `start-${i}.jsonl`);
     writeFileSync(tracePath, "");
     const run = runInPty(command, { ...home.env, TOKENHUD_TRACE: tracePath });
-    await run.waitFor((s) => s.includes(" SPEND") && s.includes("5h "), "data and limits");
+    // The home has no Claude login: from the second start on, the card says so.
+    await run.waitFor((s) => s.includes(" SPEND") && s.includes("personal · claude"), "data");
     await run.waitFor(() => trace(tracePath, "first-frame").length > 0, "the trace");
     firstFrames.push(trace(tracePath, "first-frame")[0] as number);
     run.send("q");
