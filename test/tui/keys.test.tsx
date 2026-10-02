@@ -35,6 +35,7 @@ beforeAll(() => {
     identity: a.identity,
     disabledBy: [],
     configIndex: null,
+    group: null,
   }));
 });
 afterAll(() => fixture.remove());

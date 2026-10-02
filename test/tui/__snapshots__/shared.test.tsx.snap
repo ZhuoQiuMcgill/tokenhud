@@ -16,7 +16,7 @@ exports[`105×50 Overview: one card titled with both labels 1`] = `
   cost          $1.28        $1.60       $13.47       $13.79                                             
   tokens         1.3M         1.6M        13.8M        14.1M                                             
                                                                                                          
- ACTIVITY · cost per 15 min · 24h                                                    peak $0.34 at 11:15 
+ ACTIVITY · cost per 15 min · peak $0.34 at 11:15                                ◀ a  5h  [24h]  7d  d ▶ 
  $0.34                                                                                               ██  
                                                                                                      ██  
                                                                                             ▃   ▃    ██  
@@ -48,9 +48,9 @@ exports[`105×50 Overview: one card titled with both labels 1`] = `
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   enter details   a account   s settings   ? help   q quit       
+ a/d window   w/s card   enter open   t cost/tokens                                                      
+ 1-4/tab views   c account   x settings   ? help   q quit                                                
 "
 `;
 
@@ -65,10 +65,10 @@ exports[`105×50 Accounts: win-like says what it shares, and the account's total
  ● work-like          claude  40% │                                                                      
  + add a root…                    │  shared with personal-like                                           
                                   │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15    
- enter scope to it                │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40
- e enable/disable                 │                                                                      
- l rename label                   │  weekly usage when it reset · last 8 weeks                           
- h history only                   │                                                                      
+ w/s   account                    │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40
+ enter actions                    │                                                                      
+                                  │  weekly usage when it reset · last 8 weeks                           
+                                  │                                                                      
                                   │                                                                      
                                   │                                                            ▁▁▁▁▁▁    
                                   │                                                            ██████    
@@ -102,9 +102,9 @@ exports[`105×50 Accounts: win-like says what it shares, and the account's total
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   enter scope   e enable   a account   s settings   ? help   q quit             
+ w/s account   enter actions                                                                             
+ 1-4/tab views   c account   x settings   ? help   q quit                                                
 "
 `;
 
@@ -117,8 +117,7 @@ exports[`105×50 settings: the shared column, linking work-like, then unlinking 
      │   ● win-like      claude              same as personal-like   /mnt/c/Users/fixture/.claude   │    
      │ › ● work-like     claude                                      /home/fixture/.claude-work     │    
      │                                                                                              │    
-     │ e enable/disable · l rename · h history only · esc back                                      │    
-     │ a same account as… · u unlink                                                                │    
+     │ w/s move · enter actions · esc back                                                          │    
      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
                                                                                                          
                                                                                                          
@@ -158,7 +157,8 @@ exports[`105×50 settings: the shared column, linking work-like, then unlinking 
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                                      
+ w/s move   enter actions   esc back                                                                     
+                                                                                                         
 "
 `;
 
@@ -171,7 +171,7 @@ exports[`105×50 settings: the shared column, linking work-like, then unlinking 
      │ › personal-like claude /home/fixture/.claude                                                 │    
      │   win-like      claude /mnt/c/Users/fixture/.claude                                          │    
      │                                                                                              │    
-     │ ↑/↓ move · enter link · esc cancel                                                           │    
+     │ w/s move · enter link · esc cancel                                                           │    
      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
                                                                                                          
                                                                                                          
@@ -210,9 +210,9 @@ exports[`105×50 settings: the shared column, linking work-like, then unlinking 
                                                                                                          
                                                                                                          
                                                                                                          
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                                      
+ w/s move   enter link   esc cancel                                                                      
+                                                                                                         
 "
 `;
 
@@ -225,8 +225,7 @@ exports[`105×50 settings: the shared column, linking work-like, then unlinking 
      │ › ● win-like      claude              /mnt/c/Users/fixture/.claude                           │    
      │   ● work-like     claude              /home/fixture/.claude-work                             │    
      │                                                                                              │    
-     │ e enable/disable · l rename · h history only · esc back                                      │    
-     │ a same account as… · u unlink                                                                │    
+     │ w/s move · enter actions · esc back                                                          │    
      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
                                                                                                          
                                                                                                          
@@ -266,7 +265,8 @@ exports[`105×50 settings: the shared column, linking work-like, then unlinking 
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                                      
+ w/s move   enter actions   esc back                                                                     
+                                                                                                         
 "
 `;
 
@@ -286,7 +286,7 @@ exports[`120×45 Overview: one card titled with both labels 1`] = `
   cost          $0.69        $1.28        $1.28        $1.60       $13.47       $13.79                                  
   tokens         730K         1.3M         1.3M         1.6M        13.8M        14.1M                                  
                                                                                                                         
- ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h                     
+ ACTIVITY · cost per 20 min                             ◀ a  5h  [24h]  7d  d ▶    TOP MODELS · 24h                     
  $0.34                                                                       ██    Opus 4.8            $0.90  70% ━━━━━━
                                                                              ██    Sonnet 4.6          $0.39  30% ━━━━━━
                                                                        ▃  ▃  ██                                         
@@ -313,9 +313,9 @@ exports[`120×45 Overview: one card titled with both labels 1`] = `
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   t cost/tokens   enter details   tab card   a account   s settings   ? help   q quit           
+ a/d window   w/s card   enter open   t cost/tokens                                                                     
+ 1-4/tab views   c account   x settings   ? help   q quit                                                               
 "
 `;
 
@@ -330,10 +330,10 @@ exports[`120×45 Accounts: win-like says what it shares, and the account's total
  ● work-like           claude  40% │                                                                                    
  + add a root…                     │  shared with personal-like                                                         
                                    │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15         
- enter scope to it                 │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40     
- e enable/disable                  │                                                                                    
- l rename label                    │  weekly usage when it reset · last 8 weeks                                         
- h history only                    │                                                                                    
+ w/s   account                     │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40     
+ enter actions                     │                                                                                    
+                                   │  weekly usage when it reset · last 8 weeks                                         
+                                   │                                                                                    
                                    │                                                                                    
                                    │                                                            ▁▁▁▁▁▁                  
                                    │                                                            ██████                  
@@ -362,9 +362,9 @@ exports[`120×45 Accounts: win-like says what it shares, and the account's total
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ↑/↓ account   enter scope   e enable   l label   a account   s settings   ? help   q quit                  
+ w/s account   enter actions                                                                                            
+ 1-4/tab views   c account   x settings   ? help   q quit                                                               
 "
 `;
 
@@ -377,8 +377,7 @@ exports[`120×45 settings: the shared column, linking work-like, then unlinking 
             │   ● win-like      claude              same as personal-like   /mnt/c/Users/fixture/.claude   │            
             │ › ● work-like     claude                                      /home/fixture/.claude-work     │            
             │                                                                                              │            
-            │ e enable/disable · l rename · h history only · esc back                                      │            
-            │ a same account as… · u unlink                                                                │            
+            │ w/s move · enter actions · esc back                                                          │            
             ╰──────────────────────────────────────────────────────────────────────────────────────────────╯            
                                                                                                                         
                                                                                                                         
@@ -413,7 +412,8 @@ exports[`120×45 settings: the shared column, linking work-like, then unlinking 
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                                                     
+ w/s move   enter actions   esc back                                                                                    
+                                                                                                                        
 "
 `;
 
@@ -426,7 +426,7 @@ exports[`120×45 settings: the shared column, linking work-like, then unlinking 
             │ › personal-like claude /home/fixture/.claude                                                 │            
             │   win-like      claude /mnt/c/Users/fixture/.claude                                          │            
             │                                                                                              │            
-            │ ↑/↓ move · enter link · esc cancel                                                           │            
+            │ w/s move · enter link · esc cancel                                                           │            
             ╰──────────────────────────────────────────────────────────────────────────────────────────────╯            
                                                                                                                         
                                                                                                                         
@@ -460,9 +460,9 @@ exports[`120×45 settings: the shared column, linking work-like, then unlinking 
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                                                     
+ w/s move   enter link   esc cancel                                                                                     
+                                                                                                                        
 "
 `;
 
@@ -475,8 +475,7 @@ exports[`120×45 settings: the shared column, linking work-like, then unlinking 
             │ › ● win-like      claude              /mnt/c/Users/fixture/.claude                           │            
             │   ● work-like     claude              /home/fixture/.claude-work                             │            
             │                                                                                              │            
-            │ e enable/disable · l rename · h history only · esc back                                      │            
-            │ a same account as… · u unlink                                                                │            
+            │ w/s move · enter actions · esc back                                                          │            
             ╰──────────────────────────────────────────────────────────────────────────────────────────────╯            
                                                                                                                         
                                                                                                                         
@@ -511,6 +510,7 @@ exports[`120×45 settings: the shared column, linking work-like, then unlinking 
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- ↑/↓ move   enter change   esc back                                                                                     
+ w/s move   enter actions   esc back                                                                                    
+                                                                                                                        
 "
 `;

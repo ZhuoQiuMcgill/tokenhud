@@ -16,6 +16,7 @@ import type { Root } from "../../src/sources/roots.ts";
 import { openStore, openStoreReader, type UsageRow } from "../../src/store/store.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
+import { type MenuState, menuItems } from "../../src/tui/menu.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import type { AccountRow, AccountsVM } from "../../src/tui/vm/accounts.ts";
 import { COMPUTE, type ComputeContext } from "../../src/tui/vm/compute.ts";
@@ -248,6 +249,20 @@ afterAll(() => fx.remove());
 
 const key = (name: string) => ({ name, sequence: name, ctrl: false });
 
+/** In the open action menu, runs the item `label`. */
+function runItem(c: Controller, label: string) {
+  const s = c.getState();
+  const items = menuItems((s.menu as MenuState).target, {
+    config: s.config,
+    roots: s.roots,
+    scope: s.scope,
+  });
+  const at = items.findIndex((i) => i.label === label);
+  expect(at).toBeGreaterThanOrEqual(0);
+  for (let i = 0; i < at; i++) c.key(key("down"));
+  c.key(key("return"));
+}
+
 function controller(saved: Config[] = [], start: Config = config) {
   const ports: Ports = {
     saveConfig: (c) => saved.push(c),
@@ -407,7 +422,7 @@ describe.each([
     const { setup, text } = await frame(width, height, c);
     const pick = (label: string) => fx.roots(config).findIndex((r) => r.label === label);
     await settle(setup, () => {
-      c.key(key("s"));
+      c.key(key("x"));
       for (let i = 0; i < 6; i++) c.key(key("down"));
       c.key(key("return"));
       for (let i = 0; i < pick("work-like"); i++) c.key(key("down"));
@@ -416,8 +431,12 @@ describe.each([
     expect(list).toMatchSnapshot();
     expect(list).toContain("same as win-like");
     expect(list).toContain("same as personal-like");
-    expect(list).toContain("a same account as… · u unlink");
-    await settle(setup, () => c.key(key("a")));
+    // T17: the action menu offers the link (work-like is on its own: no Unlink).
+    await settle(setup, () => c.key(key("return")));
+    const menu = text();
+    expect(menu).toContain("Same account as…");
+    expect(menu).not.toContain("Unlink");
+    await settle(setup, () => runItem(c, "Same account as…"));
     const picker = text();
     expect(picker).toMatchSnapshot();
     expect(picker).toContain("work-like is on the same subscription account as:");
@@ -433,7 +452,8 @@ describe.each([
     c.vmMessage({ type: "roots", roots: fx.roots(linked) });
     await settle(setup, () => {
       c.key(key("up"));
-      c.key(key("u"));
+      c.key(key("return"));
+      runItem(c, "Unlink");
     });
     const after = saved.at(-1) as Config;
     expect(after.same_account).toEqual([]);
@@ -455,18 +475,20 @@ test("link and unlink persist through config.json", () => {
   const path = join(fx.dir, "config.json");
   const saved: Config[] = [];
   const c = controller(saved);
-  c.key(key("s"));
+  c.key(key("x"));
   for (let i = 0; i < 6; i++) c.key(key("down"));
   c.key(key("return"));
   // work-like: same account as personal-like (the first choice).
   for (let i = 0; i < 2; i++) c.key(key("down"));
-  c.key(key("a"));
+  c.key(key("return"));
+  runItem(c, "Same account as…");
   c.key(key("return"));
   saveConfig(saved.at(-1) as Config, path);
   expect(loadConfig(path).same_account).toEqual([[WORK.identity, PERSONAL.identity]]);
   // With that saved, all three are one account; work-like unlinked again.
   c.vmMessage({ type: "roots", roots: fx.roots(loadConfig(path)) });
-  c.key(key("u"));
+  c.key(key("return"));
+  runItem(c, "Unlink");
   saveConfig(saved.at(-1) as Config, path);
   const back = loadConfig(path);
   expect(back.same_account).toEqual([]);
@@ -479,4 +501,24 @@ test("link and unlink persist through config.json", () => {
     ["win-like", 1],
     ["work-like", 0],
   ]);
+});
+
+test("the Accounts view's menu links and unlinks too, at once (T17)", () => {
+  const saved: Config[] = [];
+  const c = controller(saved);
+  const order = accountsVm().rows.map((r) => r.label);
+  c.key(key("4"));
+  for (let i = 0; i < order.indexOf("work-like"); i++) c.key(key("down"));
+  c.key(key("return"));
+  runItem(c, "Same account as…");
+  // The list to pick from, in settings; once picked, back to the view.
+  expect(c.getState().settings).toMatchObject({ screen: "link" });
+  c.key(key("return"));
+  expect(c.getState()).toMatchObject({ overlay: "none", view: "accounts" });
+  expect(saved.at(-1)?.same_account).toEqual([[WORK.identity, PERSONAL.identity]]);
+  c.vmMessage({ type: "roots", roots: fx.roots(saved.at(-1) as Config) });
+  c.key(key("return"));
+  runItem(c, "Unlink");
+  expect(saved.at(-1)?.same_account).toEqual([]);
+  expect(c.getState().overlay).toBe("none");
 });

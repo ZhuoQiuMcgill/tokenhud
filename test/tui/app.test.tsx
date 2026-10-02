@@ -336,6 +336,7 @@ describe("states", () => {
           identity: (accounts.find((a) => a.label === "personal") as AccountInfo).identity,
           disabledBy: [],
           configIndex: null,
+          group: null,
         },
       ],
     });

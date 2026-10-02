@@ -152,8 +152,9 @@ shows the keys of the view you are in.
 ### Account menu
 
 `enter` on an account, in the Accounts view or in settings under Accounts, opens a small
-menu: show only this account (again: all accounts), enable or disable it, rename it, and
-mark it history only or not.
+menu: show only this account (again: all accounts), enable or disable it, rename it, mark
+it history only or not, mark it as the same subscription account as another directory
+("Same account as…", picked from a list) and, once linked, unlink it.
 
 | Key | Does |
 |---|---|
@@ -346,11 +347,12 @@ other directory is still fetched every 30 minutes, and once more right away when
 credential file changes. If a reset differs, the two show apart straight away, and a second
 difference in a row unlinks them; a difference in use alone is checked again next round.
 
-In settings under Accounts, `a` links an account to another by hand and `u` unlinks it;
-they are saved as `same_account` and `separate_accounts` in `config.json`, and win over
-what tokenhud finds. A link you made is never undone: if the limits differ, Accounts and
-`tokenhud doctor` say so. `tokenhud doctor` lists the linked directories, how each link was
-made, and the pairs kept apart.
+An account's menu (`enter` on it, in the Accounts view or in settings under Accounts) links
+it to another by hand ("Same account as…") and unlinks it ("Unlink"). These are saved as
+`same_account` and `separate_accounts` in `config.json`, and win over what tokenhud finds.
+A link you made is never undone: if the limits differ, Accounts and `tokenhud doctor` say
+so. `tokenhud doctor` lists the linked directories, how each link was made, and the pairs
+kept apart.
 
 ## Use with Claude Code
 

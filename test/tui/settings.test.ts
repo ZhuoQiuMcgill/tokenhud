@@ -3,6 +3,7 @@
 // (keys.ts): WASD already the arrows outside a text field.
 import { describe, expect, test } from "bun:test";
 import { type Config, defaultConfig } from "../../src/config.ts";
+import { menuItems } from "../../src/tui/menu.ts";
 import {
   filterZones,
   initialSettings,
@@ -309,7 +310,6 @@ describe("accounts", () => {
 });
 
 describe("shared accounts (T16): same account as…, unlink", () => {
-  const open = ["end", "return"];
   /** The roots, with personal and work on one account. */
   const linked = (source: "auto" | "manual"): RootInfo[] =>
     ROOTS.map((r) =>
@@ -320,46 +320,65 @@ describe("shared accounts (T16): same account as…, unlink", () => {
           : r,
     );
 
-  function driveRoots(roots: RootInfo[], keys: string[], config = defaultConfig()) {
-    let state: SettingsState | null = initialSettings();
+  /** The list to pick from for root `pick`, as the action menu's "Same account as…" opens it. */
+  const linking = (pick: number): SettingsState => ({
+    screen: "link",
+    cursor: SETTINGS_ROWS.indexOf("accounts"),
+    pick,
+    choice: 0,
+    message: null,
+  });
+
+  function driveRoots(
+    roots: RootInfo[],
+    keys: string[],
+    start: SettingsState,
+    config = defaultConfig(),
+  ) {
+    let state: SettingsState | null = start;
     let cfg = config;
     for (const name of keys) {
       if (state === null) break;
-      const r = settingsKey(
-        state,
-        { name, sequence: name.length === 1 ? name : "" },
-        { ...input(cfg), roots },
-      );
+      const r = settingsKey(state, name, { ...input(cfg), roots });
       state = r.state;
       if (r.config) cfg = r.config;
     }
     return { state, config: cfg };
   }
 
-  test("a picks another root of the same provider; enter links them in same_account", () => {
-    const picker = drive([...open, "a"]);
-    expect(picker.state).toMatchObject({ screen: "link", pick: 0, choice: 0 });
+  /** The action menu's items for `root`, as settings would list them. */
+  const items = (root: RootInfo, roots: RootInfo[] = ROOTS) =>
+    menuItems(
+      { identity: root.identity, label: root.label, provider: root.provider, account: null },
+      { config: defaultConfig(), roots, scope: null },
+    ).map((i) => i.label);
+
+  test("the menu's Same account as… picks another root of the provider; enter links them", () => {
+    expect(items(ROOTS[0] as RootInfo)).toContain("Same account as…");
     expect(linkCandidates(ROOTS[0] as RootInfo, ROOTS).map((r) => r.label)).toEqual([
       "work",
       "company",
     ]);
-    const done = drive([...open, "a", "down", "return"]);
+    const done = drive(["down", "return"], undefined, linking(0));
     expect(done.config.same_account).toEqual([["id-personal", "id-env"]]);
     expect(done.accountsChanged).toBe(true);
     expect(done.state).toMatchObject({ screen: "accounts", pick: 0 });
-    // Esc leaves the config as it was.
-    expect(drive([...open, "a", "escape"]).config.same_account).toEqual([]);
+    // w/s move there too; Esc or q leave the config as it was.
+    expect(drive(["down", "up"], undefined, linking(0)).state).toMatchObject({ choice: 0 });
+    for (const k of ["escape", "q"]) {
+      expect(drive([k], undefined, linking(0))).toMatchObject({
+        state: { screen: "accounts", pick: 0 },
+        config: { same_account: [] },
+      });
+    }
   });
 
-  test("roots already linked are not offered; a root with none to link to says so", () => {
+  test("roots already linked are not offered; with none to link to, the menu doesn't offer it", () => {
     expect(
       linkCandidates(linked("auto")[0] as RootInfo, linked("auto")).map((r) => r.label),
     ).toEqual(["company"]);
-    const lone = drive([...open, "end", "a"]);
-    expect(lone.state).toMatchObject({
-      screen: "accounts",
-      message: "no other codex root to link it to",
-    });
+    expect(linkCandidates(ROOTS[3] as RootInfo, ROOTS)).toEqual([]);
+    expect(items(ROOTS[3] as RootInfo)).not.toContain("Same account as…");
   });
 
   test("linking joins the entry either root is in, and drops a separate pair between them", () => {
@@ -445,42 +464,28 @@ describe("shared accounts (T16): same account as…, unlink", () => {
       ]);
     }
     // Through the keys: personal (first) picks work (its only candidate), with a message.
-    let state: SettingsState | null = initialSettings();
-    let cfg = config;
-    for (const name of ["end", "return", "a", "return"]) {
-      const r = settingsKey(
-        state as SettingsState,
-        { name, sequence: name.length === 1 ? name : "" },
-        {
-          ...input(cfg),
-          roots,
-        },
-      );
-      state = r.state;
-      if (r.config) cfg = r.config;
-    }
-    expect(cfg.separate_accounts).toEqual([]);
-    expect(state).toMatchObject({
+    const done = driveRoots(roots, ["return"], linking(0), config);
+    expect(done.config.separate_accounts).toEqual([]);
+    expect(done.state).toMatchObject({
       screen: "accounts",
       message: "no longer kept apart: work | personal, work | company",
     });
   });
 
-  test("u unlinks: out of same_account, and kept apart from every root it shared with", () => {
+  test("unlinking: out of same_account, and kept apart from every root it shared with", () => {
     const config: Config = {
       ...defaultConfig(),
       same_account: [["id-personal", "id-work", "x"]],
     };
-    const manual = driveRoots(linked("manual"), [...open, "u"], config);
-    expect(manual.config.same_account).toEqual([["id-work", "x"]]);
-    expect(manual.config.separate_accounts).toEqual([["id-personal", "id-work"]]);
+    const manual = unlinkRoot(config, linked("manual")[0] as RootInfo);
+    expect(manual.same_account).toEqual([["id-work", "x"]]);
+    expect(manual.separate_accounts).toEqual([["id-personal", "id-work"]]);
     // An auto-detected link is kept apart the same way, so it isn't found again.
-    const auto = driveRoots(linked("auto"), [...open, "down", "u"]);
-    expect(auto.config.separate_accounts).toEqual([["id-work", "id-personal"]]);
-    expect(unlinkRoot(auto.config, linked("auto")[1] as RootInfo)).toEqual(auto.config);
-    // A root on its own has nothing to unlink.
-    expect(drive([...open, "u"]).state).toMatchObject({
-      message: "personal shares its account with no root",
-    });
+    const auto = unlinkRoot(defaultConfig(), linked("auto")[1] as RootInfo);
+    expect(auto.separate_accounts).toEqual([["id-work", "id-personal"]]);
+    expect(unlinkRoot(auto, linked("auto")[1] as RootInfo)).toEqual(auto);
+    // Only a linked root's menu offers Unlink.
+    expect(items(linked("auto")[0] as RootInfo, linked("auto"))).toContain("Unlink");
+    expect(items(ROOTS[0] as RootInfo)).not.toContain("Unlink");
   });
 });
