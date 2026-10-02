@@ -561,13 +561,14 @@ Nothing updates on its own. When a newer release is out, the TUI says so in its 
 dim text; it asks GitHub at most once a day, and the "Check for updates" setting turns that
 off.
 
-**Switching from `install.sh` to Bun:** run `bun add -g tokenhud`, then `tokenhud doctor`.
-It lists every tokenhud on your PATH, with its version and how it was installed, marks the
-one a shell runs, and names the file the old install left, such as
-`~/.local/bin/tokenhud`. Delete that file (`rm ~/.local/bin/tokenhud`): doctor never deletes
-anything. Until you do, if `~/.local/bin` comes before `~/.bun/bin` on your PATH, typing
-`tokenhud` still runs the old copy. On Windows, delete `%LOCALAPPDATA%\tokenhud` and remove
-its `bin` folder from your user PATH.
+**Switching from `install.sh` to Bun:** run `bun add -g tokenhud`, then the new copy's
+doctor, `~/.bun/bin/tokenhud doctor` (plain `tokenhud` may still start the old one). It
+lists every tokenhud on your PATH, with its version and how it was installed, marks the one
+a shell runs, and names the file the old install left, such as `~/.local/bin/tokenhud`.
+Delete that file (`rm ~/.local/bin/tokenhud`): doctor never deletes anything. Until you do,
+if `~/.local/bin` comes before `~/.bun/bin` on your PATH, typing `tokenhud` still runs the
+old copy. On Windows, delete `%LOCALAPPDATA%\tokenhud` and remove its `bin` folder from
+your user PATH.
 
 To uninstall:
 
