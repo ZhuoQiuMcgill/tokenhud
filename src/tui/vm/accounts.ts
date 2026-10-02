@@ -55,8 +55,9 @@ export interface WeekSlot {
   /** When that week's window reset (this week's: when it will). */
   readonly resetsAt: number;
   /**
-   * This week: its utilisation now. A past week: the least it is known to have reached,
-   * 1 (a `reached` event) or 0.8 (`passed_80`); null when nothing was recorded.
+   * This week: its utilisation now, or null when the capture is from an earlier week. A
+   * past week: the least it is known to have reached, 1 (a `reached` event) or 0.8
+   * (`passed_80`); null when nothing was recorded.
    */
   readonly value: number | null;
   readonly source: "now" | "reached" | "passed_80" | null;
@@ -66,6 +67,8 @@ export interface ModelSpend {
   readonly name: string;
   readonly cost: number;
   readonly tokens: number;
+  /** None of its tokens has a price. */
+  readonly unpriced: boolean;
 }
 
 export interface AccountRow extends AccountInfo, Priced {
@@ -137,13 +140,18 @@ export function weeklySlots(
   const week = weeklyWindow(windows);
   if (week === undefined) return null;
   let current = week.resets_at;
-  // A capture of a week that has since reset: this week is the one running now.
-  while (current <= now) current += WEEK_MS;
+  let value: number | null = week.utilization;
+  // A capture of a week that has since reset: this week is the one running now, and
+  // nothing is known of it yet.
+  while (current <= now) {
+    current += WEEK_MS;
+    value = null;
+  }
   const slots: WeekSlot[] = [];
   for (let k = WEEKS_SHOWN - 1; k >= 0; k--) {
     const resetsAt = current - k * WEEK_MS;
     if (k === 0) {
-      slots.push({ resetsAt, value: week.utilization, source: "now" });
+      slots.push({ resetsAt, value, source: "now" });
       continue;
     }
     const mine = events.filter(
@@ -175,17 +183,24 @@ function limitsInfo(l: AccountLimits): AccountLimitsInfo {
 }
 
 function topModels(ctx: ComputeContext, id: number, range: Range): ModelSpend[] {
-  const byName = new Map<string, ModelSpend>();
+  const byName = new Map<string, { cost: number; tokens: number; priced: number }>();
   for (const m of ctx.q.byModel({ range, accounts: [id] })) {
     const name = modelName(m.model);
-    const seen = byName.get(name);
+    const seen = byName.get(name) ?? { cost: 0, tokens: 0, priced: 0 };
     byName.set(name, {
-      name,
-      cost: (seen?.cost ?? 0) + m.usage.cost,
-      tokens: (seen?.tokens ?? 0) + m.usage.tokens.total,
+      cost: seen.cost + m.usage.cost,
+      tokens: seen.tokens + m.usage.tokens.total,
+      priced: seen.priced + m.usage.coverage.pricedTokens,
     });
   }
-  return [...byName.values()].sort((a, b) => b.cost - a.cost || b.tokens - a.tokens);
+  return [...byName]
+    .map(([name, m]) => ({
+      name,
+      cost: m.cost,
+      tokens: m.tokens,
+      unpriced: m.tokens > 0 && m.priced === 0,
+    }))
+    .sort((a, b) => b.cost - a.cost || b.tokens - a.tokens);
 }
 
 export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
@@ -250,7 +265,8 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
     };
   });
   // Accounts active here first (signed in, enabled), then the rest; most cost first in each.
-  const away = (r: AccountRow) => (r.historyOnly || r.root === null || !r.root.enabled ? 1 : 0);
+  const away = (r: AccountRow) =>
+    r.historyOnly || r.limits?.signedIn === false || r.root === null || !r.root.enabled ? 1 : 0;
   rows.sort((x, y) => away(x) - away(y) || y.cost - x.cost || y.tokens - x.tokens || x.id - y.id);
   return {
     vm: { rows, asOf: now, tz: ctx.zone.name, mcp: (sources?.mcp?.servers ?? 0) > 0 },

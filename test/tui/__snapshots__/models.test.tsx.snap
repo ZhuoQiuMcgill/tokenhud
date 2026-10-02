@@ -50,7 +50,7 @@ exports[`frames 105×50 1`] = `
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   ↑/↓ select   a account   s settings   ? help   q quit            MCP ● 1 agent 
+ 1-4 views   ←/→ window   o sort   a account   s settings   ? help   q quit                MCP ● 1 agent 
 "
 `;
 
@@ -99,7 +99,7 @@ exports[`frames 120×45 1`] = `
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   ↑/↓ select   enter rates   o sort   a account   s settings   ? help   q quit    MCP ● 1 agent 
+ 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit    MCP ● 1 agent 
 "
 `;
 
@@ -181,7 +181,7 @@ exports[`frames 160×50 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   ↑/↓ select   enter rates   o sort   a account   s settings   ? help   q quit                                            MCP ● 1 agent 
+ 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit                                            MCP ● 1 agent 
 "
 `;
 
@@ -193,7 +193,7 @@ exports[`frames 80×24 with Enter: the selected model's cards, the table down to
  model                  provider input output  cache      cost share            
  gpt-5.5                codex     2.5M   1.6M  63.9M   $117.25 ━━━━━━━━━━ 33.6% 
  gpt-5.6-sol            codex     2.8M   1.8M  72.0M   $108.18 ━━━━━━━━━━ 31.0% 
- ────────────────────────────────────────────────────────────────────────────── 
+ ─────────────────────────────────────────────────────────────────── 8 more ↓ ─ 
  Total                           12.1M   7.5M 304.1M ≈$349.47*                  
                                                                                 
  ╭─ gpt-5.6-sol · rates and use ──────────────────────────────────────────────╮ 

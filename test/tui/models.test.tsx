@@ -15,11 +15,13 @@ import { theme } from "../../src/tui/theme.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import {
   boardFor,
+  changeText,
   fitName,
   humanRate,
   MODEL_MIN_WIDTH,
   type ModelsState,
   RATE_FOOTNOTE,
+  rateLines,
   rowKey,
 } from "../../src/tui/views/models.tsx";
 import type { ViewContext } from "../../src/tui/views/types.ts";
@@ -29,6 +31,7 @@ import {
   type ModelRow,
   type ModelsVM,
   modelName,
+  type PriceChange,
   priceChanges,
   rateCard,
 } from "../../src/tui/vm/models.ts";
@@ -589,6 +592,133 @@ describe("frames", () => {
     expect(frame).not.toContain("$");
     expect(frame).not.toContain("$/M");
     expect(frame).toContain("who used it");
+  });
+});
+
+// Critique M1: the footnotes and cards never take rows from the table; a table cut short
+// scrolls and says how many models are off screen.
+describe("every model reachable at every height", () => {
+  const label = (r: ModelRow) =>
+    fitName(`${r.name}${r.tier === "fast" ? " (fast)" : ""}`, r.status !== "priced", null);
+
+  test.each(Array.from({ length: 8 }, (_, i) => 25 + i))("105×%i", async (height) => {
+    const c = controller();
+    const setup = await render(<Frame controller={c} width={105} height={height} />, 105, height);
+    const seen = new Set<string>();
+    for (let i = 0; i <= vm.rows.length; i++) {
+      const frame = chars(setup);
+      const shown = vm.rows.filter((r) => frame.includes(label(r)));
+      for (const r of shown) seen.add(rowKey(r));
+      if (shown.length < vm.rows.length) {
+        // Rows off screen: the table says how many, and nothing else takes rows from it.
+        expect(frame).toMatch(/\d+ more ↓|↑ \d+ more/);
+        expect(frame).not.toContain("who used it");
+        expect(frame).not.toContain("$/M = base rate");
+      }
+      await settle(setup, () => press(c, "down"));
+    }
+    expect(seen.size).toBe(vm.rows.length);
+  });
+
+  test("the unpriced row is never hidden without the cue", async () => {
+    const mystery = label(row("claude-mystery-9"));
+    for (let height = 12; height <= 40; height++) {
+      const c = controller();
+      const setup = await render(<Frame controller={c} width={105} height={height} />, 105, height);
+      const frame = chars(setup);
+      if (!frame.includes(mystery)) expect(frame).toMatch(/\d+ more ↓/);
+    }
+  });
+
+  test("the cue counts what is off screen above and below", async () => {
+    const c = controller();
+    const setup = await render(<Frame controller={c} width={105} height={14} />, 105, 14);
+    expect(chars(setup)).toContain("5 more ↓");
+    await settle(setup, () => {
+      for (let i = 0; i < 7; i++) press(c, "down");
+    });
+    expect(chars(setup)).toContain("↑ 3 more · 2 more ↓");
+  });
+});
+
+describe("the critique's smaller fixes", () => {
+  test("who used an unpriced model: shares of tokens, said so", async () => {
+    const c = controller();
+    const setup = await render(<Frame controller={c} width={120} height={45} />, 120, 45);
+    const at = vm.rows.findIndex((r) => r.model === "claude-mystery-9");
+    await settle(setup, () => {
+      for (let i = 0; i < at; i++) press(c, "down");
+    });
+    const frame = chars(setup);
+    const mystery = row("claude-mystery-9");
+    expect(frame).toContain("by tokens");
+    for (const u of mystery.users) {
+      const share = `${Math.round((u.tokens / mystery.tokens) * 100)}%`;
+      expect(frame).toMatch(new RegExp(`${u.label} +━+ +${share} +${tokens(u.tokens)}`));
+    }
+  });
+
+  test("a change of cache writes alone is a change; more than two say how many more", () => {
+    const { models, aliases } = bundledPricing();
+    const card = (input: number, cache_write: number) => ({
+      input,
+      output: input * 5,
+      cache_read: input / 10,
+      cache_write,
+    });
+    const prices = new PriceTable(
+      {
+        ...models,
+        "acme-model": {
+          periods: [
+            { from: null, card: card(2, 2.5) },
+            { from: "2026-09-10T00:00:00Z", card: card(2, 3) },
+            { from: "2026-09-15T00:00:00Z", card: card(1, 3) },
+            { from: "2026-09-20T00:00:00Z", card: card(0.5, 3) },
+          ],
+        },
+      },
+      aliases,
+    );
+    const month = {
+      from: Date.parse("2026-09-01T04:00:00Z"),
+      to: Date.parse("2026-10-01T04:00:00Z"),
+    };
+    const changes = priceChanges(prices, "acme-model", "standard", month, NOW);
+    expect(changes.map((c) => c.at)).toEqual([
+      Date.parse("2026-09-10T00:00:00Z"),
+      Date.parse("2026-09-15T00:00:00Z"),
+      Date.parse("2026-09-20T00:00:00Z"),
+    ]);
+    expect(changeText(changes[0] as PriceChange, NOW, TZ)).toBe("Sep 9: cache writes changed");
+    const r = { ...row("gpt-5.6-sol"), changes };
+    const text = rateLines(r, vm, 60).map((l) => l.left.map((x) => x.text).join(""));
+    expect(text.filter((t) => t.startsWith("changed"))).toHaveLength(2);
+    expect(text.at(-1)?.trim()).toBe("+1 earlier");
+  });
+
+  test("an override of the fast card alone is the user's", () => {
+    const { models, aliases } = bundledPricing();
+    const prices = new PriceTable(
+      {
+        ...models,
+        "claude-opus-5-5": {
+          input: 4,
+          output: 20,
+          cache_read: 0.2,
+          fast: { input: 9, output: 45 },
+        },
+      },
+      aliases,
+    );
+    expect(rateCard(prices, "claude-opus-5-5", "claude", NOW)?.source.name).toBe(
+      "pricing.overrides.json",
+    );
+  });
+
+  test("the footer keeps o sort at 105 columns", async () => {
+    const frame = await frameAt(105, 50);
+    expect(frame.split("\n")[49]).toContain("o sort");
   });
 });
 

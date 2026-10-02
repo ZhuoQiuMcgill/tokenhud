@@ -138,8 +138,8 @@ function samePair(a: RatePair | null, b: RatePair | null): boolean {
   return a.input === b.input && a.output === b.output && a.cacheRead === b.cacheRead;
 }
 
-function sameCard(a: Rates, b: Rates | Unpriced): boolean {
-  if (typeof b === "string") return false;
+function sameCard(a: Rates | Unpriced, b: Rates | Unpriced): boolean {
+  if (typeof a === "string" || typeof b === "string") return a === b;
   return (
     a.input === b.input &&
     a.output === b.output &&
@@ -177,7 +177,10 @@ export function rateCard(
     const period = alias.periods.findLast((p) => p.from === null || Date.parse(p.from) <= now);
     estimatedAs = period?.model ?? null;
     source = { name: host(alias.source), checked: null };
-  } else if (!sameCard(card, bundled().rates(model, "standard", now))) {
+  } else if (
+    !sameCard(card, bundled().rates(model, "standard", now)) ||
+    !sameCard(fast, bundled().rates(model, "fast", now))
+  ) {
     source = { name: "pricing.overrides.json", checked: null };
   } else {
     const s = file.sources[PROVIDER_SOURCE[provider.split("/")[0] as string] ?? ""];
@@ -222,9 +225,13 @@ export function priceChanges(
   const out: PriceChange[] = [];
   for (const at of prices.boundaries()) {
     if (at <= range.from || at >= end) continue;
-    const before = pair(prices.rates(model, tier, at - 1));
-    const after = pair(prices.rates(model, tier, at));
-    if (!samePair(before, after)) out.push({ at, before, after });
+    const was = prices.rates(model, tier, at - 1);
+    const is = prices.rates(model, tier, at);
+    // Cache writes count too: a card may change only those.
+    const writes = (r: Rates | Unpriced) => (typeof r === "string" ? null : r.cache_write);
+    const before = pair(was);
+    const after = pair(is);
+    if (!samePair(before, after) || writes(was) !== writes(is)) out.push({ at, before, after });
   }
   return out;
 }

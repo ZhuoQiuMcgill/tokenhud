@@ -179,9 +179,28 @@ export function filterZones(zones: readonly string[], filter: string): string[] 
 
 // ── account edits ────────────────────────────────────────────────────────────────
 
-/** Switches a root off (its path joins `disabled_roots`) or back on. */
+/**
+ * Whether `config` switches the root off: its path (or an entry that named it when the
+ * roots were discovered) in `disabled_roots`, or its config entry's `enabled: false`.
+ * Read from the config, not from `root.enabled`, which is only as new as the last
+ * discovery.
+ */
+export function rootDisabled(config: Config, root: RootInfo): boolean {
+  const entries = root.provider === "claude" ? config.claude_roots : config.codex_roots;
+  return (
+    config.disabled_roots.some((raw) => raw === root.path || root.disabledBy.includes(raw)) ||
+    (root.configIndex !== null && entries[root.configIndex]?.enabled === false)
+  );
+}
+
+/**
+ * Switches a root off (its path joins `disabled_roots`) or back on, by what the config says
+ * now: pressing it twice before the roots are discovered again restores the config.
+ */
 export function toggleEnabled(config: Config, root: RootInfo): Config {
-  if (root.enabled) return { ...config, disabled_roots: [...config.disabled_roots, root.path] };
+  if (!rootDisabled(config, root)) {
+    return { ...config, disabled_roots: [...config.disabled_roots, root.path] };
+  }
   const key = root.provider === "claude" ? "claude_roots" : "codex_roots";
   const entries = config[key].map((e, i) => {
     if (i !== root.configIndex || e.enabled !== false) return e;
@@ -190,7 +209,9 @@ export function toggleEnabled(config: Config, root: RootInfo): Config {
   });
   return {
     ...config,
-    disabled_roots: config.disabled_roots.filter((raw) => !root.disabledBy.includes(raw)),
+    disabled_roots: config.disabled_roots.filter(
+      (raw) => raw !== root.path && !root.disabledBy.includes(raw),
+    ),
     [key]: entries,
   };
 }

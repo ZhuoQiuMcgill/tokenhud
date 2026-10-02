@@ -97,7 +97,7 @@ const CODEX_WEEKLY_RESET = NOW + 19 * HOUR + 5 * MIN;
 const CAPTURED = NOW - 90_000;
 
 /** limits.json as the fetcher leaves it: captures by identity, and one failed fetch. */
-function limitsFile() {
+export function limitsFile() {
   const s = (ms: number) => ms / 1000;
   const bucket = (label: string, used: number, resetsAt: number, minutes?: number) => ({
     label,
@@ -199,10 +199,10 @@ export interface T13Fixture extends Fixture {
   readonly limitsPath: string;
 }
 
-export function makeT13Fixture(): T13Fixture {
+export function makeT13Fixture(limits: unknown = limitsFile()): T13Fixture {
   const fx = makeFixtureStore([...fixtureRows(), ...extraRows()]);
   const limitsPath = join(fx.dir, "limits.json");
-  writeFileSync(limitsPath, `${JSON.stringify(limitsFile(), null, 2)}\n`);
+  writeFileSync(limitsPath, `${JSON.stringify(limits, null, 2)}\n`);
   recordEvents(fx.storePath);
   return { ...fx, limitsPath };
 }

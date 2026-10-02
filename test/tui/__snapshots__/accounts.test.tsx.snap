@@ -24,7 +24,7 @@ exports[`frames 105×50, personal selected 1`] = `
                                   │                                                                      
                                   │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*                   
                                   │                                                                      
-                                  │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · +1 more    
+                                  │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · +2 more    
                                   │                                                                      
                                   │  agents    ● get_limits at 11:39:48 · 2 calls in 10 min              
                                                                                                          
@@ -78,7 +78,7 @@ exports[`frames 120×45, personal selected 1`] = `
                                    │                                                                                    
                                    │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*                                 
                                    │                                                                                    
-                                   │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · Haiku 4.5 4%             
+                                   │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · Haiku 4.5 4% · +1 more   
                                    │                                                                                    
                                    │  agents    ● get_limits at 11:39:48 · 2 calls in 10 min                            
                                                                                                                         
@@ -125,7 +125,7 @@ exports[`frames 80×24, personal selected 1`] = `
                            │                                                    
                            │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65* 
                            │                                                    
-                           │  models    Opus 5.5 40% · Opus 4.8 34% · +2 more   
+                           │  models    Opus 5.5 40% · Opus 4.8 34% · +3 more   
 ────────────────────────────────────────────────────────────────────────────────
  1-4 views   a account   s settings   ? help   q quit             MCP ● 1 agent 
 "
@@ -155,7 +155,7 @@ exports[`frames 160×50, personal selected 1`] = `
                                    │                                                                                                                            
                                    │  spend 30d ▁▁▁▁▁▁▃▁▂▂▂▂▁▃▃▂▂█▃▄▂▁▁▁▄▁▃▃▅▁  $32.65*                                                                         
                                    │                                                                                                                            
-                                   │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · Haiku 4.5 4%                                                     
+                                   │  models    Opus 5.5 40% · Opus 4.8 34% · Sonnet 4.6 23% · Haiku 4.5 4% · Mystery 9 *                                       
                                    │                                                                                                                            
                                    │  agents    ● get_limits at 11:39:48 · 2 calls in 10 min                                                                    
                                                                                                                                                                 
@@ -198,7 +198,7 @@ exports[`frames 105×50, old-laptop: not signed in here 1`] = `
  ○ old-laptop         claude    — │                                                                      
  + add a root…                    │  spend 30d ▁▁▇▅▃█▁▄▇▅▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁  $7.52*                    
                                   │                                                                      
- enter scope to it                │  models    Sonnet 4.6 63% · Opus 4.8 26% · Haiku 4.5 11%             
+ enter scope to it                │  models    Sonnet 4.6 63% · Opus 4.8 26% · Haiku 4.5 11% · +1 more   
  e enable/disable                 │                                                                      
  l rename label                   │  agents    no MCP calls in the last 10 min                           
  h history only                   │                                                                      
@@ -317,7 +317,7 @@ exports[`frames 105×50, work: last fetch failed: HTTP 429 1`] = `
                                   │                                                                      
                                   │  spend 30d ▂▃▁▁▁▄▁▃▁▁▃▆█▁▁▂▁█▃▂▁▆▁▁▁▁▂▁▂▁  $19.53*                   
                                   │                                                                      
-                                  │  models    Opus 4.8 51% · Sonnet 4.6 34% · Haiku 4.5 15%             
+                                  │  models    Opus 4.8 51% · Sonnet 4.6 34% · Haiku 4.5 15% · +1 more   
                                   │                                                                      
                                   │  agents    no MCP calls in the last 10 min                           
                                                                                                          
@@ -352,10 +352,10 @@ exports[`frames 60×20: the detail under the list, numbers whole 1`] = `
 ────────────────────────────────────────────────────────────
                                                             
  ACCOUNTS                                   ○ inactive here 
-                                                            
  ● codex                                         codex   83%
  ● personal                                      claude  62%
  ● work                                          claude  92%
+ 3 more ↓                                                   
                                                             
  personal · claude                  limits fetched 11:38:30 
                                                             

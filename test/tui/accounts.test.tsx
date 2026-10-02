@@ -25,6 +25,7 @@ import type { AccountInfo, RootInfo, ViewModels, VmMessage } from "../../src/tui
 import { fixtureConfig, NOW, TZ } from "./fixture.ts";
 import {
   HOME,
+  limitsFile,
   MCP,
   makeT13Fixture,
   type T13Fixture,
@@ -94,13 +95,13 @@ describe("the view model", () => {
         { kind: "weekly_scoped", label: "FABLE WEEKLY", utilization: 0, resetsAt: WEEKLY_RESET },
       ],
     });
-    expect(highest(byLabel("personal"))).toBe(0.62);
-    expect(highest(byLabel("work"))).toBe(0.92);
+    expect(highest(byLabel("personal"), NOW)).toBe(0.62);
+    expect(highest(byLabel("work"), NOW)).toBe(0.92);
     expect(byLabel("work").limits?.error).toBe("HTTP 429");
     expect(byLabel("codex").limits?.windows.map((w) => w.utilization)).toEqual([0.08, 0.83]);
     // History-only: listed, not signed in, never fetched.
     expect(byLabel("old-laptop").limits).toMatchObject({ signedIn: false, windows: [] });
-    expect(highest(byLabel("old-laptop"))).toBeNull();
+    expect(highest(byLabel("old-laptop"), NOW)).toBeNull();
     expect(byLabel("codex-win").limits).toBeNull();
   });
 
@@ -207,7 +208,7 @@ describe("weekly slots", () => {
   test("a capture of a week that has since reset: this week is the one after it", () => {
     const old = week({ resets_at: NOW - DAY, utilization: 0 });
     const slots = weeklySlots([old], [], NOW) ?? [];
-    expect(slots[7]?.resetsAt).toBe(NOW - DAY + WEEK);
+    expect(slots[7]).toEqual({ resetsAt: NOW - DAY + WEEK, value: null, source: "now" });
     expect(slots[6]?.resetsAt).toBe(NOW - DAY);
   });
 });
@@ -251,9 +252,9 @@ function setup(config: Config = fixtureConfig()) {
 
 const key = (name: string) => ({ name, sequence: name.length === 1 ? name : "", ctrl: false });
 
-/** Moves the selection to `label`'s row. */
-function select(c: Controller, label: string) {
-  const at = vm.rows.findIndex((r) => r.label === label);
+/** Moves the selection to `label`'s row of `list`. */
+function select(c: Controller, label: string, list: AccountsVM = vm) {
+  const at = list.rows.findIndex((r) => r.label === label);
   for (let i = 0; i < at; i++) c.key(key("down"));
 }
 
@@ -289,6 +290,17 @@ describe("keys", () => {
     c.key(key("e"));
     expect(s().config.disabled_roots).toEqual([`${HOME}/.claude`]);
     expect(calls).toEqual(["save", "vmConfig", "accountsEdited"]);
+  });
+
+  test("e twice, before the roots are discovered again, restores the config: no duplicates", () => {
+    const { c, s, calls } = setup();
+    select(c, "personal");
+    c.key(key("e"));
+    c.key(key("e"));
+    expect(s().config.disabled_roots).toEqual([]);
+    c.key(key("e"));
+    expect(s().config.disabled_roots).toEqual([`${HOME}/.claude`]);
+    expect(calls.filter((x) => x === "save")).toHaveLength(3);
   });
 
   test("h toggles history-only for the account's root", () => {
@@ -342,7 +354,11 @@ describe("keys", () => {
 
 // ── frames ───────────────────────────────────────────────────────────────────────
 
-function controller(config: Config = fixtureConfig()) {
+function controller(
+  config: Config = fixtureConfig(),
+  v: ViewModels = views,
+  list: AccountInfo[] = accounts,
+) {
   const c = new Controller(
     initialState(config, "owner"),
     {
@@ -355,18 +371,24 @@ function controller(config: Config = fixtureConfig()) {
     },
     TZ,
   );
-  c.vmMessage({ type: "views", views, accounts, scope: null, ms: 1 });
+  c.vmMessage({ type: "views", views: v, accounts: list, scope: null, ms: 1 });
   c.vmMessage({ type: "mcp", activity: MCP });
   c.setIngest("live");
   c.key(key("4"));
   return c;
 }
 
-async function frameAt(width: number, height: number, label: string | null = "personal") {
-  const c = controller();
+async function frameAt(
+  width: number,
+  height: number,
+  label: string | null = "personal",
+  v: ViewModels = views,
+  list: AccountInfo[] = accounts,
+) {
+  const c = controller(fixtureConfig(), v, list);
   const setup = await render(<Frame controller={c} width={width} height={height} />, width, height);
   await settle(setup, () => {
-    if (label !== null) select(c, label);
+    if (label !== null) select(c, label, v.accounts as AccountsVM);
   });
   return chars(setup);
 }
@@ -392,7 +414,7 @@ describe("frames", () => {
     expect(frame).toContain("62%");
     expect(frame).toContain(costText(personal.last30).text);
     for (const r of vm.rows) {
-      const u = highest(r);
+      const u = highest(r, NOW);
       if (u !== null) expect(frame).toContain(`${Math.round(u * 100)}%`);
     }
     expect(frame).toMatchSnapshot();
@@ -423,6 +445,106 @@ describe("frames", () => {
     });
     expect(chars(setup)).toContain("enter opens the settings account editor");
   });
+});
+
+// Critique m1: between 72 and 91 columns (side by side, narrow detail) and at 80×24, no
+// line is cut: the meters shrink their bar, then drop "resets", then the bar; notes and
+// annotations have shorter forms.
+describe("no line cut at the side-by-side widths", () => {
+  const widths = [...Array.from({ length: 20 }, (_, i) => 72 + i), 60, 66, 71, 100, 120, 160];
+  test.each([24, 50])("height %i, every account, widths 60–160", async (height) => {
+    for (const width of widths) {
+      for (const label of vm.rows.map((r) => r.label)) {
+        const frame = await frameAt(width, height, label);
+        const cut = frame
+          .split("\n")
+          .filter((l) => l.replace("add a root…", "add a root").includes("…"));
+        expect({ width, label, cut }).toEqual({ width, label, cut: [] });
+      }
+    }
+  });
+
+  test("80×24, the disabled account: its note whole", async () => {
+    const frame = await frameAt(80, 24, "codex-win");
+    expect(frame).toContain("root disabled (e enables it)");
+    expect(frame.replace("add a root…", "")).not.toContain("…");
+  });
+});
+
+// Critique m2: a capture from before the windows running now is stale: never a current 0%.
+describe("a stale capture", () => {
+  let stale: T13Fixture;
+  let sv: ViewModels;
+  let sa: AccountInfo[];
+  const CAPTURED = NOW - 10 * DAY;
+  beforeAll(() => {
+    const file = limitsFile();
+    const personal = "fixture-identity-personal";
+    const s = (ms: number) => ms / 1000;
+    (file.providers as Record<string, unknown>)[personal] = {
+      captured_at: s(CAPTURED),
+      source: "claude",
+      via: "api",
+      rate_limits: {
+        session: { label: "5-HOUR", used_percentage: 64, resets_at: s(CAPTURED + 3 * HOUR) },
+        weekly_all: { label: "WEEKLY", used_percentage: 64, resets_at: s(NOW - 6 * DAY) },
+      },
+    };
+    stale = makeT13Fixture(file);
+    ({ views: sv, accounts: sa } = t13Views(stale));
+  });
+  afterAll(() => stale.remove());
+
+  test("the list shows the capture's age, the meters a dash and when they reset", async () => {
+    const list = sv.accounts as AccountsVM;
+    const personal = list.rows.find((r) => r.label === "personal") as AccountRow;
+    expect(highest(personal, NOW)).toBeNull();
+    const frame = await frameAt(105, 50, "personal", sv, sa);
+    const row = frame.split("\n").find((l) => /[●○] personal /.test(l));
+    expect(row).toContain("10d");
+    expect(row).not.toContain("0%");
+    expect(frame).toContain("reset 6d ago");
+    expect(frame).not.toMatch(/WEEKLY.*\b0%/);
+  });
+
+  test("the chart's this-week bar is unknown, and the note says why", async () => {
+    const personal = (sv.accounts as AccountsVM).rows.find((r) => r.label === "personal");
+    expect(personal?.weekly?.[7]).toMatchObject({ value: null, source: "now" });
+    const frame = await frameAt(105, 50, "personal", sv, sa);
+    expect(frame).toContain("this week isn't captured yet");
+  });
+});
+
+// Critique m3: an account T8 detected as not signed in is inactive, like a configured one.
+test("an account detected as not signed in: ○, listed with the inactive ones", async () => {
+  const file = limitsFile();
+  (file.status as Record<string, unknown>)["fixture-identity-personal"] = {
+    signed_in: false,
+    history_only: "detected",
+    checked_at: NOW - HOUR,
+    cred_mtime: null,
+    errors: 0,
+    last_error: null,
+    last_attempt_at: NOW - HOUR,
+    next_at: NOW + DAY,
+  };
+  const out = makeT13Fixture(file);
+  try {
+    const { views: v, accounts: list } = t13Views(out);
+    const rows = (v.accounts as AccountsVM).rows.map((r) => r.label);
+    expect(rows.slice(2).sort()).toEqual(["codex-win", "old-laptop", "personal"]);
+    const frame = await frameAt(105, 50, "personal", v, list);
+    expect(frame).toContain("○ personal");
+    expect(frame).toContain("(watched, not signed in)");
+    expect(frame).toContain("not signed in here");
+  } finally {
+    out.remove();
+  }
+});
+
+test("a list cut short says how many accounts are off screen", async () => {
+  const frame = await frameAt(60, 20, null);
+  expect(frame).toMatch(/\d more ↓/);
 });
 
 // ── the session: limits.json and MCP activity refresh the view ──────────────────

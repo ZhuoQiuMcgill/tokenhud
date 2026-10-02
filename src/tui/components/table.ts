@@ -38,6 +38,11 @@ export interface TableOptions<R> extends ThemedOptions<TableRenderable<R>> {
   /** Cells between columns. */
   gap?: number;
   header?: boolean;
+  /**
+   * Say when rows are off screen (`↑ 2 more · 5 more ↓`): in the rule above the totals, or
+   * in the last line without totals. Off, the rows scroll without a cue.
+   */
+  more?: boolean;
 }
 
 /** The fill column's narrowest useful width, before other columns start to go. */
@@ -86,6 +91,14 @@ export function layoutColumns<R>(
   }));
 }
 
+/** What is off screen, above and below: `↑ 2 more · 5 more ↓`, or "" when nothing is. */
+export function moreText(above: number, below: number): string {
+  const parts: string[] = [];
+  if (above > 0) parts.push(`↑ ${above} more`);
+  if (below > 0) parts.push(`${below} more ↓`);
+  return parts.join(" · ");
+}
+
 /** The first row to show so that `selected` is visible, moving as little as possible from `top`. */
 export function scrollTop(top: number, selected: number, visible: number, rows: number): number {
   let out = top;
@@ -108,6 +121,7 @@ export class TableRenderable<R = unknown> extends Themed {
   #totals: R | null = null;
   #gap = 1;
   #header = true;
+  #more = false;
   #top = 0;
 
   constructor(ctx: RenderContext, options: TableOptions<R>) {
@@ -118,6 +132,7 @@ export class TableRenderable<R = unknown> extends Themed {
     if (options.totals !== undefined) this.#totals = options.totals;
     if (options.gap !== undefined) this.#gap = options.gap;
     if (options.header !== undefined) this.#header = options.header;
+    if (options.more !== undefined) this.#more = options.more;
   }
 
   set columns(v: readonly Column<R>[]) {
@@ -150,9 +165,21 @@ export class TableRenderable<R = unknown> extends Themed {
     this.requestRender();
   }
 
-  /** Rows of data that fit under the header and above the totals. */
+  set more(v: boolean) {
+    this.#more = v ?? false;
+    this.requestRender();
+  }
+
+  /** Rows of data that fit under the header and above the totals (or the "more" line). */
   get pageSize(): number {
-    return Math.max(0, this.height - (this.#header ? 1 : 0) - (this.#totals !== null ? 2 : 0));
+    const room = Math.max(
+      0,
+      this.height - (this.#header ? 1 : 0) - (this.#totals !== null ? 2 : 0),
+    );
+    // Without totals, the cue takes the last line when some rows are off screen.
+    return this.#more && this.#totals === null && this.#rows.length > room
+      ? Math.max(0, room - 1)
+      : room;
   }
 
   #drawRow(
@@ -232,9 +259,17 @@ export class TableRenderable<R = unknown> extends Themed {
         selected ? "sel" : undefined,
       );
     }
+    const cue = this.#more ? moreText(this.#top, this.#rows.length - end) : "";
     if (totals !== null && y + 1 < this.y + this.height) {
       buffer.drawText("─".repeat(this.width), this.x, y, this.color("rule"));
+      if (cue !== "") {
+        const text = ` ${cue} `;
+        const at = Math.max(this.x, this.x + this.width - textWidth(text) - 1);
+        buffer.drawText(text, at, y, this.color("mute"));
+      }
       this.#drawRow(buffer, this.#totals as R, y + 1, layout, totals, undefined, true);
+    } else if (cue !== "" && y < this.y + this.height) {
+      buffer.drawText(fit(cue, this.width), this.x, y, this.color("mute"));
     }
   }
 }

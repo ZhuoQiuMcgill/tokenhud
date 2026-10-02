@@ -158,7 +158,7 @@ exports[`105×50 view 3 (models) 1`] = `
                                                                                                          
                                                                                                          
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   ↑/↓ select   a account   s settings   ? help   q quit           MCP ● 2 agents 
+ 1-4 views   ←/→ window   o sort   a account   s settings   ? help   q quit               MCP ● 2 agents 
 "
 `;
 
@@ -359,7 +359,7 @@ exports[`120×45 view 3 (models) 1`] = `
                                                                                                                         
                                                                                                                         
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   ↑/↓ select   enter rates   a account   s settings   ? help   q quit            MCP ● 2 agents 
+ 1-4 views   ←/→ window   o sort   enter rates   a account   s settings   ? help   q quit                MCP ● 2 agents 
 "
 `;
 
@@ -682,7 +682,7 @@ exports[`160×50 view 3 (models) 1`] = `
                                                                                                                                                                 
                                                                                                                                                                 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1-4 views   ←/→ window   ↑/↓ select   enter rates   o sort   a account   s settings   ? help   q quit                                           MCP ● 2 agents 
+ 1-4 views   ←/→ window   o sort   enter rates   ↑/↓ select   a account   s settings   ? help   q quit                                           MCP ● 2 agents 
 "
 `;
 
@@ -817,9 +817,11 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
 ──────────────────────────────────────────────────
                                                   
  ACCOUNTS                         ○ inactive here 
-                                                  
  ○ codex-win                           codex     —
  ○ codex                               codex     —
+ ○ personal                            claude    —
+ ○ work                                claude    —
+ 2 more ↓                                         
                                                   
  codex-win · codex                                
                                                   
@@ -829,8 +831,6 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
  limits    not fetched: no root on this machine   
                                                   
  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25 
-                                                  
- models    gpt-5.5 59% · gpt-5.6-sol 41%          
 ──────────────────────────────────────────────────
  1-4 views   ? help   q quit       MCP ● 2 agents 
 "
@@ -913,9 +913,11 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
 ────────────────────────────────────────────────────────────
                                                             
  ACCOUNTS                                   ○ inactive here 
-                                                            
  ○ codex-win                                     codex     —
  ○ codex                                         codex     —
+ ○ personal                                      claude    —
+ ○ work                                          claude    —
+ 2 more ↓                                                   
                                                             
  codex-win · codex                                          
                                                             
@@ -925,8 +927,6 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
  limits    not fetched: no root on this machine             
                                                             
  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.25           
-                                                            
- models    gpt-5.5 59% · gpt-5.6-sol 41%                    
 ────────────────────────────────────────────────────────────
  1-4 views   a account   ? help   q quit     MCP ● 2 agents 
 "

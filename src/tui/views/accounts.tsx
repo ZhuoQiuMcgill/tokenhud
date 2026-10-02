@@ -2,7 +2,7 @@
 // and highest current utilisation; right, the selected one's root and history, its limit
 // meters, the weekly window's last 8 weeks, its 30-day spend and models, and its last MCP
 // call. Narrow, the detail stacks under the list.
-import { type Line, type Seg, seg } from "../components/base.ts";
+import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column } from "../components/index.ts";
 import { filledCells } from "../components/meter.ts";
 import { sparkChar } from "../components/spark.ts";
@@ -11,7 +11,7 @@ import { Lines, Table } from "../elements.tsx";
 import { dayLabel, fit, percent, textWidth, tokens } from "../format.ts";
 import { fitSections, type SectionSpec } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
-import type { AccountRow, AccountsVM, WeekSlot } from "../vm/accounts.ts";
+import type { AccountRow, AccountsVM, ModelSpend, WeekSlot } from "../vm/accounts.ts";
 import { costText } from "./cells.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
@@ -95,34 +95,57 @@ function firstFit(variants: readonly string[], width: number): string {
   return variants.find((v) => textWidth(v) <= width) ?? (variants[variants.length - 1] as string);
 }
 
-/** Not active on this machine: history-only, disabled, or without a root here. */
-function inactive(a: AccountRow): boolean {
-  return a.historyOnly || a.root === null || !a.root.enabled;
+/** `45m`, `3h`, `12d`: how long ago, for a stale capture. */
+function age(ms: number): string {
+  const m = Math.max(0, Math.floor(ms / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }
 
-/** The highest utilisation of its current limits, or null when none is known. */
-export function highest(a: AccountRow): number | null {
-  if (a.limits === null || !a.limits.signedIn || a.limits.windows.length === 0) return null;
-  return Math.max(...a.limits.windows.map((w) => w.utilization));
+/**
+ * Not active on this machine: history-only (configured, or detected as not signed in
+ * here), disabled, or without a root here.
+ */
+function inactive(a: AccountRow): boolean {
+  return a.historyOnly || a.limits?.signedIn === false || a.root === null || !a.root.enabled;
+}
+
+/**
+ * The highest utilisation among its windows still running at `asOf`, or null when none is
+ * known. A window past its reset says nothing about the one running now.
+ */
+export function highest(a: AccountRow, asOf: number): number | null {
+  if (a.limits === null || !a.limits.signedIn) return null;
+  const running = a.limits.windows.filter((w) => w.resetsAt > asOf);
+  return running.length === 0 ? null : Math.max(...running.map((w) => w.utilization));
+}
+
+/** Its capture's age when every window it holds has since reset; null otherwise. */
+function staleAge(a: AccountRow, asOf: number): string | null {
+  const l = a.limits;
+  if (l === null || !l.signedIn || l.asOf === null || l.windows.length === 0) return null;
+  return highest(a, asOf) === null ? age(asOf - l.asOf) : null;
 }
 
 const pct = (u: number) => `${Math.round(u * 100)}%`;
 
-function statusDot(a: AccountRow): { text: string; role: Role } {
+function statusDot(a: AccountRow, asOf: number): { text: string; role: Role } {
   if (inactive(a)) return { text: "○", role: "dim" };
-  const u = highest(a);
-  return { text: "●", role: u === null ? "mute" : level(u) };
+  const u = highest(a, asOf);
+  return { text: "●", role: u === null ? "dim" : level(u) };
 }
 
 // ── the list ─────────────────────────────────────────────────────────────────────
 
-function listColumns(ctx: ViewContext, width: number): Column<ListRow>[] {
+function listColumns(vm: AccountsVM, ctx: ViewContext, width: number): Column<ListRow>[] {
+  const { asOf } = vm;
   return [
     {
       title: "",
       width: 1,
-      role: (r) => (isAdd(r) ? "dim" : statusDot(r).role),
-      text: (r) => (isAdd(r) ? "+" : statusDot(r).text),
+      role: (r) => (isAdd(r) ? "dim" : statusDot(r, asOf).role),
+      text: (r) => (isAdd(r) ? "+" : statusDot(r, asOf).text),
     },
     {
       title: "",
@@ -143,13 +166,14 @@ function listColumns(ctx: ViewContext, width: number): Column<ListRow>[] {
       align: "right",
       role: (r) => {
         if (isAdd(r)) return "dim";
-        const u = highest(r);
+        const u = highest(r, asOf);
         return u === null ? "dim" : level(u);
       },
+      // A capture from before the windows running now: its age, dim, never a current 0%.
       text: (r) => {
         if (isAdd(r)) return "";
-        const u = highest(r);
-        return u === null ? "—" : pct(u);
+        const u = highest(r, asOf);
+        return u !== null ? pct(u) : (staleAge(r, asOf) ?? "—");
       },
     },
   ];
@@ -176,6 +200,7 @@ const HINTS: Line[] = [
 
 /** The list column: title, the accounts and "+ add a root…", then the keys if rows allow. */
 function ListColumn(props: {
+  vm: AccountsVM;
   rows: readonly ListRow[];
   selected: number;
   ctx: ViewContext;
@@ -183,25 +208,22 @@ function ListColumn(props: {
   height: number;
 }) {
   const { rows, ctx, width, height } = props;
-  const table = Math.min(rows.length, Math.max(1, height - 2));
-  const left = height - 2 - table;
+  // Short of rows, the blank line under the title goes before any account does.
+  const top = height >= rows.length + 2 ? 2 : 1;
+  const table = Math.min(rows.length, Math.max(1, height - top));
+  const left = height - top - table;
   const hints = left >= HINTS.length + 1 ? [{ left: [] }, ...HINTS] : [];
   const legend = rows.some((r) => !isAdd(r) && inactive(r)) ? "○ inactive here " : "";
+  const title: Line = { left: [seg(" ACCOUNTS", "head", true)], right: [seg(legend, "dim")] };
   return (
     <box flexDirection="column" width={width} height={height} flexShrink={0}>
-      <Lines
-        theme={ctx.theme}
-        lines={[
-          { left: [seg(" ACCOUNTS", "head", true)], right: [seg(legend, "dim")] },
-          { left: [] },
-        ]}
-        width={width}
-      />
+      <Lines theme={ctx.theme} lines={top === 2 ? [title, { left: [] }] : [title]} width={width} />
       <Table<ListRow>
-        columns={listColumns(ctx, width - 1)}
+        columns={listColumns(props.vm, ctx, width - 1)}
         rows={rows}
         selected={props.selected}
         header={false}
+        more={true}
         theme={ctx.theme}
         height={table}
         width={width - 1}
@@ -221,37 +243,63 @@ interface Part extends SectionSpec {
 
 const label = (name: string): Seg => seg(` ${name.padEnd(FIELD - 1)}`, "mute");
 
-function headPart(a: AccountRow, vm: AccountsVM): Part {
-  const right: Seg[] = [];
+/** The first of `variants` whose segments fit `width` (the last one otherwise). */
+function fitSegs(variants: readonly Seg[][], width: number): Seg[] {
+  return variants.find((v) => segsWidth(v) <= width) ?? (variants[variants.length - 1] as Seg[]);
+}
+
+/** A labelled note, its text the first of `variants` that fits. */
+function noteLine(
+  name: string,
+  variants: readonly string[],
+  width: number,
+  role: Role = "dim",
+): Line {
+  return { left: [label(name), seg(firstFit(variants, width - FIELD), role)] };
+}
+
+function headPart(a: AccountRow, vm: AccountsVM, width: number): Part {
+  const left = [seg(` ${a.label}`, "head", true), seg(` · ${a.provider}`, "mute")];
+  let right: Seg[] = [];
   if (a.limits?.asOf != null) {
     const at = a.limits.asOf;
     const when =
       dayKey(at, vm.tz) === dayKey(vm.asOf, vm.tz)
         ? clockSeconds(at, vm.tz)
         : `${localDay(at, vm.asOf, vm.tz)} ${clockMinutes(at, vm.tz)}`;
-    right.push(seg(`limits fetched ${when} `, "dim"));
+    const room = width - segsWidth(left) - 1;
+    right = [
+      seg(`${firstFit([`limits fetched ${when} `, `fetched ${when} `, `${when} `], room)}`, "dim"),
+    ];
+    if (segsWidth(right) > room) right = [];
   }
-  const line: Line = {
-    left: [seg(` ${a.label}`, "head", true), seg(` · ${a.provider}`, "mute")],
-    right,
-  };
-  return { id: "head", priority: 1, height: 1, lines: () => [line] };
+  return { id: "head", priority: 1, height: 1, lines: () => [{ left, right }] };
 }
 
-function wherePart(a: AccountRow, vm: AccountsVM): Part {
-  const root: Line =
-    a.root === null
-      ? { left: [label("root"), seg("not found on this machine: history only", "dim")] }
-      : {
-          left: [
-            label("root"),
-            seg(a.root.path, "fg"),
-            seg(
-              `  (${!a.root.enabled ? "disabled" : a.root.polled ? "polled" : "watched"}${a.historyOnly ? ", history only" : ""})`,
-              "dim",
-            ),
-          ],
-        };
+function wherePart(a: AccountRow, vm: AccountsVM, width: number): Part {
+  let root: Line;
+  if (a.root === null) {
+    root = noteLine("root", ["not found on this machine: history only", "not found here"], width);
+  } else {
+    const status = !a.root.enabled ? "disabled" : a.root.polled ? "polled" : "watched";
+    const extra = a.historyOnly
+      ? ", history only"
+      : a.limits?.signedIn === false
+        ? ", not signed in"
+        : "";
+    const path = [label("root"), seg(a.root.path, "fg")];
+    // The annotation gives way before the path is cut.
+    root = {
+      left: fitSegs(
+        [
+          [...path, seg(`  (${status}${extra})`, "dim")],
+          [...path, seg(`  (${status})`, "dim")],
+          path,
+        ],
+        width,
+      ),
+    };
+  }
   const history: Line =
     a.records === 0
       ? { left: [label("history"), seg("no records yet", "dim")] }
@@ -265,40 +313,85 @@ function wherePart(a: AccountRow, vm: AccountsVM): Part {
   return { id: "where", priority: 2, height: 2, lines: () => [root, history] };
 }
 
-/** The limit meters (5-HOUR, WEEKLY, then any other), or why there are none. */
-function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
-  const lines: Line[] = [];
-  const note = (text: string) => lines.push({ left: [label("limits"), seg(text, "dim")] });
-  const l = a.limits;
-  if (a.historyOnly || (l !== null && !l.signedIn)) {
-    lines.push({ left: [seg(" not signed in here", "mid")] });
-  } else if (a.root === null) {
-    note("not fetched: no root on this machine");
-  } else if (!a.root.enabled) {
-    note("not fetched: this root is disabled (e enables it)");
-  } else if (l === null || l.windows.length === 0) {
-    note("none fetched yet");
-  } else {
-    const labelWidth = Math.max(8, ...l.windows.map((w) => textWidth(w.label) + 1));
-    const reset = (t: number) => (t <= vm.asOf ? "reset" : `resets ${whenText(t, vm.asOf, vm.tz)}`);
-    const resetWidth = Math.max(...l.windows.map((w) => textWidth(reset(w.resetsAt))));
-    const bar = Math.max(8, Math.min(44, width - 1 - labelWidth - 6 - 3 - resetWidth));
-    for (const w of l.windows) {
-      const n = filledCells(w.utilization, bar);
-      const role = level(w.utilization);
-      lines.push({
+/**
+ * One meter line per window: the label, a bar, the % and when it resets. Narrow, the bar
+ * shrinks, then "resets" goes, then the bar: the % and the time are never cut. A window
+ * past its reset is stale: an empty bar, `—`, and how long ago it reset.
+ */
+function meterLines(a: AccountRow, vm: AccountsVM, width: number): Line[] {
+  const windows = a.limits?.windows ?? [];
+  const labelWidth = Math.max(8, ...windows.map((w) => textWidth(w.label) + 1));
+  const stale = (t: number) => t <= vm.asOf;
+  const when = (t: number) => (stale(t) ? `${age(vm.asOf - t)} ago` : whenText(t, vm.asOf, vm.tz));
+  const shapes = [
+    { word: true, bar: true },
+    { word: false, bar: true },
+    { word: false, bar: false },
+  ];
+  const resetText = (t: number, word: boolean) =>
+    word ? `${stale(t) ? "reset" : "resets"} ${when(t)}` : when(t);
+  for (const [i, shape] of shapes.entries()) {
+    const resetWidth = Math.max(
+      ...windows.map((w) => textWidth(resetText(w.resetsAt, shape.word))),
+    );
+    const fixed = 1 + labelWidth + 6 + 3 + resetWidth;
+    const bar = shape.bar ? Math.min(44, width - fixed) : 0;
+    if (shape.bar && bar < 4 && i < shapes.length - 1) continue;
+    return windows.map((w) => {
+      const old = stale(w.resetsAt);
+      const n = old ? 0 : filledCells(w.utilization, bar);
+      const role: Role = old ? "dim" : level(w.utilization);
+      return {
         left: [
           seg(` ${w.label.padEnd(labelWidth)}`, "head", true),
           seg("━".repeat(n), role),
-          seg("━".repeat(bar - n), "empty"),
-          seg(pct(w.utilization).padStart(6), role, true),
-          seg(`   ${reset(w.resetsAt)}`, "dim"),
+          seg("━".repeat(Math.max(0, bar - n)), "empty"),
+          seg((old ? "—" : pct(w.utilization)).padStart(6), role, !old),
+          seg(`   ${resetText(w.resetsAt, shape.word)}`, "dim"),
         ],
-      });
-    }
+      };
+    });
+  }
+  return [];
+}
+
+/** The limit meters (5-HOUR, WEEKLY, then any other), or why there are none. */
+function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
+  let lines: Line[];
+  const l = a.limits;
+  if (a.historyOnly || (l !== null && !l.signedIn)) {
+    lines = [{ left: [seg(" not signed in here", "mid")] }];
+  } else if (a.root === null) {
+    lines = [noteLine("limits", ["not fetched: no root on this machine", "no root here"], width)];
+  } else if (!a.root.enabled) {
+    lines = [
+      noteLine(
+        "limits",
+        [
+          "not fetched: this root is disabled (e enables it)",
+          "not fetched: root disabled (e enables it)",
+          "root disabled (e enables it)",
+          "root disabled",
+        ],
+        width,
+      ),
+    ];
+  } else if (l === null || l.windows.length === 0) {
+    lines = [noteLine("limits", ["none fetched yet"], width)];
+  } else {
+    lines = meterLines(a, vm, width);
   }
   const failed: Line[] =
-    l?.error == null ? [] : [{ left: [label(""), seg(`last fetch failed: ${l.error}`, "mid")] }];
+    l?.error == null
+      ? []
+      : [
+          noteLine(
+            "",
+            [`last fetch failed: ${l.error}`, `fetch failed: ${l.error}`, l.error],
+            width,
+            "mid",
+          ),
+        ];
   // Short of rows, the meters after the 5-hour and weekly ones go first.
   return {
     id: "limits",
@@ -330,17 +423,26 @@ function weeklyPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
   const slotWidth = Math.max(5, Math.min(MAX_WEEK, Math.floor((width - 3) / slots.length)));
   const colw = Math.max(1, slotWidth - 2);
   const known = slots.filter((s) => s.source !== "now" && s.value !== null).length;
+  const now = slots[slots.length - 1] as WeekSlot;
+  const captured = a.limits.asOf === null ? "" : ` (${age(vm.asOf - a.limits.asOf)} old)`;
   const note = firstFit(
-    known === 0
+    now.value === null
       ? [
-          "no limit events recorded yet: only this week is known",
-          "no limit events yet: only this week is known",
+          `this week isn't captured yet: the last capture${captured} is from an earlier one`,
+          `this week isn't captured yet${captured}`,
+          "this week not captured yet",
         ]
-      : [
-          "only weeks past 80 % or at 100 % are recorded; — = no record",
-          "only weeks past 80 % or at 100 % are recorded",
-          "— = no record",
-        ],
+      : known === 0
+        ? [
+            "no limit events recorded yet: only this week is known",
+            "no limit events yet: only this week is known",
+            "only this week is known",
+          ]
+        : [
+            "only weeks past 80 % or at 100 % are recorded; — = no record",
+            "only weeks past 80 % or at 100 % are recorded",
+            "— = no record",
+          ],
     width - 4,
   );
   // `Aug 10`, or `8/10` for every week when one is too narrow for that.
@@ -398,12 +500,19 @@ function spendPart(a: AccountRow, ctx: ViewContext, width: number): Part {
 
 /** Top models over 30 days, one line: as many as fit, by share of cost (tokens). */
 function modelsPart(a: AccountRow, ctx: ViewContext, width: number): Part {
-  const value = (m: { cost: number; tokens: number }) => (ctx.showCost ? m.cost : m.tokens);
+  // Shares of cost, or of tokens when costs are hidden or nothing has a price; unpriced
+  // models are listed after the priced ones, marked `*`.
+  const byCost = ctx.showCost && a.topModels.some((m) => m.cost > 0);
+  const value = (m: ModelSpend) => (byCost ? m.cost : m.tokens);
   const total = a.topModels.reduce((s, m) => s + value(m), 0);
   const items = [...a.topModels]
-    .sort((x, y) => value(y) - value(x))
-    .filter((m) => value(m) > 0)
-    .map((m) => `${m.name} ${percent(value(m) / total, 0)}`);
+    .filter((m) => m.tokens > 0)
+    .sort((x, y) => value(y) - value(x) || y.tokens - x.tokens)
+    .map((m) =>
+      byCost && m.unpriced
+        ? `${m.name} *`
+        : `${m.name}${m.unpriced ? " *" : ""} ${percent(value(m) / total, 0)}`,
+    );
   let text = "";
   for (const [i, item] of items.entries()) {
     const more = items.length - i - 1;
@@ -425,20 +534,33 @@ function modelsPart(a: AccountRow, ctx: ViewContext, width: number): Part {
 }
 
 /** Its last MCP call in the last 10 minutes, when MCP servers report any. */
-function agentPart(a: AccountRow, vm: AccountsVM): Part | null {
+function agentPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
   if (a.agent === null) {
     if (!vm.mcp) return null;
-    const line: Line = { left: [label("agents"), seg("no MCP calls in the last 10 min", "dim")] };
+    const line = noteLine(
+      "agents",
+      ["no MCP calls in the last 10 min", "no calls in 10 min"],
+      width,
+    );
     return { id: "agents", priority: 7, height: 1, lines: () => [line] };
   }
   const { at, tool, calls } = a.agent;
+  const head = [label("agents"), seg("● ", "live")];
+  const time = clockSeconds(at, vm.tz);
   const line: Line = {
-    left: [
-      label("agents"),
-      seg("● ", "live"),
-      seg(`${tool} at ${clockSeconds(at, vm.tz)}`, "fg"),
-      seg(` · ${calls} call${calls === 1 ? "" : "s"} in 10 min`, "dim"),
-    ],
+    left: fitSegs(
+      [
+        [
+          ...head,
+          seg(`${tool} at ${time}`, "fg"),
+          seg(` · ${calls} call${calls === 1 ? "" : "s"} in 10 min`, "dim"),
+        ],
+        [...head, seg(`${tool} at ${time}`, "fg")],
+        [...head, seg(`${tool} ${time.slice(0, 5)}`, "fg")],
+        [...head, seg(time.slice(0, 5), "fg")],
+      ],
+      width,
+    ),
   };
   return { id: "agents", priority: 7, height: 1, lines: () => [line] };
 }
@@ -446,13 +568,13 @@ function agentPart(a: AccountRow, vm: AccountsVM): Part | null {
 /** The detail's blocks in display order (priorities say what drops first). */
 function detailParts(a: AccountRow, vm: AccountsVM, ctx: ViewContext, width: number): Part[] {
   const parts: (Part | null)[] = [
-    headPart(a, vm),
-    wherePart(a, vm),
+    headPart(a, vm, width),
+    wherePart(a, vm, width),
     limitsPart(a, vm, width),
     weeklyPart(a, vm, width),
     spendPart(a, ctx, width),
     modelsPart(a, ctx, width),
-    agentPart(a, vm),
+    agentPart(a, vm, width),
   ];
   return parts.filter((p): p is Part => p !== null);
 }
@@ -530,7 +652,14 @@ export const accounts: View<AccountsVM, AccountsState> = {
           minHeight: Math.min(full, Math.max(listHeight, 4)),
           render: (height) => (
             <box flexDirection="row" height={height} flexShrink={0}>
-              <ListColumn rows={rows} selected={at} ctx={ctx} width={listWidth} height={height} />
+              <ListColumn
+                vm={vm}
+                rows={rows}
+                selected={at}
+                ctx={ctx}
+                width={listWidth}
+                height={height}
+              />
               <Lines
                 theme={ctx.theme}
                 lines={Array.from({ length: height }, () => ({ left: [seg(" │ ", "border")] }))}
@@ -548,13 +677,14 @@ export const accounts: View<AccountsVM, AccountsState> = {
       ];
     }
     // Narrow: the list, then the detail's blocks as sections of their own.
+    // At least the title, three accounts and the cue for the rest.
     const list: Section = {
       id: "list",
       priority: 1,
       height: listHeight,
-      minHeight: Math.min(listHeight, 4),
+      minHeight: Math.min(listHeight, 5),
       render: (height) => (
-        <ListColumn rows={rows} selected={at} ctx={ctx} width={ctx.width} height={height} />
+        <ListColumn vm={vm} rows={rows} selected={at} ctx={ctx} width={ctx.width} height={height} />
       ),
     };
     if (isAdd(row)) {

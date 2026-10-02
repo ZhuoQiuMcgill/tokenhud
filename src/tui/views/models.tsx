@@ -385,11 +385,13 @@ function tableSection(
   }
   return {
     id: "models",
-    // Enter puts the selected model's cards first: the table then keeps its selected row.
+    // Title, header, the rows, then a rule and the total. The footnotes and cards get rows
+    // only once every model has one. Enter puts the selected model's cards first instead:
+    // the table then keeps its selected row. Either way, a table cut short scrolls and says
+    // how many rows are off screen, so no model is hidden without a cue.
     priority: state.cards ? 2 : 1,
-    // Title, header, the rows, then a rule and the total.
     height: 2 + n + 2,
-    minHeight: 2 + Math.min(n, state.cards ? 1 : 3) + 2,
+    ...(state.cards ? { minHeight: 2 + 1 + 2 } : {}),
     render: (height) => (
       <box flexDirection="column" height={height} flexShrink={0}>
         <Lines theme={ctx.theme} lines={[title]} />
@@ -402,6 +404,7 @@ function tableSection(
           height={height - 1}
           width={board.width}
           gap={board.gap}
+          more={true}
           marginLeft={1}
         />
       </box>
@@ -496,7 +499,9 @@ export function changeText(c: PriceChange, asOf: number, tz: string): string {
     before.input === after.input &&
     before.output === after.output
   ) {
-    return `${when}: cache read ${rateShort(before.cacheRead)} → ${rateShort(after.cacheRead)}`;
+    return before.cacheRead === after.cacheRead
+      ? `${when}: cache writes changed`
+      : `${when}: cache read ${rateShort(before.cacheRead)} → ${rateShort(after.cacheRead)}`;
   }
   return `${when}: ${io(before)} → ${io(after)}`;
 }
@@ -566,30 +571,34 @@ export function rateLines(r: ModelRow, vm: ModelsVM, inner: number): Line[] {
     lines.push(field("source", seg(name, "dim")));
     if (checked !== null) lines.push(field("checked", seg(checked, "dim")));
   }
+  // The two latest changes; how many earlier ones there were.
   for (const c of r.changes.slice(-2)) {
     lines.push(field("changed", seg(changeText(c, vm.asOf, vm.tz), "mid")));
   }
+  if (r.changes.length > 2) lines.push(field("", seg(`+${r.changes.length - 2} earlier`, "dim")));
   return lines;
 }
 
 /** The "who used it" card for `r`: each account's share and amount, first use, requests. */
 export function userLines(r: ModelRow, vm: ModelsVM, ctx: ViewContext, inner: number): Line[] {
+  // Shares of cost; of tokens when costs are hidden or the model has no priced cost.
+  const byTokens = !ctx.showCost || !(r.cost > 0);
   const value = (u: Priced): { text: string; role: Role } =>
-    ctx.showCost ? costText(u) : { text: tokens(u.tokens), role: "tokens" };
+    byTokens ? { text: tokens(u.tokens), role: "tokens" } : costText(u);
   const users = r.users.slice(0, MAX_USERS);
   const texts = users.map(value);
   const valueWidth = Math.max(0, ...texts.map((t) => textWidth(t.text)));
   const nameWidth = Math.min(12, Math.max(0, ...users.map((u) => textWidth(u.label))));
   const barWidth = Math.max(4, inner - nameWidth - 1 - 6 - valueWidth);
-  const whole = (ctx.showCost ? r.cost : r.tokens) || 1;
+  const whole = (byTokens ? r.tokens : r.cost) || 1;
   const lines: Line[] = users.map((u, i) => {
-    const share = (ctx.showCost ? u.cost : u.tokens) / whole;
+    const share = (byTokens ? u.tokens : u.cost) / whole;
     const n = share > 0 ? Math.max(1, Math.min(barWidth, Math.round(share * barWidth))) : 0;
     const t = texts[i] as { text: string; role: Role };
     return {
       left: [
         seg(`${clip(u.label, nameWidth).padEnd(nameWidth)} `, "mute"),
-        seg("━".repeat(n), ctx.showCost ? "cost" : "tokens"),
+        seg("━".repeat(n), byTokens ? "tokens" : "cost"),
         seg("━".repeat(barWidth - n), "empty"),
         seg(` ${percent(share, 0).padStart(4)} `, "fg"),
         seg(t.text.padStart(valueWidth), t.role),
@@ -599,10 +608,13 @@ export function userLines(r: ModelRow, vm: ModelsVM, ctx: ViewContext, inner: nu
   if (r.users.length > users.length) {
     lines.push({ left: [seg(`+ ${r.users.length - users.length} more`, "dim")] });
   }
+  const by = byTokens ? "by tokens · " : "";
   const first =
     r.firstSeen === null ? "" : `first seen ${localDay(r.firstSeen, vm.asOf, vm.tz)} · `;
   const requests = `${grouped(r.records)} request${r.records === 1 ? "" : "s"}`;
-  lines.push({ left: [seg(firstFit([`${first}${requests}`, requests], inner), "dim")] });
+  lines.push({
+    left: [seg(firstFit([`${by}${first}${requests}`, `${by}${requests}`, requests], inner), "dim")],
+  });
   return lines;
 }
 
@@ -690,11 +702,12 @@ function cardsSection(
 export const models: View<ModelsVM, ModelsState> = {
   id: "models",
   title: "Models",
+  // Narrow footers drop these from the end: ↑/↓ needs no reminder.
   hints: [
     { key: "←/→", label: "window" },
-    { key: "↑/↓", label: "select" },
-    { key: "enter", label: "rates" },
     { key: "o", label: "sort" },
+    { key: "enter", label: "rates" },
+    { key: "↑/↓", label: "select" },
   ],
   initial: { selected: null, sort: "cost", cards: false },
   keys(key, state, vm) {
