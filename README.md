@@ -147,8 +147,8 @@ In settings:
 | `h` | Accounts: mark an account history only, or not |
 
 Settings are the refresh interval, the default spend window, whether to show cost, the
-theme (dark, light, high contrast), the time zone, and the accounts. They are saved in
-`~/.config/tokenhud/config.json`.
+theme (dark, light, high contrast), the time zone, whether to check for updates, and the
+accounts. They are saved in `~/.config/tokenhud/config.json`.
 
 ## Views
 
@@ -307,8 +307,10 @@ a warning in `tokenhud doctor`.
   account's OAuth token from its credentials file and calls Anthropic's usage endpoint; when
   the token has expired, it lets the `claude` command refresh it. For Codex it asks the
   installed `codex` app server. Tokens are never logged, cached or sent anywhere else.
-- **Network:** the limit requests above, and GitHub when you run `tokenhud update`. No
-  telemetry; prices are bundled, never fetched.
+- **Network:** the limit requests above, and GitHub's list of tokenhud releases: when you
+  run `tokenhud update`, and at most once a day while the TUI runs, to show when a newer
+  release is out (settings, "Check for updates", turns that off). No telemetry; prices are
+  bundled, never fetched.
 
 tokenhud's own files are in `~/.config/tokenhud/` (or `$XDG_CONFIG_HOME/tokenhud/`):
 
@@ -319,6 +321,7 @@ cache.db                  how far each transcript has been read (safe to delete:
 config.json               settings
 pricing.overrides.json    your prices, if any
 limits.json               the last limits fetched
+update-check.json         when GitHub was last asked about a newer release, and its answer
 logs/tokenhud.log         errors, for tokenhud doctor and bug reports
 mcp/                      which MCP servers are running, for the Overview
 ingest.lock.db            which tokenhud process writes the store
@@ -337,7 +340,11 @@ tokenhud update             # install it
 A binary from `install.sh` or `install.ps1` replaces itself: it downloads the new release,
 checks its SHA-256 against the release's `SHA256SUMS`, checks that it starts, and only then
 swaps it in. `--prerelease` includes release candidates. For an npm, npx or bunx install,
-`tokenhud update` prints the command that updates it instead. Nothing updates on its own.
+`tokenhud update` prints the command that updates it instead.
+
+Nothing updates on its own. When a newer release is out, the TUI says so in its footer, in
+dim text; it asks GitHub at most once a day, and the "Check for updates" setting turns that
+off.
 
 To uninstall:
 

@@ -2,7 +2,7 @@
 // installed, which release is the newest on GitHub, and replacing the binary with a
 // downloaded one only once its SHA-256 matches the release's SHA256SUMS.
 
-import { readdirSync, renameSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { REPO, SUMS_FILE, sumFor } from "./release.ts";
@@ -331,4 +331,79 @@ export function removeStaleOld(exe: string): void {
       // Still running (a TUI or MCP server started before the update); next time.
     }
   }
+}
+
+// ── the TUI's update note ───────────────────────────────────────────────────────────
+
+/** How often the TUI may ask GitHub about a new release. */
+export const CHECK_INTERVAL_MS = 24 * 3_600_000;
+
+interface CheckState {
+  /** Epoch ms of the last time GitHub was asked. */
+  readonly checked_at: number;
+  /** The newest release then (prereleases included for a prerelease build), or null. */
+  readonly latest: string | null;
+}
+
+function readCheckState(path: string): CheckState | null {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (typeof raw !== "object" || raw === null) return null;
+    const { checked_at, latest } = raw as Record<string, unknown>;
+    if (typeof checked_at !== "number" || !Number.isFinite(checked_at)) return null;
+    return { checked_at, latest: typeof latest === "string" ? latest : null };
+  } catch {
+    return null;
+  }
+}
+
+function writeCheckState(path: string, state: CheckState): void {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(state)}\n`);
+    renameSync(tmp, path);
+  } catch {
+    // Only costs an extra check tomorrow.
+  }
+}
+
+export interface UpdateCheck {
+  /** `update-check.json` in the config dir: when GitHub was last asked, and its answer. */
+  readonly statePath: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly version: string;
+  readonly now: number;
+  readonly fetch?: typeof fetch;
+}
+
+/**
+ * A newer release for the TUI to mention, or null. Asks GitHub at most once a day (a failed
+ * ask counts too) and otherwise answers from the last answer. A prerelease build hears about
+ * prereleases; a release build only about releases. Never throws.
+ */
+export async function availableUpdate(check: UpdateCheck): Promise<string | null> {
+  const current = parseVersion(check.version);
+  if (current === null) return null;
+  const state = readCheckState(check.statePath);
+  let latest = state?.latest ?? null;
+  const fresh =
+    state !== null &&
+    state.checked_at <= check.now &&
+    check.now - state.checked_at < CHECK_INTERVAL_MS;
+  if (!fresh) {
+    try {
+      const release = await newestRelease(
+        releasesApi(check.env),
+        current.pre.length > 0,
+        check.fetch ?? fetch,
+      );
+      latest = release === null ? null : release.tag.replace(/^v/, "");
+    } catch {
+      // Offline or rate-limited: keep the last answer, and try again tomorrow.
+    }
+    writeCheckState(check.statePath, { checked_at: check.now, latest });
+  }
+  const newest = latest === null ? null : parseVersion(latest);
+  return newest !== null && compareVersions(newest, current) > 0 ? latest : null;
 }

@@ -53,6 +53,8 @@ export interface Config {
    * that now runs on another machine). See ARCHITECTURE.md, "history-only accounts".
    */
   history_only_roots: string[];
+  /** Whether the TUI may ask GitHub, once a day, if a newer release is out (tokenhud update). */
+  update_check: boolean;
 }
 
 export function defaultConfig(): Config {
@@ -67,6 +69,7 @@ export function defaultConfig(): Config {
     codex_roots: [],
     disabled_roots: [],
     history_only_roots: [],
+    update_check: true,
   };
 }
 
@@ -140,6 +143,7 @@ export function validateConfig(raw: unknown): Config {
   config.codex_roots = sanitizeRoots(raw.codex_roots);
   config.disabled_roots = strings(raw.disabled_roots);
   config.history_only_roots = strings(raw.history_only_roots);
+  if (typeof raw.update_check === "boolean") config.update_check = raw.update_check;
   return config;
 }
 

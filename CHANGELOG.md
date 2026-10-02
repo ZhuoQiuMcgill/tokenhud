@@ -46,7 +46,9 @@ The first release, v0.1.0: tokenhud succeeds cc-usage 2.6.1 and imports its hist
   arm64) and Windows (x64, arm64) on GitHub Releases with SHA-256 checksums; `install.sh`
   and `install.ps1`; an npm package (`tokenhud`) that runs the right binary.
 - **`tokenhud update`**: updates a standalone binary in place after checking its checksum,
-  or tells npm, npx and bunx users the command. `--check` only reports.
+  or tells npm, npx and bunx users the command. `--check` only reports. The TUI notes a
+  newer release in its footer, checking at most once a day (a setting turns it off); it
+  never updates on its own.
 
 ### Differences from cc-usage
 

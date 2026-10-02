@@ -5,7 +5,7 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { Component, memo, type ReactNode, useLayoutEffect, useSyncExternalStore } from "react";
 import type { Config } from "../config.ts";
 import "./components/index.ts";
-import { type Line, type Seg, seg } from "./components/base.ts";
+import { type Line, type Seg, seg, segsWidth } from "./components/base.ts";
 import type { Controller, Overlay, UiState } from "./controller.ts";
 import { Lines } from "./elements.tsx";
 import { fit, truncate } from "./format.ts";
@@ -90,7 +90,14 @@ function footer(state: UiState, width: number): Line {
     state.mode === "reader"
       ? [seg(state.readOnlyReason ?? "another tokenhud is ingesting", "mid"), seg("   ", "dim")]
       : [];
-  return footerLine(width, hints, order, [...notice, ...mcpSegs(state.mcp)]);
+  const right = [...notice, ...mcpSegs(state.mcp)];
+  // Dim, and only while it leaves room for a hint or two.
+  const update =
+    state.update !== null && state.config.update_check
+      ? [seg(`update ${state.update} available`, "dim"), seg("   ", "dim")]
+      : [];
+  const withUpdate = [...update, ...right];
+  return footerLine(width, hints, order, segsWidth(withUpdate) + 20 <= width ? withUpdate : right);
 }
 
 function HelpPanel(props: { view: ViewId; width: number; height: number; t: Theme }) {

@@ -56,6 +56,8 @@ export interface UiState {
   readonly ingestDown: string | null;
   /** Why this process is read-only when no other process holds the lock. */
   readonly readOnlyReason: string | null;
+  /** A newer release, from the once-a-day check (`update_check`), for the footer. */
+  readonly update: string | null;
 }
 
 export interface Key {
@@ -108,6 +110,7 @@ export function initialState(config: Config, mode: IngestMode): UiState {
     vmDown: null,
     ingestDown: null,
     readOnlyReason: null,
+    update: null,
   };
 }
 
@@ -190,6 +193,10 @@ export class Controller {
 
   setReadOnlyReason(reason: string | null): void {
     this.#set({ readOnlyReason: reason });
+  }
+
+  setUpdate(version: string | null): void {
+    if (version !== this.#state.update) this.#set({ update: version });
   }
 
   // ── keys ─────────────────────────────────────────────────────────────────────

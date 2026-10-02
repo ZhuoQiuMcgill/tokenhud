@@ -125,6 +125,35 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
     60_000,
   );
 
+  test("a newer release on GitHub shows in the footer, from the once-a-day check", async () => {
+    const home = makeHome();
+    // A fake api.github.com with one release, newer than any build.
+    const api = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (req) =>
+        new URL(req.url).pathname.startsWith("/releases")
+          ? Response.json(
+              new URL(req.url).pathname === "/releases/latest"
+                ? { tag_name: "v99.0.0", draft: false, prerelease: false, assets: [] }
+                : [{ tag_name: "v99.0.0", draft: false, prerelease: false, assets: [] }],
+            )
+          : new Response("", { status: 404 }),
+    });
+    const env = { ...home.env, TOKENHUD_RELEASES_API: `http://127.0.0.1:${api.port}` };
+    const run = runInPty(`${BUN} ${CLI}; ${AFTER}`, env);
+    try {
+      await run.waitFor((s) => s.includes("update 99.0.0 available"), "the update note");
+      run.send("q");
+      await run.exited;
+      expect(exitCode(run)).toBe(0);
+    } finally {
+      run.kill();
+      api.stop(true);
+      home.remove();
+    }
+  }, 60_000);
+
   test("the default account renamed in settings keeps its new label after a restart", async () => {
     const home = makeHome();
     try {

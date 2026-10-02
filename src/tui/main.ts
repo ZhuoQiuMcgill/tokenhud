@@ -30,6 +30,7 @@ export function tuiPaths(env: Env, home: string): TuiPaths {
     ccUsageLedger: join(ccUsageDir(env, home), "ledger.sqlite3"),
     ccUsageLimits: ccUsageLimitsPath(env, home),
     log: logPath(env, home),
+    updateCheck: join(configDir(env, home), "update-check.json"),
   };
 }
 

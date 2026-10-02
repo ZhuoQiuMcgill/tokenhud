@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { runUpdate, type UpdateDeps } from "../src/commands/update.ts";
 import { formatSums, sumFor } from "../src/release.ts";
 import {
+  availableUpdate,
   compareVersions,
   downloadVerified,
   installMethod,
@@ -532,5 +533,83 @@ describe("tokenhud update", () => {
     expect(err).toEqual([
       "this binary doesn't know its platform; reinstall it with install.sh or install.ps1",
     ]);
+  });
+});
+
+describe("the TUI's once-a-day update check", () => {
+  const DAY = 24 * 3_600_000;
+  const NOW = Date.parse("2026-10-01T12:00:00Z");
+  const env = { TOKENHUD_RELEASES_API: API };
+
+  function check(over: { version?: string; now?: number; fetch?: typeof fetch } = {}) {
+    return availableUpdate({
+      statePath: join(dir, "update-check.json"),
+      env,
+      version: over.version ?? "0.1.0",
+      now: over.now ?? NOW,
+      ...(over.fetch === undefined ? {} : { fetch: over.fetch }),
+    });
+  }
+  const state = () => JSON.parse(readFileSync(join(dir, "update-check.json"), "utf8"));
+  const offline = (async () => {
+    throw new Error("offline");
+  }) as unknown as typeof fetch;
+
+  test("asks GitHub when it never has, names a newer release, and remembers when", async () => {
+    const f = fakeFetch({ [`${API}/releases/latest`]: json(rawRelease("v0.2.0")) });
+    expect(await check({ fetch: f.fn })).toBe("0.2.0");
+    expect(f.asked).toEqual([`${API}/releases/latest`]);
+    expect(state()).toEqual({ checked_at: NOW, latest: "0.2.0" });
+  });
+
+  test("within a day, answers from the last check without asking", async () => {
+    writeFileSync(
+      join(dir, "update-check.json"),
+      JSON.stringify({ checked_at: NOW - DAY + 1, latest: "0.2.0" }),
+    );
+    expect(await check({ fetch: offline })).toBe("0.2.0");
+    expect(await check({ fetch: offline, version: "0.2.0" })).toBeNull();
+  });
+
+  test("a day later, or with the clock moved back, asks again", async () => {
+    const f = fakeFetch({ [`${API}/releases/latest`]: json(rawRelease("v0.3.0")) });
+    writeFileSync(
+      join(dir, "update-check.json"),
+      JSON.stringify({ checked_at: NOW - DAY, latest: "0.2.0" }),
+    );
+    expect(await check({ fetch: f.fn })).toBe("0.3.0");
+    writeFileSync(
+      join(dir, "update-check.json"),
+      JSON.stringify({ checked_at: NOW + 60_000, latest: "0.2.0" }),
+    );
+    expect(await check({ fetch: f.fn })).toBe("0.3.0");
+    expect(f.asked.length).toBe(2);
+  });
+
+  test("offline: keeps the last answer and doesn't ask again until tomorrow", async () => {
+    writeFileSync(
+      join(dir, "update-check.json"),
+      JSON.stringify({ checked_at: NOW - 2 * DAY, latest: "0.2.0" }),
+    );
+    expect(await check({ fetch: offline })).toBe("0.2.0");
+    expect(state()).toEqual({ checked_at: NOW, latest: "0.2.0" });
+  });
+
+  test("a prerelease build hears about prereleases; a release build doesn't", async () => {
+    const f = fakeFetch({
+      [`${API}/releases?per_page=30`]: json([rawRelease("v0.1.0-rc.2"), rawRelease("v0.1.0-rc.1")]),
+      [`${API}/releases/latest`]: () => new Response("", { status: 404 }),
+    });
+    expect(await check({ fetch: f.fn, version: "0.1.0-rc.1" })).toBe("0.1.0-rc.2");
+    rmSync(join(dir, "update-check.json"));
+    expect(await check({ fetch: f.fn, version: "0.0.9" })).toBeNull();
+    expect(f.asked).toEqual([`${API}/releases?per_page=30`, `${API}/releases/latest`]);
+  });
+
+  test("an unreadable state file is a first check", async () => {
+    writeFileSync(join(dir, "update-check.json"), "{not json");
+    const f = fakeFetch({ [`${API}/releases/latest`]: json(rawRelease("v0.1.0")) });
+    expect(await check({ fetch: f.fn })).toBeNull();
+    expect(f.asked.length).toBe(1);
   });
 });

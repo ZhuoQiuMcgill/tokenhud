@@ -7,6 +7,8 @@ import { createRoot } from "@opentui/react";
 import { type Config, saveConfig } from "../config.ts";
 import { type IngestMessage, type IngestWorker, startIngestWorker } from "../ingest/client.ts";
 import { HEARTBEAT_MS, lockFailure, WriterLock } from "../lock.ts";
+import { availableUpdate } from "../update.ts";
+import { VERSION } from "../version.ts";
 import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
 import { errorLine, fileLog } from "./log.ts";
@@ -28,6 +30,8 @@ export interface TuiPaths {
   readonly ccUsageLimits: string;
   /** The log file (`<config dir>/logs/tokenhud.log`). */
   readonly log: string;
+  /** When GitHub was last asked about a newer release (`<config dir>/update-check.json`). */
+  readonly updateCheck: string;
 }
 
 export interface Boot {
@@ -189,6 +193,20 @@ export async function runApp(boot: Boot): Promise<number> {
     if (worker !== null) await within(worker.stop(), INGEST_STOP_MS);
   }
 
+  // At most once a day, and never before the first frame: a newer release for the footer.
+  // It only looks; `tokenhud update` installs.
+  function checkForUpdate(): void {
+    if (!controller.getState().config.update_check) return;
+    void availableUpdate({
+      statePath: paths.updateCheck,
+      env: boot.env,
+      version: VERSION,
+      now: Date.now(),
+    }).then((version) => {
+      if (!closing) controller.setUpdate(version);
+    });
+  }
+
   function promote(taken: WriterLock): void {
     lock = taken;
     controller.setMode("owner");
@@ -259,6 +277,7 @@ export async function runApp(boot: Boot): Promise<number> {
       clearTimeout(fallback);
       // Ingest starts only now, so the cold scan never competes with the first frame.
       startIngest();
+      checkForUpdate();
     }
     if (pendingSwitch !== null) {
       trace("switch", now - pendingSwitch);

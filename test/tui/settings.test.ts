@@ -8,6 +8,7 @@ import {
   labelProblem,
   renameRoot,
   rowValue,
+  SETTINGS_ROWS,
   type SettingsInput,
   type SettingsState,
   settingsKey,
@@ -85,10 +86,16 @@ function drive(keys: string[], config = defaultConfig(), start: SettingsState = 
 describe("the main list", () => {
   test("rows show the current values", () => {
     const config: Config = { ...defaultConfig(), time_zone: "Asia/Kolkata", show_cost: false };
-    const values = (["refresh", "window", "cost", "theme", "tz", "accounts"] as const).map((r) =>
-      rowValue(r, input(config)),
-    );
-    expect(values).toEqual(["5 s", "all-time", "off", "dark", "Asia/Kolkata", "3 of 4 enabled"]);
+    const values = SETTINGS_ROWS.map((r) => rowValue(r, input(config)));
+    expect(values).toEqual([
+      "5 s",
+      "all-time",
+      "off",
+      "dark",
+      "Asia/Kolkata",
+      "on",
+      "3 of 4 enabled",
+    ]);
     expect(rowValue("tz", input())).toBe("system (America/Toronto)");
   });
 
@@ -99,7 +106,7 @@ describe("the main list", () => {
       message: null,
     });
     expect(drive(["up"]).state).toMatchObject({ cursor: 0 });
-    expect(drive(["end", "down"]).state).toMatchObject({ cursor: 5 });
+    expect(drive(["end", "down"]).state).toMatchObject({ cursor: 6 });
     for (const k of ["escape", "q", "s"]) expect(drive([k]).state).toBeNull();
   });
 });
@@ -110,6 +117,7 @@ describe("picking a value from a list", () => {
     [["down", "return", "home", "return"], "default_window", "today"],
     [["down", "down", "return", "down", "return"], "show_cost", false],
     [["down", "down", "down", "return", "end", "return"], "theme", "high-contrast"],
+    [["end", "up", "return", "down", "return"], "update_check", false],
   ] as const)("%j sets %s to %p", (keys, field, value) => {
     const { state, config } = drive([...keys]);
     expect(config[field]).toBe(value as never);
