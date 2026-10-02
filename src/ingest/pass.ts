@@ -2,7 +2,7 @@ import { type Counts, mergeCounts } from "../sources/claude.ts";
 import { type CodexLimitSnapshot, codexSessionId, newerLimits } from "../sources/codex.ts";
 import { comparePyPaths } from "../sources/pypath.ts";
 import type { Root } from "../sources/roots.ts";
-import { StoreError } from "../store/errors.ts";
+import { StoreCorrupt, StoreError } from "../store/errors.ts";
 import { KEY_SCHEME } from "../store/key.ts";
 import { type Store, type StoredRow, UNATTRIBUTED, type UsageRow } from "../store/store.ts";
 import type { Cursor, CursorCache } from "./cursors.ts";
@@ -107,7 +107,10 @@ export interface PassReport {
   roots: RootStats[];
   wallMs: number;
   event: ChangedEvent | null;
-  /** Set when the store write failed; nothing was stored and no cursor moved. */
+  /**
+   * Set when the store write failed; nothing was stored and no cursor moved. (An unreadable
+   * store throws `StoreCorrupt` instead, for the engine to recover.)
+   */
   storeError: string | null;
   /** The accounts this pass re-keyed, or null. */
   rekey: RekeyReport | null;
@@ -549,7 +552,8 @@ export async function runPass(
       });
     }
   } catch (error) {
-    if (!(error instanceof StoreError)) throw error;
+    // An unreadable store is the engine's to move aside and recover (durability.ts).
+    if (!(error instanceof StoreError) || error instanceof StoreCorrupt) throw error;
     storeError = error.message;
     rekey = null;
     ctx.log("error", `could not write the store: ${error.message}`);

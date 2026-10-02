@@ -163,6 +163,16 @@ export function isWsl(platform = process.platform): boolean {
   );
 }
 
+const WINDOWS_DRIVE = /^\/mnt\/[a-z]\//i;
+
+/**
+ * Whether `root`'s transcripts sit on a Windows drive seen from WSL (`/mnt/<drive>/...`),
+ * where `fs.watch` sees nothing across 9P: such roots are polled, not watched.
+ */
+export function onWindowsDrive(root: Pick<Root, "projects">): boolean {
+  return WINDOWS_DRIVE.test(root.projects);
+}
+
 function defaultWslUsersDir(options: DiscoverOptions, platform: NodeJS.Platform): string | null {
   if (options.wslUsersDir !== undefined) return options.wslUsersDir;
   const override = options.env.TOKENHUD_WSL_USERS;

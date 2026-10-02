@@ -6,11 +6,22 @@ import {
   discoverClaudeRoots,
   discoverCodexRoots,
   isWsl,
+  onWindowsDrive,
   type Root,
 } from "../sources/roots.ts";
-import { StoreError } from "../store/errors.ts";
+import {
+  backup,
+  backupDue,
+  mergedAny,
+  openDurableStore,
+  processPending,
+  type RecoveryOptions,
+  type RecoveryReport,
+  replaceCorruptStore,
+} from "../store/durability.ts";
+import { StoreCorrupt, StoreError } from "../store/errors.ts";
 import { type ImportOutcome, ImportSourceError, importCcUsage } from "../store/import-cc-usage.ts";
-import { openStore, type Store } from "../store/store.ts";
+import type { Store } from "../store/store.ts";
 import { CursorCache } from "./cursors.ts";
 import { listDir, statFiles, walk } from "./files.ts";
 import {
@@ -40,6 +51,17 @@ import { defaultPoolSize } from "./pool.ts";
  *
  * A full pass also refreshes each Codex session's rollouts (to find a child rollout's
  * parent), and it re-keys the Codex accounts the store marks as pending (scheme 1 -> 2).
+ *
+ * The engine keeps the store durable (src/store/durability.ts), always here in the ingest
+ * worker and never on the UI thread:
+ * - **An unreadable store** is moved aside, never deleted, whether found on open or in a
+ *   pass; a fresh store takes its place and the moved file and the backups are queued.
+ * - **The recovery queue** is worked before the first pass and retried on every full pass
+ *   while anything is left (a full disk, say).
+ * - **A store the cursors were not written for** (recovered, or replaced by another
+ *   process) has every transcript read again, so it is backfilled from what is on disk.
+ * - **The daily backup** follows a full pass once a day, and at once after a completed
+ *   recovery or a key-scheme migration.
  */
 
 export interface LiveTiming {
@@ -73,6 +95,8 @@ export interface EngineOptions {
   timing?: Partial<LiveTiming>;
   /** Poll every root, as if all were Windows roots (tests). */
   pollAll?: boolean;
+  /** How recovery copies its sources (tests simulate a full disk). */
+  recovery?: RecoveryOptions;
 }
 
 /** Transcript directories of a root: Claude's `projects`; Codex's active and archived sessions. */
@@ -82,7 +106,6 @@ export function transcriptDirs(root: Root): string[] {
     : [root.projects];
 }
 
-const WINDOWS_DRIVE = /^\/mnt\/[a-z]\//i;
 /** Margin for coarse directory mtimes when deciding what changed during a walk. */
 const MTIME_SLACK_MS = 2000;
 
@@ -114,6 +137,10 @@ export class IngestEngine {
   readonly #hot = new Map<string, Hot>();
   /** Codex session id -> its rollouts, as of the last full pass. */
   #codexSessions: Record<string, string[]> = {};
+  /** A backup is owed now, not just daily: after a key-scheme migration or a completed recovery. */
+  #backupNow: boolean;
+  /** The last backup failure logged, so a failing backup warns once, not every sweep. */
+  #backupError: string | null = null;
 
   private constructor(options: EngineOptions, store: Store, cursors: CursorCache) {
     this.#options = options;
@@ -122,6 +149,7 @@ export class IngestEngine {
     this.#wsl = isWsl(options.discover.platform ?? process.platform);
     this.store = store;
     this.cursors = cursors;
+    this.#backupNow = store.keySchemeMigrated;
     if (cursors.note === "rebuilt")
       this.#log("warn", "the read-position cache was damaged and has been rebuilt");
     if (cursors.note === "in-memory") {
@@ -132,11 +160,19 @@ export class IngestEngine {
     }
   }
 
-  /** Opens the store and the cursor cache. Throws `StoreError` when the store cannot be used. */
+  /**
+   * Opens the store, checking it whole, and the cursor cache. An unreadable store is moved
+   * aside and a fresh one opened (call `recover()` next). Throws `StoreError` when no store
+   * can be used.
+   */
   static open(options: EngineOptions): IngestEngine {
-    const store = openStore(options.storePath);
+    const { store, movedTo } = openDurableStore(options.storePath, { verify: true });
     try {
-      return new IngestEngine(options, store, CursorCache.open(options.cachePath));
+      const engine = new IngestEngine(options, store, CursorCache.open(options.cachePath));
+      if (movedTo !== null) {
+        engine.#log("warn", `the usage store was unreadable and was moved to ${movedTo}`);
+      }
+      return engine;
     } catch (error) {
       store.close();
       throw error;
@@ -156,7 +192,128 @@ export class IngestEngine {
   }
 
   #polled(root: Root): boolean {
-    return this.#options.pollAll === true || (this.#wsl && WINDOWS_DRIVE.test(root.projects));
+    return this.#options.pollAll === true || (this.#wsl && onWindowsDrive(root));
+  }
+
+  // ── durability ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Merges what the store's recovery queue can take now (durability.ts) and logs what
+   * happened. Call it once after `open`, before `importIfFirstRun`, so recovered import
+   * records count; full passes retry it while anything is left. Never throws.
+   */
+  recover(): RecoveryReport | null {
+    try {
+      return this.#recover();
+    } catch (error) {
+      if (!(error instanceof StoreError)) throw error;
+      this.#log("error", `recovering the usage store failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  #recover(): RecoveryReport | null {
+    const report = processPending(this.store, this.#options.recovery);
+    if (report === null) return null;
+    this.#log("warn", `usage store recovery: ${report.summary}`);
+    if (report.stillPending.length === 0) this.#backupNow = true;
+    if (mergedAny(report)) {
+      const accounts = [...this.store.accounts().values()].map((a) => a.identity);
+      this.#options.onChanged?.({
+        type: "changed",
+        accounts,
+        fromTs: 0,
+        toTs: Number.MAX_SAFE_INTEGER,
+      });
+    }
+    return report;
+  }
+
+  /**
+   * Follows the store's path to a file another process put there, and drops the cursors
+   * when the store is not the one they were written for. True when they were dropped: the
+   * caller must read every transcript again. A store that cannot be reached now is left
+   * for the pass to meet and report; only an unreadable one throws (`StoreCorrupt`).
+   */
+  #checkStore(): boolean {
+    let storeId: string | null;
+    try {
+      this.store.ensureCurrent();
+      storeId = this.store.storeId;
+    } catch (error) {
+      if (!(error instanceof StoreError) || error instanceof StoreCorrupt) throw error;
+      return false;
+    }
+    if (!this.cursors.bind(storeId)) return false;
+    this.#log(
+      "info",
+      "the usage store is new to the read positions; reading every transcript again",
+    );
+    return true;
+  }
+
+  /** Retries the recovery queue while anything is left in it (a full disk, say). */
+  #recoverIfPending(): void {
+    let pending = false;
+    try {
+      pending = this.store.pendingRecovery().length > 0;
+    } catch (error) {
+      if (!(error instanceof StoreError)) throw error;
+    }
+    if (pending) this.recover();
+  }
+
+  /** The store proved unreadable: moved aside, replaced by a fresh one, recovery queued and run. */
+  #replaceCorrupt(): void {
+    const moved = replaceCorruptStore(this.store);
+    this.#log(
+      "warn",
+      moved === null
+        ? "the usage store was unreadable; another tokenhud process has already replaced it"
+        : `the usage store was unreadable and was moved to ${moved}`,
+    );
+    this.#checkStore();
+    this.recover();
+  }
+
+  /**
+   * Runs `pass`. When the store proves unreadable, it is replaced (see `#replaceCorrupt`)
+   * and a full pass reads every transcript into the fresh store; a second failure
+   * propagates.
+   */
+  async #withRecovery<T>(pass: () => Promise<T>, full: () => Promise<T>): Promise<T> {
+    try {
+      return await pass();
+    } catch (error) {
+      if (!(error instanceof StoreCorrupt)) throw error;
+      this.#replaceCorrupt();
+      return await full();
+    }
+  }
+
+  /**
+   * Takes the daily backup when due, or at once when owed, after checking the whole store
+   * (the daily integrity check; passes only touch the rows they write). An unreadable store
+   * throws `StoreCorrupt`, for `#withRecovery`; any other failure is logged, once.
+   */
+  #maybeBackup(): void {
+    try {
+      if (!this.#backupNow && !backupDue(this.store)) return;
+      const check = this.store.quickCheck();
+      if (check !== "ok") {
+        throw new StoreCorrupt(`the store failed its integrity check: ${check.slice(0, 200)}`);
+      }
+      // False: a slot held history not merged yet; it is queued, and the next full pass
+      // merges it and then backs up.
+      if (backup(this.store)) this.#backupNow = false;
+      this.#backupError = null;
+    } catch (error) {
+      if (!(error instanceof StoreError) || error instanceof StoreCorrupt) throw error;
+      if (error.message !== this.#backupError) {
+        this.#log("warn", `the usage store backup failed: ${error.message}`);
+      }
+      this.#backupError = error.message;
+    }
   }
 
   /**
@@ -240,37 +397,53 @@ export class IngestEngine {
 
   /** Re-discovers roots and reads every transcript that changed since its cursor. */
   fullPass(): Promise<PassReport | null> {
-    return this.#enqueue(async () => {
-      const t0 = performance.now();
-      const walkedAt = Date.now();
-      this.#roots = this.discover().filter((root) => root.enabled);
-      const files: PassFile[] = [];
-      const polledDirs: { dir: string; root: Root }[] = [];
-      for (const root of this.#roots) {
-        for (const dir of transcriptDirs(root)) {
-          const found = walk(dir);
-          for (const path of found.files) files.push({ path, root });
-          if (this.#polled(root)) for (const d of found.dirs) polledDirs.push({ dir: d, root });
-        }
+    return this.#enqueue(() =>
+      this.#withRecovery(
+        () => this.#full(),
+        () => this.#full(),
+      ),
+    );
+  }
+
+  async #full(): Promise<PassReport> {
+    this.#checkStore();
+    this.#recoverIfPending();
+    const t0 = performance.now();
+    const walkedAt = Date.now();
+    this.#roots = this.discover().filter((root) => root.enabled);
+    const files: PassFile[] = [];
+    const polledDirs: { dir: string; root: Root }[] = [];
+    for (const root of this.#roots) {
+      for (const dir of transcriptDirs(root)) {
+        const found = walk(dir);
+        for (const path of found.files) files.push({ path, root });
+        if (this.#polled(root)) for (const d of found.dirs) polledDirs.push({ dir: d, root });
       }
-      const stats = await statFiles(files.map((f) => f.path));
-      files.forEach((f, i) => {
-        f.stat = stats[i] ?? null;
-      });
-      this.#refreshCodex(files);
-      const report = await runPass(this.#ctx(this.#pendingRekey(this.#roots)), files, true);
-      if (report.rekey !== null) {
-        const sum = (f: "deleted" | "changed" | "untouched") =>
-          report.rekey?.accounts.reduce((a, r) => a + r[f], 0) ?? 0;
-        this.#log(
-          "info",
-          `re-keyed Codex history (scheme ${report.rekey.scheme}): ${sum("deleted")} replayed rows removed, ${sum("changed")} rows corrected, ${sum("untouched")} rows from deleted rollouts kept`,
-        );
-      }
-      report.wallMs = performance.now() - t0;
-      if (this.#live) await this.#refreshLive(files, polledDirs, walkedAt);
-      return this.#report(report);
+    }
+    const stats = await statFiles(files.map((f) => f.path));
+    files.forEach((f, i) => {
+      f.stat = stats[i] ?? null;
     });
+    this.#refreshCodex(files);
+    const report = await runPass(this.#ctx(this.#pendingRekey(this.#roots)), files, true);
+    if (report.rekey !== null) {
+      const sum = (f: "deleted" | "changed" | "untouched") =>
+        report.rekey?.accounts.reduce((a, r) => a + r[f], 0) ?? 0;
+      this.#log(
+        "info",
+        `re-keyed Codex history (scheme ${report.rekey.scheme}): ${sum("deleted")} replayed rows removed, ${sum("changed")} rows corrected, ${sum("untouched")} rows from deleted rollouts kept`,
+      );
+    }
+    report.wallMs = performance.now() - t0;
+    if (this.#live) await this.#refreshLive(files, polledDirs, walkedAt);
+    if (report.storeError === null) {
+      this.cursors.notePass(
+        this.#roots.map((r) => r.identity),
+        Date.now(),
+      );
+    }
+    this.#maybeBackup();
+    return this.#report(report);
   }
 
   /** Indexes Codex rollouts by session, to find a child rollout's parent. */
@@ -365,24 +538,55 @@ export class IngestEngine {
 
   /** A pass over the files marked dirty since the last one. */
   #flush(): Promise<PassReport | null> {
-    return this.#enqueue(async () => {
-      const files = new Map<string, PassFile>();
-      for (const [path, root] of this.#dirty) files.set(path, { path, root });
+    return this.#enqueue(() =>
+      this.#withRecovery(
+        () => this.#flushOnce(),
+        () => this.#full(),
+      ),
+    );
+  }
+
+  async #flushOnce(): Promise<PassReport | null> {
+    if (this.#checkStore()) {
       this.#dirty.clear();
-      for (const root of this.#rescan) {
-        for (const dir of transcriptDirs(root))
-          for (const path of walk(dir).files) files.set(path, { path, root });
-      }
       this.#rescan.clear();
-      if (files.size === 0) return null;
-      return this.#report(await runPass(this.#ctx(), [...files.values()], false));
-    });
+      return await this.#full();
+    }
+    const files = new Map<string, PassFile>();
+    for (const [path, root] of this.#dirty) files.set(path, { path, root });
+    this.#dirty.clear();
+    for (const root of this.#rescan) {
+      for (const dir of transcriptDirs(root))
+        for (const path of walk(dir).files) files.set(path, { path, root });
+    }
+    this.#rescan.clear();
+    if (files.size === 0) return null;
+    const report = await runPass(this.#ctx(), [...files.values()], false);
+    this.#notePass(report);
+    return this.#report(report);
+  }
+
+  /** Notes, for `doctor`, the roots an incremental pass covered. */
+  #notePass(report: PassReport): void {
+    if (report.storeError !== null || report.roots.length === 0) return;
+    this.cursors.notePass(
+      report.roots.map((r) => r.identity),
+      Date.now(),
+    );
   }
 
   #schedulePoll(delay: number): void {
     if (this.#stopped) return;
     this.#pollTimer = setTimeout(() => {
-      void this.#enqueue(() => this.#poll()).then((grew) =>
+      const poll = () =>
+        this.#withRecovery(
+          () => this.#poll(),
+          async () => {
+            await this.#full();
+            return false;
+          },
+        );
+      void this.#enqueue(poll).then((grew) =>
         this.#schedulePoll(grew ? this.#timing.fastPollMs : this.#timing.pollMs),
       );
     }, delay);
@@ -393,6 +597,10 @@ export class IngestEngine {
    * to their hot files. Returns whether a file grew, which shortens the next interval.
    */
   async #poll(): Promise<boolean> {
+    if (this.#checkStore()) {
+      await this.#full();
+      return false;
+    }
     if (this.#pollDirs.size === 0 && this.#hot.size === 0) return false;
     const dirs = [...this.#pollDirs.keys()];
     const hot = [...this.#hot.keys()];
@@ -435,7 +643,9 @@ export class IngestEngine {
     unstated.forEach((f, i) => {
       f.stat = fresh[i] ?? null;
     });
-    this.#report(await runPass(this.#ctx(), files, false));
+    const report = await runPass(this.#ctx(), files, false);
+    this.#notePass(report);
+    this.#report(report);
     // A file modified in the last 2 h is hot from now on. An old file listed only because
     // its directory changed is left to the sweep, and a vanished one is dropped.
     const now = Date.now();

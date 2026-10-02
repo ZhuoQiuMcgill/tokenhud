@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import {
   closeSync,
   type Dirent,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -12,7 +13,7 @@ import {
   type Stats,
   statSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { guard, SchemeRefused, StoreCorrupt, StoreUnavailable } from "./errors.ts";
 import { KEY_SCHEME } from "./key.ts";
 import {
@@ -40,9 +41,12 @@ import {
  * rule. WAL plus a busy timeout let the UI, the MCP server and the ingest worker share
  * the file. Every failure surfaces as a `StoreError`, so callers degrade, never crash.
  *
- * Backups and recovery (daily verified `.bak` rotation, moving a corrupt file aside) are
- * a later task. They will rely on `meta.store_id` as the lineage, as cc-usage's
- * `ledger_id`, and on `keySchemeMigrated` to back up right after a migration.
+ * Backups and recovery live in durability.ts. This file keeps what they need inside the
+ * database: `meta.store_id` (the lineage, as cc-usage's `ledger_id`), the recovery queue
+ * (`meta.pending`), the lineages already merged (`meta.merged`) and the last recovery
+ * report. A store created while backups exist beside it queues them, because the store
+ * went missing. Like cc-usage's ledger, a `Store` follows its path: when another process
+ * moves the file aside, the next use reconnects to whatever file the path names now.
  */
 
 export { UNATTRIBUTED } from "./schema.ts";
@@ -58,12 +62,22 @@ const SQLITE_MAGIC = "SQLite format 3\0";
 // The database header is the first 100 bytes; application_id is a big-endian u32 at 68.
 const HEADER_BYTES = 100;
 const APPLICATION_ID_OFFSET = 68;
-// Import scratch copies live in their own directories, named SCRATCH_PREFIX + random, in
-// a dot-directory beside the store that only tokenhud uses. A store open sweeps such
-// directories once they are this old (a crash left them); nothing else is ever touched.
+// Import and salvage scratch copies live in their own directories, named a prefix +
+// random, in a dot-directory beside the store that only tokenhud uses. A store open sweeps
+// such directories once they are this old (a crash left them); nothing else is touched.
 const SCRATCH_DIR = ".tokenhud-tmp";
 const SCRATCH_PREFIX = "import-cc-usage-";
+/** Scratch directories of recovery's salvage copies (durability.ts). */
+export const SALVAGE_SCRATCH_PREFIX = "salvage-";
+const SCRATCH_PREFIXES = [SCRATCH_PREFIX, SALVAGE_SCRATCH_PREFIX];
 const SCRATCH_MAX_AGE_MS = 60 * 60 * 1000;
+/** The daily backup and the one before it, beside the store (durability.ts). */
+export const BACKUP_SUFFIX = ".bak";
+export const PREVIOUS_BACKUP_SUFFIX = ".bak.prev";
+// Meta keys of backups and recovery.
+const PENDING = "pending";
+const MERGED = "merged";
+const RECOVERY_REPORT = "recovery_report";
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -161,6 +175,42 @@ export interface StoreMeta {
   codexRekeyPending: string[];
   /** The last Codex re-key's report per account (see `RekeyReport` in the ingest pass), or null. */
   migrationReport: unknown;
+  /** Files beside the store still to recover from, first to last (see durability.ts). */
+  pending: PendingSource[];
+  /** Lineages (`store_id`s) whose rows this store has fully absorbed. */
+  merged: string[];
+  /** The last recovery pass's report (durability.ts `RecoveryReport`), or null. */
+  recoveryReport: unknown;
+}
+
+/** One recovery-queue entry: a file in the store's directory, and why it is queued. */
+export interface PendingSource {
+  file: string;
+  /** "damaged" (the store moved aside), "missing" (a backup when the store vanished) or "held" (a backup slot not yet covered). */
+  why: string;
+}
+
+/** A tombstone as stored in `dropped_keys`. */
+export interface Tombstone {
+  key: bigint;
+  reason: string;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** A limit event read back from another copy of a store, with its account by name. */
+export interface RecoveredLimitEvent extends Omit<LimitEventRow, "id"> {
+  account: AccountRef;
+}
+
+/** Everything recovery merges from one source file (durability.ts). */
+export interface RecoveredData {
+  rows: readonly UsageRow[];
+  tombstones: readonly Tombstone[];
+  /** Codex account identities whose rows still await the scheme-2 re-key. */
+  rekey: readonly string[];
+  imports: readonly ImportRecord[];
+  limitEvents: readonly RecoveredLimitEvent[];
 }
 
 /** Keys to remove as not being usage, and why (stored with their tombstones). */
@@ -192,6 +242,12 @@ export interface WriteBatch {
 export interface OpenOptions {
   /** How long a write waits for another writer. Tests shorten it. */
   busyTimeoutMs?: number;
+  /**
+   * Check the whole file (`quick_check`) before anything is written to it, and throw
+   * `StoreCorrupt` if it fails, so a damaged store is moved aside as it was found, never
+   * migrated or repaired in place. It reads the whole file: about 30 ms for 140k rows.
+   */
+  verify?: boolean;
 }
 
 /**
@@ -280,16 +336,17 @@ export class Store {
   readonly path: string;
   /** Where imports keep their scratch copies: `.tokenhud-tmp/` beside the store file. */
   readonly scratchDir: string;
-  /** Whether opening this store ran a key-scheme migration (a backup is due at once). */
-  readonly keySchemeMigrated: boolean;
-  readonly #connection: Database;
+  readonly #options: OpenOptions;
+  #connection: Connection | null;
+  #migrated: boolean;
   #closed = false;
 
-  private constructor(path: string, db: Database, keySchemeMigrated: boolean) {
+  private constructor(path: string, options: OpenOptions, connection: Connection) {
     this.path = path;
     this.scratchDir = scratchDirOf(path);
-    this.#connection = db;
-    this.keySchemeMigrated = keySchemeMigrated;
+    this.#options = options;
+    this.#connection = connection;
+    this.#migrated = connection.migrated;
   }
 
   /**
@@ -299,49 +356,75 @@ export class Store {
    * app's database) is refused without a single byte of it or its side files changing.
    */
   static open(path: string, options: OpenOptions = {}): Store {
-    refuseForeign(path);
-    guard(() => mkdirSync(dirname(path), { recursive: true }));
-    const db = guard(
-      () => new Database(path, { create: true, readwrite: true, safeIntegers: true, strict: true }),
-    );
-    try {
-      guard(() => {
-        db.exec(`PRAGMA busy_timeout = ${options.busyTimeoutMs ?? BUSY_TIMEOUT_MS}`);
-        db.exec("PRAGMA synchronous = NORMAL");
-        db.exec(`PRAGMA journal_size_limit = ${JOURNAL_SIZE_LIMIT}`);
-        // Interned ids are plain integers, as in cc-usage: no foreign keys.
-        db.exec("PRAGMA foreign_keys = OFF");
-        // A REPLACE that deletes a conflicting row fires the delete trigger only with
-        // recursive triggers on; without it the rollup would drift.
-        db.exec("PRAGMA recursive_triggers = ON");
-      });
-      // A new store is created before WAL is switched on, so its first commit (which sets
-      // application_id) lands in the main file itself; the header check relies on that.
-      ensureSchema(db);
-      guard(() => db.exec("PRAGMA journal_mode = WAL"));
-      const migrated = ensureKeyScheme(db);
-      ensureRollups(db);
-      sweepScratch(scratchDirOf(path));
-      return new Store(path, db, migrated);
-    } catch (error) {
-      db.close();
-      throw error;
-    }
+    return new Store(path, options, connect(path, options));
+  }
+
+  /** Whether opening this store ran a key-scheme migration (a backup is due at once). */
+  get keySchemeMigrated(): boolean {
+    return this.#migrated;
+  }
+
+  /** This store's lineage (`meta.store_id`), as of the file the path named when last connected. */
+  get storeId(): string | null {
+    return this.#live.storeId;
   }
 
   /**
-   * A new, empty scratch directory for an import, inside `scratchDir`. Refuses to work
-   * through a `scratchDir` that is a symlink, so scratch copies only ever land in a
-   * directory tokenhud made.
+   * The device and inode (see `fileIdOf`) of the file this store has open, or, while it is
+   * disconnected (its file could not be opened), of the file its path names now.
    */
-  newScratchDir(): string {
+  get fileId(): string | null {
+    return this.#connection === null ? fileIdOf(this.path) : this.#connection.fileId;
+  }
+
+  /**
+   * Reconnects if the path now names a different file (or none), as cc-usage's
+   * `ensure_current`: another process moved an unreadable store aside and started a fresh
+   * one, and everything written through the old connection would land in the moved file.
+   * True when it reconnected. Every operation checks this too; a pass calls it first.
+   */
+  ensureCurrent(): boolean {
+    if (this.#closed) throw new StoreUnavailable("the store is closed");
+    const open = this.#connection;
+    if (open !== null && fileIdOf(this.path) === open.fileId) return false;
+    this.reconnect();
+    return true;
+  }
+
+  /**
+   * Closes the connection and opens the path again: a new store if the file is gone. On
+   * failure the store stays disconnected, and the next use tries again.
+   */
+  reconnect(): void {
+    this.disconnect();
+    this.#adopt(connect(this.path, this.#options));
+  }
+
+  /** Closes the connection but not the store: the next use reconnects (recovery moves the file meanwhile). */
+  disconnect(): void {
+    const open = this.#connection;
+    this.#connection = null;
+    if (open !== null) guard(() => open.db.close());
+  }
+
+  #adopt(connection: Connection): void {
+    this.#connection = connection;
+    this.#migrated ||= connection.migrated;
+  }
+
+  /**
+   * A new, empty scratch directory inside `scratchDir`, named `prefix` + random (an
+   * import's by default). Refuses to work through a `scratchDir` that is a symlink, so
+   * scratch copies only ever land in a directory tokenhud made.
+   */
+  newScratchDir(prefix: string = SCRATCH_PREFIX): string {
     const dir = this.scratchDir;
     return guard(() => {
       mkdirSync(dir, { recursive: true });
       if (!lstatSync(dir).isDirectory()) {
         throw new StoreUnavailable(`${dir} is not a plain directory; leaving it alone`);
       }
-      return mkdtempSync(join(dir, SCRATCH_PREFIX));
+      return mkdtempSync(join(dir, prefix));
     });
   }
 
@@ -349,12 +432,17 @@ export class Store {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
-    guard(() => this.#connection.close());
+    this.disconnect();
+  }
+
+  /** The open connection, following the path to a replaced file first. */
+  get #live(): Connection {
+    this.ensureCurrent();
+    return this.#connection as Connection;
   }
 
   get #db(): Database {
-    if (this.#closed) throw new StoreUnavailable("the store is closed");
-    return this.#connection;
+    return this.#live.db;
   }
 
   // ── writes ─────────────────────────────────────────────────────────────────────
@@ -563,8 +651,115 @@ export class Store {
         imports: parseImports(getMeta(db, "imports")),
         codexRekeyPending: rekeyPending(db),
         migrationReport: parseJson(getMeta(db, MIGRATION_REPORT)),
+        pending: pendingSources(db),
+        merged: mergedLineages(db),
+        recoveryReport: parseJson(getMeta(db, RECOVERY_REPORT)),
       };
     });
+  }
+
+  // ── backups and recovery (the file-level steps are in durability.ts) ─────────────
+
+  /** The recovery queue: files beside the store still to merge, first to last. */
+  pendingRecovery(): PendingSource[] {
+    return guard(() => pendingSources(this.#db));
+  }
+
+  /** The lineages this store has fully absorbed (its own `store_id` not included). */
+  mergedLineages(): Set<string> {
+    return guard(() => new Set(mergedLineages(this.#db)));
+  }
+
+  /**
+   * Edits the recovery queue and the merged lineages under the write lock, against
+   * whatever another process wrote meanwhile: `addPending` entries go to the front (unless
+   * queued already), `dropPending` names leave it. Returns the queue as it then is.
+   */
+  updateRecovery(change: {
+    addPending?: readonly PendingSource[];
+    dropPending?: ReadonlySet<string>;
+    addMerged?: ReadonlySet<string>;
+  }): PendingSource[] {
+    const db = this.#db;
+    return writeTransaction(db, () => {
+      const drop = change.dropPending ?? new Set<string>();
+      const pending = pendingSources(db).filter((e) => !drop.has(e.file));
+      const names = new Set(pending.map((e) => e.file));
+      const front = (change.addPending ?? []).filter((e) => !names.has(e.file));
+      const queue = [...front, ...pending];
+      setMeta(db, PENDING, JSON.stringify(queue));
+      if (change.addMerged !== undefined && change.addMerged.size > 0) {
+        const merged = new Set([...mergedLineages(db), ...change.addMerged]);
+        setMeta(db, MERGED, JSON.stringify([...merged].sort()));
+      }
+      return queue;
+    });
+  }
+
+  /** Keeps `report` as the last recovery report, for `doctor`. */
+  saveRecoveryReport(report: unknown): void {
+    const db = this.#db;
+    writeTransaction(db, () => setMeta(db, RECOVERY_REPORT, JSON.stringify(report)));
+  }
+
+  /**
+   * Merges what recovery read back from another copy of a store, in one transaction, and
+   * returns how many usage rows the store did not have before.
+   *
+   * - Tombstones first, so a row the source removed as not being usage cannot come back
+   *   through it, nor through a later cc-usage import. A key this store holds a row for
+   *   keeps its row: the store may have given the key back since (a trigger turn), and a
+   *   wrongly kept replay row is the Codex re-key's to remove, never a recovery's guess.
+   * - Rows merge by the usual rules (field-wise max, tier max). Accounts the store already
+   *   has keep their labels: an old copy must not rename a live account.
+   * - Codex accounts whose rows await the re-key, import records and limit events are
+   *   carried over; limit events dedupe on (account, kind, window, reset time).
+   */
+  mergeRecovered(data: RecoveredData): { newRows: number } {
+    validate(data.rows);
+    const db = this.#db;
+    return writeTransaction(db, () => {
+      const has = db.query<{ hit: bigint }, [bigint]>("SELECT 1 AS hit FROM usage WHERE key = ?1");
+      const tombstone = db.query(
+        "INSERT INTO dropped_keys (key, reason, at) VALUES (?1, ?2, ?3) ON CONFLICT (key) DO NOTHING",
+      );
+      for (const t of data.tombstones) {
+        if (has.get(t.key) === null) tombstone.run(t.key, storedText(t.reason), t.at);
+      }
+      // An old copy names a new account but never renames a live one.
+      const live = untombstoned(db, data.rows).map((r) => ({ ...r, derivedLabel: true }));
+      const before = countUsage(db);
+      if (live.length > 0) merge(db, live, [], []);
+      const newRows = countUsage(db) - before;
+      addRekeyPending(db, data.rekey);
+      if (data.imports.length > 0) {
+        const imports = parseImports(getMeta(db, "imports"));
+        const seen = new Set(imports.map((i) => JSON.stringify(i)));
+        for (const record of data.imports) {
+          if (!seen.has(JSON.stringify(record))) imports.push(record);
+        }
+        imports.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+        setMeta(db, "imports", JSON.stringify(imports));
+      }
+      mergeLimitEvents(db, data.limitEvents);
+      return { newRows };
+    });
+  }
+
+  /** `PRAGMA quick_check`: "ok" for a sound file, else what is wrong (StoreCorrupt if it cannot even run). */
+  quickCheck(): string {
+    const db = this.#db;
+    return guard(() => quickCheck(db));
+  }
+
+  /**
+   * Writes a consistent copy of the store to `target` (which must not exist) with
+   * `VACUUM INTO`: a read transaction, so writers carry on. The copy is a rollback-journal
+   * file with the same application_id, schema version and meta (so the same lineage).
+   */
+  vacuumInto(target: string): void {
+    const db = this.#db;
+    guard(() => db.query("VACUUM INTO ?1").run(target));
   }
 
   // ── limit events ───────────────────────────────────────────────────────────────
@@ -645,6 +840,70 @@ export class Store {
 
 // ── opening ──────────────────────────────────────────────────────────────────────
 
+/** An open connection and what was learned opening it. */
+interface Connection {
+  db: Database;
+  /** `fileIdOf(path)` just after opening: which file this connection has open. */
+  fileId: string | null;
+  storeId: string | null;
+  migrated: boolean;
+}
+
+/**
+ * A file's device and inode, or null if there is none at `path`: how a store notices
+ * that its path names another file now, and how recovery makes sure it moves aside only
+ * the file it found unreadable.
+ */
+export function fileIdOf(path: string): string | null {
+  try {
+    const st = statSync(path, { bigint: true });
+    return `${st.dev}:${st.ino}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Opens (creating, migrating, repairing rollups as needed) the store at `path`. */
+function connect(path: string, options: OpenOptions): Connection {
+  refuseForeign(path);
+  guard(() => mkdirSync(dirname(path), { recursive: true }));
+  const db = guard(
+    () => new Database(path, { create: true, readwrite: true, safeIntegers: true, strict: true }),
+  );
+  // Remember exactly which file is open, so recovery never moves a fresh store another
+  // process has already put in its place, and a rename by another process is noticed.
+  const fileId = fileIdOf(path);
+  try {
+    guard(() => {
+      db.exec(`PRAGMA busy_timeout = ${options.busyTimeoutMs ?? BUSY_TIMEOUT_MS}`);
+      db.exec("PRAGMA synchronous = NORMAL");
+      db.exec(`PRAGMA journal_size_limit = ${JOURNAL_SIZE_LIMIT}`);
+      // Interned ids are plain integers, as in cc-usage: no foreign keys.
+      db.exec("PRAGMA foreign_keys = OFF");
+      // A REPLACE that deletes a conflicting row fires the delete trigger only with
+      // recursive triggers on; without it the rollup would drift.
+      db.exec("PRAGMA recursive_triggers = ON");
+    });
+    if (options.verify === true && pragmaInt(db, "user_version") > 0) {
+      const check = guard(() => quickCheck(db));
+      if (check !== "ok") {
+        throw new StoreCorrupt(`the store failed its integrity check: ${check.slice(0, 200)}`);
+      }
+    }
+    // A new store is created before WAL is switched on, so its first commit (which sets
+    // application_id) lands in the main file itself; the header check relies on that.
+    ensureSchema(db, path);
+    guard(() => db.exec("PRAGMA journal_mode = WAL"));
+    const migrated = ensureKeyScheme(db);
+    ensureRollups(db);
+    sweepScratch(scratchDirOf(path));
+    return { db, fileId, storeId: guard(() => getMeta(db, "store_id")), migrated };
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
+
 /** The bytes at the start of `path` (fewer if the file is shorter). */
 function readHead(path: string, length: number): Buffer {
   const head = Buffer.alloc(length);
@@ -661,8 +920,8 @@ function readHead(path: string, length: number): Buffer {
  * or a SQLite file whose header carries tokenhud's application_id. This reads the header
  * directly, because opening with SQLite can already write: it converts a DELETE-mode file
  * to WAL, checkpoints a leftover WAL into the main file, rebuilds a stale -shm. A file
- * that is not SQLite at all is `StoreCorrupt` (recovery, a later task, moves a damaged
- * store aside); a SQLite file that is not a tokenhud store is `StoreUnavailable`.
+ * that is not SQLite at all is `StoreCorrupt` (durability.ts moves a damaged store aside);
+ * a SQLite file that is not a tokenhud store is `StoreUnavailable`.
  */
 function refuseForeign(path: string): void {
   const untouched = "leaving it untouched";
@@ -734,7 +993,8 @@ function sweepScratch(dir: string): void {
   const cutoff = Date.now() - SCRATCH_MAX_AGE_MS;
   for (const entry of entries) {
     // Dirent types come from lstat: a symlink is not a directory here.
-    if (!entry.name.startsWith(SCRATCH_PREFIX) || !entry.isDirectory()) continue;
+    const ours = SCRATCH_PREFIXES.some((prefix) => entry.name.startsWith(prefix));
+    if (!ours || !entry.isDirectory()) continue;
     const path = join(dir, entry.name);
     try {
       // rm does not follow symlinks inside the directory it removes.
@@ -745,7 +1005,7 @@ function sweepScratch(dir: string): void {
   }
 }
 
-function ensureSchema(db: Database): void {
+function ensureSchema(db: Database, path: string): void {
   const version = pragmaInt(db, "user_version");
   if (version > SCHEMA_VERSION) {
     throw new StoreUnavailable(
@@ -758,6 +1018,15 @@ function ensureSchema(db: Database): void {
     const current = pragmaInt(db, "user_version");
     for (let v = current; v < SCHEMA_VERSION; v++) SCHEMA_MIGRATIONS[v]?.(db);
     if (current < SCHEMA_VERSION) db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    if (current === 0) {
+      // A new store next to existing backups means the store went missing (or was just
+      // moved aside): their history comes back first (durability.ts).
+      const backups = [BACKUP_SUFFIX, PREVIOUS_BACKUP_SUFFIX]
+        .map((suffix) => `${path}${suffix}`)
+        .filter((slot) => existsSync(slot))
+        .map((slot): PendingSource => ({ file: basename(slot), why: "missing" }));
+      if (backups.length > 0) setMeta(db, PENDING, JSON.stringify(backups));
+    }
   });
 }
 
@@ -1164,6 +1433,14 @@ function toStoredRow(row: RawRow): StoredRow {
   };
 }
 
+function quickCheck(db: Database): string {
+  return db
+    .query<{ quick_check: string }, []>("PRAGMA quick_check")
+    .all()
+    .map((r) => r.quick_check)
+    .join("; ");
+}
+
 function countUsage(db: Database): number {
   return Number(db.query<{ n: bigint }, []>("SELECT count(*) AS n FROM usage").get()?.n ?? 0n);
 }
@@ -1207,6 +1484,57 @@ function addRekeyPending(db: Database, identities: readonly string[]): void {
   const pending = new Set(rekeyPending(db));
   for (const id of identities) pending.add(id);
   setMeta(db, CODEX_REKEY, JSON.stringify([...pending]));
+}
+
+/** `meta.pending` as a list; anything unreadable counts as none, as cc-usage's `pending()`. */
+function pendingSources(db: Database): PendingSource[] {
+  const value = parseJson(getMeta(db, PENDING));
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((e): PendingSource[] =>
+    typeof e === "object" && e !== null && typeof e.file === "string"
+      ? [{ file: e.file, why: typeof e.why === "string" ? e.why : "held" }]
+      : [],
+  );
+}
+
+function mergedLineages(db: Database): string[] {
+  const value = parseJson(getMeta(db, MERGED));
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+/** Adds the events this store lacks; a `reached` event still open takes the source's resume time. */
+function mergeLimitEvents(db: Database, events: readonly RecoveredLimitEvent[]): void {
+  if (events.length === 0) return;
+  const accounts = internAccounts(
+    db,
+    events.map((e) => ({ ...e.account, derivedLabel: true })),
+  );
+  const find = db.query<
+    { id: bigint; resumed_at: bigint | null },
+    [number, string, string, number]
+  >(
+    `SELECT id, resumed_at FROM limit_events
+     WHERE acct = ?1 AND kind = ?2 AND window = ?3 AND resets_at = ?4 ORDER BY id LIMIT 1`,
+  );
+  const insert = db.query(
+    `INSERT INTO limit_events (acct, kind, window, label, resets_at, at, resumed_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+  );
+  const resume = db.query(
+    "UPDATE limit_events SET resumed_at = ?2 WHERE id = ?1 AND resumed_at IS NULL",
+  );
+  for (const e of events) {
+    const acct = accounts.get(accountKey(e.account));
+    if (acct === undefined) throw new Error("internal: the account was not interned");
+    const kind = storedText(e.kind);
+    const window = storedText(e.window);
+    const existing = find.get(acct, kind, window, e.resetsAt);
+    if (existing === null) {
+      insert.run(acct, kind, window, storedText(e.label), e.resetsAt, e.at, e.resumedAt);
+    } else if (existing.resumed_at === null && e.resumedAt !== null) {
+      resume.run(existing.id, e.resumedAt);
+    }
+  }
 }
 
 function parseScheme(raw: string | null): number | null {

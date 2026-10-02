@@ -196,6 +196,7 @@ async function once(options: WorkerOptions, stats: boolean): Promise<number> {
     return EXIT_FAIL;
   }
   try {
+    engine.recover();
     const imported = engine.importIfFirstRun();
     if (imported?.status === "imported")
       process.stdout.write(`imported ${imported.inserted} rows from cc-usage\n`);
