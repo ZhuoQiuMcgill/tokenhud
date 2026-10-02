@@ -53,10 +53,12 @@ function readHolder(path: string): Holder | null {
 }
 
 /**
- * Whether `error` means another process has the file right now. On Windows, opening or
+ * Whether `error` may mean another process has the file right now. On Windows, opening or
  * deleting a file that another process has open, or is deleting (a "delete pending"
- * file), fails with EPERM or EBUSY instead of EEXIST or success: that is contention, to
- * retry, never a failure. Elsewhere those codes are real permission errors.
+ * file), fails with EPERM or EBUSY instead of EEXIST or success. Elsewhere those codes are
+ * real permission errors. On Windows they can be real too (an ACL, a read-only folder), so
+ * `create` treats them as contention only while the lease file is there, and otherwise
+ * only for a moment (critique m6).
  */
 export function isContention(
   error: unknown,
@@ -68,14 +70,39 @@ export function isContention(
 
 /** How long a release keeps retrying a lease file another process has open (Windows). */
 const RELEASE_RETRY_MS = 500;
+/** How long a create retries EPERM/EBUSY with no lease file to show for it (Windows). */
+export const CONTENTION_WINDOW_MS = 250;
 
-function create(path: string, holder: Holder): boolean {
-  let fd: number;
+/** Whether a lease file is at `path` (one being deleted, which stat refuses, is not). */
+function present(path: string): boolean {
   try {
-    fd = openSync(path, "wx");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST" || isContention(error)) return false;
-    throw error;
+    statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates the lease file holding `holder`; false when another process has it. EPERM and
+ * EBUSY (Windows) count as "another process has it" while the file is there; with no file
+ * they are retried for `CONTENTION_WINDOW_MS` (one being deleted goes away), then thrown:
+ * a permission error is never mistaken for a lease that is never released.
+ */
+function create(path: string, holder: Holder): boolean {
+  const deadline = Date.now() + CONTENTION_WINDOW_MS;
+  let fd: number;
+  for (;;) {
+    try {
+      fd = openSync(path, "wx");
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+      if (!isContention(error)) throw error;
+      if (present(path)) return false;
+      if (Date.now() > deadline) throw error;
+      Bun.sleepSync(2);
+    }
   }
   try {
     writeSync(fd, JSON.stringify(holder));
@@ -159,21 +186,34 @@ export function tryLease(path: string, ttlMs: number, now: () => number = Date.n
   return null;
 }
 
+/** `withLock` waited as long as a holder may live and the lock is still taken. */
+export class LeaseTimeoutError extends Error {
+  readonly code = "ELEASETIMEOUT";
+  constructor(path: string, waitedMs: number) {
+    super(`the lock ${path} stayed taken for ${waitedMs} ms`);
+    this.name = "LeaseTimeoutError";
+  }
+}
+
 /**
  * Runs `fn` while holding the lock file `path`, waiting for another holder (a short
- * read-modify-write elsewhere) for up to `ttlMs`, after which its lock is stale.
+ * read-modify-write elsewhere) for up to `ttlMs` and a second, after which its lock is
+ * stale and taken over. `fn` never runs without the lock: a lock that stays taken past
+ * that (a holder that is stuck, not dead, or a Windows lease file that can't be removed)
+ * throws `LeaseTimeoutError`, and the caller does without its write.
  */
 export function withLock<T>(path: string, fn: () => T, ttlMs = 5_000): T {
-  const deadline = Date.now() + ttlMs + 1_000;
+  const started = Date.now();
+  const deadline = started + ttlMs + 1_000;
   let lease = tryLease(path, ttlMs);
-  while (lease === null && Date.now() < deadline) {
+  while (lease === null) {
+    if (Date.now() >= deadline) throw new LeaseTimeoutError(path, Date.now() - started);
     Bun.sleepSync(2);
     lease = tryLease(path, ttlMs);
   }
   try {
-    // Past the deadline the holder is stuck, not dead; proceeding beats hanging the caller.
     return fn();
   } finally {
-    lease?.release();
+    lease.release();
   }
 }

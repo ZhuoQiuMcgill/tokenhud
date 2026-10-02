@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { leasePath, loadLimitsCache } from "../../src/limits/cache.ts";
-import { isContention, tryLease, withLock } from "../../src/limits/lease.ts";
+import {
+  initialStatus,
+  leasePath,
+  loadLimitsCache,
+  updateLimitsCache,
+} from "../../src/limits/cache.ts";
+import { isContention, LeaseTimeoutError, tryLease, withLock } from "../../src/limits/lease.ts";
 import { cleanup, tempDir } from "./helpers.ts";
 
 afterEach(cleanup);
@@ -36,6 +41,38 @@ describe("tryLease", () => {
     writeFileSync(path, "{half");
     expect(tryLease(path, 60_000)).toBeNull();
     expect(tryLease(path, 60_000, () => Date.now() + 61_000)).not.toBeNull();
+  });
+
+  test("withLock never runs the function without the lock: a lock that stays taken throws", () => {
+    const path = join(tempDir(), "x.lock");
+    // Another process's lease that won't go stale while we wait.
+    const other = tryLease(path, 60_000, () => Date.now() + 60_000);
+    let ran = false;
+    const started = Date.now();
+    expect(() =>
+      withLock(
+        path,
+        () => {
+          ran = true;
+        },
+        200,
+      ),
+    ).toThrow(LeaseTimeoutError);
+    expect(ran).toBe(false);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1200); // ttl + 1 s
+    other?.release();
+  });
+
+  test("a limits.json write that can't get the lock throws and changes nothing", () => {
+    const path = join(tempDir(), "limits.json");
+    updateLimitsCache(path, new Map([["a", { status: initialStatus() }]]));
+    const before = readFileSync(path, "utf8");
+    const other = tryLease(`${path}.lock`, 60_000, () => Date.now() + 60_000);
+    expect(() =>
+      updateLimitsCache(path, new Map([["b", { status: initialStatus() }]]), 200),
+    ).toThrow(LeaseTimeoutError);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    other?.release();
   });
 
   test("withLock runs the function and leaves no lock behind", () => {
