@@ -182,7 +182,11 @@ export async function runApp(boot: Boot): Promise<number> {
     const t0 = performance.now();
     if (lock === null || !lock.held) {
       try {
-        const taken = WriterLock.tryAcquire({ path: paths.lock, owner: "tui" });
+        const taken = WriterLock.tryAcquire({
+          path: paths.lock,
+          owner: "tui",
+          log: (message) => log.write("warn", message),
+        });
         if (taken !== null) promote(taken);
       } catch {
         // still not writable; stay read-only

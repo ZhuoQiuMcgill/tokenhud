@@ -9,7 +9,7 @@ import { limitsPath } from "../limits/cache.ts";
 import { lockPath, WriterLock } from "../lock.ts";
 import { mcpDir } from "../mcp/heartbeat.ts";
 import { configDir, pricingOverridesPath, storePath } from "../paths.ts";
-import { logPath } from "./log.ts";
+import { fileLog, logPath } from "./log.ts";
 import type { Boot, TuiPaths } from "./run.tsx";
 import { superviseVmWorker } from "./vm/client.ts";
 import { type VmMessage, vmSettingsOf } from "./vm/types.ts";
@@ -46,8 +46,13 @@ export async function runTui(env: Env = process.env, home: string = homedir()): 
   });
   let lock: WriterLock | null = null;
   let lockError: string | null = null;
+  const log = fileLog(paths.log, home);
   try {
-    lock = WriterLock.tryAcquire({ path: paths.lock, owner: "tui" });
+    lock = WriterLock.tryAcquire({
+      path: paths.lock,
+      owner: "tui",
+      log: (message) => log.write("warn", message),
+    });
   } catch (error) {
     // The config directory is not writable: show what is stored, never ingest.
     lockError = (error as Error).message;
