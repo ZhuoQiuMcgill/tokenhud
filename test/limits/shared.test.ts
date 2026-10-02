@@ -225,8 +225,8 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     const member = tryLease(leasePath(h.limitsPath, p.identity), ttl, () => h.clock.now);
     await h.service.refresh(null, 0);
     member?.release();
-    // (win-like, never asked yet, is verified right after.)
-    expect(h.calls).toEqual([p_, w_]);
+    // (On demand, the account only: win-like, never asked yet, waits for a round, T18.)
+    expect(h.calls).toEqual([p_]);
     // ...while one fetching the group does, for either member.
     h.clock.now += 5 * MIN;
     const group = tryLease(
@@ -237,10 +237,11 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     expect(group).not.toBeNull();
     await h.service.refresh(w_, 0);
     await h.service.refreshDue();
-    expect(h.calls).toEqual([p_, w_]);
+    expect(h.calls).toEqual([p_]);
     group?.release();
-    await h.service.refresh(w_, 0);
-    expect(h.calls).toEqual([p_, w_, p_]);
+    // The round fetches the group and verifies win-like back to back.
+    await h.service.refreshDue();
+    expect(h.calls).toEqual([p_, p_, w_]);
   });
 
   test("a manual link: one fetch a round from the first; the next round is 5 minutes off", async () => {
@@ -377,7 +378,29 @@ describe("fetch economy: one fetch per group per round, plus verification", () =
     h.clock.now += 30 * S;
     const [outcome] = await h.service.refresh(w_, 60);
     expect(outcome).toEqual({ account: w.identity, fetched: true, error: null });
+    // Through the group's first member, once each time: no verification on demand (T18).
+    expect(h.calls).toEqual([p_, p_]);
+  });
+
+  test("on demand: one fetch for the account, no partner fetch, no auto-detection (T18)", async () => {
+    // Two roots whose resets agree, not linked yet: partners.
+    const [p, w] = pair() as [Root, Root];
+    const h = harness([p, w]);
+    await h.rounds(0);
+    const decided = h.file().pairs;
+    h.clock.now = T0 + 2 * MIN;
+    await h.service.refresh(p_, 60);
     expect(h.calls).toEqual([p_, w_, p_]);
+    // The on-demand capture decided nothing: only a round's pairs do.
+    expect(h.file().pairs).toEqual(decided);
+    // The next round fetches win-like, due, and personal-like back to back, as its capture is
+    // over 60 s from win-like's: that pair is the one decided.
+    await h.rounds(5);
+    expect(h.calls).toEqual([p_, w_, p_, w_, p_]);
+    expect(h.file().pairs?.[pairKey(p.identity, w.identity)]?.last).toEqual([
+      (T0 + 5 * MIN) / 1000,
+      (T0 + 5 * MIN) / 1000,
+    ]);
   });
 
   test("two Codex homes on one ChatGPT account are fetched once too", async () => {
@@ -449,19 +472,19 @@ describe("requests per hour stay bounded", () => {
     const h = harness([p, w]);
     let fiveHour = FIVE_HOUR;
     let start = T0;
-    /** win-like's fetches out of the 5-minute rounds: the partner fetches (s into the hour). */
+    let inRound = false;
+    /** personal-like's fetches in rounds, where it is never due (MCP keeps it fresh): its partner fetches (s into the hour). */
     let partnered: number[] = [];
     h.state.fetch = async (root) => {
-      if (root === p) {
+      if (root === w) {
         return capture("claude", h.clock.now / 1000, {
-          session: { pct: 30, resets: fiveHour, label: "5-HOUR" },
-          weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
+          weekly_all: { pct: 12, resets: WEEK + 0.3, label: "WEEKLY" },
         });
       }
-      const t = (h.clock.now - start) / S;
-      if (t % 300 !== 0) partnered.push(t);
+      if (inRound) partnered.push((h.clock.now - start) / S);
       return capture("claude", h.clock.now / 1000, {
-        weekly_all: { pct: 12, resets: WEEK + 0.3, label: "WEEKLY" },
+        session: { pct: 30, resets: fiveHour, label: "5-HOUR" },
+        weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
       });
     };
     const hour = async (newWindowAt = -1) => {
@@ -470,24 +493,31 @@ describe("requests per hour stay bounded", () => {
       for (let t = 0; t < 3600; t += 10) {
         h.clock.now = start + t * S;
         if (t === newWindowAt) fiveHour += 5 * 3600;
-        if (t % 300 === 0) await h.service.refreshDue();
+        if (t % 300 === 0) {
+          inRound = true;
+          await h.service.refreshDue();
+          inRound = false;
+        }
         await h.service.refresh(p_, 60);
       }
       h.clock.now = start + 3600 * S;
     };
     await hour();
+    // Proven from the rounds' pairs alone: each compares win-like's round capture with
+    // personal-like's, at most 60 s older.
     expect(provenDifferent(h.file().pairs?.[pairKey(p.identity, w.identity)])).toBe(true);
-    // A few partner fetches in the first minutes proved the pair (two inconclusive pairs
-    // count as one mismatch); none after. Before, every MCP fetch was mirrored: 52 an hour.
+    // win-like only in the rounds (T18). Before, every MCP fetch was mirrored onto it: 52
+    // an hour.
+    expect(count(h.calls, w_)).toBe(12);
     expect(count(h.calls, p_)).toBe(52);
-    expect(partnered.length).toBeLessThanOrEqual(3);
-    expect(Math.max(...partnered)).toBeLessThan(600);
-    // A new 5-hour instance for personal-like between two rounds: one partner fetch, with
-    // the first fetch that saw it (personal-like's next on-demand one), then none.
+    // personal-like's own round fetch at 0, its first; no partner fetch after.
+    expect(partnered).toEqual([0]);
+    // A new 5-hour instance for personal-like between two rounds: still nothing on demand,
+    // and at most one partner fetch in a round.
+    const calls = h.calls.length;
     await hour(120);
-    expect(partnered).toHaveLength(1);
-    expect(partnered[0]).toBeGreaterThan(120);
-    expect(partnered[0]).toBeLessThan(300);
+    expect(count(h.calls.slice(calls), w_)).toBe(12);
+    expect(partnered.length).toBeLessThanOrEqual(1);
   });
 
   test("a credential change triggers one verify, then the member's back-off holds", async () => {
@@ -514,6 +544,80 @@ describe("requests per hour stay bounded", () => {
     expect(changing.w).toBeLessThanOrEqual(10);
     expect(changing.p).toBeLessThanOrEqual(steady.p + changing.w);
   });
+});
+
+describe("requests per hour, with and without an MCP server polling (T18's cap)", () => {
+  /** Use and resets that never move: an idle account, for both roots. */
+  const idle = (ms: number) =>
+    capture("claude", ms / 1000, {
+      session: { pct: 20, resets: FIVE_HOUR, label: "5-HOUR" },
+      weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
+    });
+
+  /**
+   * Requests in the third hour of three: a scheduled round every 5 minutes and, with `mcp`,
+   * a refresh of personal-like every 10 s for data at most 60 s old, as an MCP server
+   * polling `should_wait` asks. Split into on-demand requests (the MCP's own) and the
+   * rounds'.
+   */
+  async function perHour(kind: "linked" | "candidate" | "different", mcp: boolean) {
+    const [p, w] = pair() as [Root, Root];
+    const h = harness([p, w]);
+    if (kind === "linked") h.state.links = { same: [[p.identity, w.identity]], separate: [] };
+    h.state.fetch = async (root) => {
+      if (kind !== "different") return idle(h.clock.now);
+      // Two accounts that share only the weekly reset hour.
+      return root === w
+        ? capture("claude", h.clock.now / 1000, {
+            weekly_all: { pct: 12, resets: WEEK + 0.3, label: "WEEKLY" },
+          })
+        : capture("claude", h.clock.now / 1000, {
+            session: { pct: 30, resets: FIVE_HOUR, label: "5-HOUR" },
+            weekly_all: { pct: 40, resets: WEEK, label: "WEEKLY" },
+          });
+    };
+    let demand = 0;
+    let rounds = 0;
+    for (let t = 0; t < 3 * 3600; t += 10) {
+      h.clock.now = T0 + t * S;
+      const counted = t >= 2 * 3600;
+      if (t % 300 === 0) {
+        const before = h.calls.length;
+        await h.service.refreshDue();
+        if (counted) rounds += h.calls.length - before;
+      }
+      if (mcp) {
+        const before = h.calls.length;
+        await h.service.refresh(p_, 60);
+        if (counted) demand += h.calls.length - before;
+      }
+    }
+    const state = h.file().pairs?.[pairKey(p.identity, w.identity)];
+    const grouped = h.limits().getLimits(w.identity)?.group !== null;
+    return { demand, rounds, grouped, proven: provenDifferent(state) };
+  }
+
+  // Before T18, with MCP polling: linked 54, a candidate 104 (52 + 52 mirrored partner
+  // fetches), proven different 64. Without MCP polling nothing changes: 14, 24, 24.
+  test.each([
+    ["linked (manual)", false, 0, 14, "linked"],
+    ["linked (manual)", true, 50, 4, "linked"],
+    ["an idle candidate", false, 0, 24, "candidate"],
+    ["an idle candidate", true, 50, 14, "candidate"],
+    ["proven different", false, 0, 24, "different"],
+    ["proven different", true, 52, 12, "different"],
+  ] as const)(
+    "%s, MCP polling %p: %i on demand + %i in rounds",
+    async (_, mcp, demand, rounds, kind) => {
+      const got = await perHour(kind, mcp);
+      expect([got.demand, got.rounds]).toEqual([demand, rounds]);
+      // The cap: at most 30 an hour besides the MCP's own, and those one a minute at most.
+      expect(got.rounds).toBeLessThanOrEqual(30);
+      expect(got.demand).toBeLessThanOrEqual(60);
+      // One card for the linked pair, two for the others; the different pair proven so.
+      expect([got.grouped, got.proven]).toEqual([kind === "linked", kind === "different"]);
+    },
+  );
 });
 
 describe("limit events: once per group window", () => {

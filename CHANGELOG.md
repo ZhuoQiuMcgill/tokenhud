@@ -51,9 +51,10 @@ release candidate 0.1.0-rc.1 has all of it.
   ChatGPT) account, such as `~/.claude` and its Windows-side twin under WSL, share one
   limits card, one fetch, and a pace summed over all of them; history stays per root.
   tokenhud finds them when their limits reset together and their use moves together, and
-  re-checks every 30 minutes that they still do; settings link or unlink them by hand
-  (`same_account`, `separate_accounts` in `config.json`). MCP answers for the shared
-  account from either root, and `tokenhud doctor` lists the groups.
+  re-checks every 30 minutes that they still do, in the TUI's 5-minute limits fetches;
+  settings link or unlink them by hand (`same_account`, `separate_accounts` in
+  `config.json`). MCP answers for the shared account from either root, fetching only the
+  account it is asked about, and `tokenhud doctor` lists the groups.
 - **Pricing**: a bundled price table with effective dates, fast and priority tiers, long
   context, and estimated prices for `codex-auto-review`; your own overrides in
   `pricing.overrides.json`, which never hide later corrections to the bundled prices.

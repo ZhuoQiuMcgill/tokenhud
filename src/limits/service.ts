@@ -43,8 +43,10 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
  *
  * - **Cadence:** each account is fetched every 5 minutes.
  * - **On demand:** `refresh(account, maxAgeS)` fetches only when the account's data is
- *   older than `maxAgeS`. Requests for an account already being fetched join that fetch,
- *   and a Claude account is fetched at most once per 30 s.
+ *   older than `maxAgeS`, and then only that account: one request (a second when the first
+ *   member of a group fails for a reason of its own), never a partner or verification
+ *   fetch, and no auto-detection. Requests for an account already being fetched join that
+ *   fetch, and a Claude account is fetched at most once per 30 s.
  * - **Back-off:** consecutive failures wait 30 s, 1, 2, 4 ... minutes, up to 30 minutes,
  *   before the next attempt (on demand too).
  * - **History-only accounts** (`signed_in: false`): an account in `history_only_roots` is
@@ -70,12 +72,16 @@ import { type CodexSnapshots, NO_SNAPSHOTS } from "./snapshots.ts";
  *   lease and the in-flight request are the group's. Each fetch's capture is kept under the
  *   member it came from; readers take the group's freshest, and limit events are recorded
  *   once for the group.
- * - **Keeping auto-detection fresh:** right after a group's fetch, under its lease, each
+ * - **Keeping auto-detection fresh**, in scheduled rounds only (T18: an MCP server polling
+ *   an account every 10 s mirrored each of its fetches onto the account's partner, 104
+ *   requests an hour for an idle pair). Right after a group's fetch, under its lease, each
  *   other member is fetched too every 30 minutes, every one at once when a member's
- *   credential file changed (stat only), and a signed-out one when its re-check is due.
- *   Right after a root's fetch, a root on its own whose resets agree with it and whose
- *   capture is over 60 s old is fetched too. After every round and on-demand refresh,
- *   auto-detection compares the roots' captures and records the groups in limits.json.
+ *   credential file changed (stat only), and a signed-out one when its re-check is due; a
+ *   round fetches the group for that alone when on-demand fetches have kept it from being
+ *   due. Right after a root's fetch, a root on its own whose resets agree with it and whose
+ *   capture is over 60 s old is fetched too. After every round, auto-detection compares
+ *   the roots' captures and records the groups in limits.json: only a round's pairs, at
+ *   most 60 s apart, decide anything.
  * Nothing here throws to the caller.
  */
 
@@ -367,7 +373,8 @@ export class LimitsService {
   /**
    * On demand: fetches each matching account (identity or label; all when null) whose data
    * is older than `maxAgeS`, within the back-off and rate limits. A root on an account with
-   * others is fetched as their group, and its data is the group's.
+   * others is fetched as their group, and its data is the group's. Nothing else is fetched
+   * and auto-detection doesn't run: that is the scheduled rounds' work.
    */
   async refresh(account: string | null, maxAgeS: number): Promise<RefreshOutcome[]> {
     const round = this.#survey();
@@ -380,7 +387,6 @@ export class LimitsService {
     const outcomes = (
       await Promise.all(units.map((unit) => this.#process(unit, mode, round)))
     ).flat();
-    if (units.length > 0) this.#detect(round.roots);
     const byId = new Map(outcomes.map((o) => [o.account, o]));
     return wanted.flatMap((root) => byId.get(root.identity) ?? []);
   }
@@ -525,11 +531,12 @@ export class LimitsService {
   /**
    * The members to ask, in order, when the unit is due; none when it isn't. The first
    * signed-in member decides whether the unit is due, against the unit's freshest capture.
-   * A group is due at once, too, when a member's credential file changed and that member
-   * can be asked now (`#askable`): its one immediate verification. The others stand in
-   * when the first fails for a reason of its own, unless their back-off or Claude's 30 s
-   * gap holds them back. A unit with no member signed in re-checks the first one due for
-   * it (daily, or when its credential file changes).
+   * In a scheduled round a group is due, too, when one of its other members is due for
+   * verification (`#verifiers`) and the first can be asked now: on-demand fetches move the
+   * group's schedule, and must not starve its verification. The others stand in when the
+   * first fails for a reason of its own, unless their back-off or Claude's 30 s gap holds
+   * them back. A unit with no member signed in re-checks the first one due for it (daily,
+   * or when its credential file changes).
    */
   #plan(unit: Unit, reads: ReadonlyMap<string, Read>, mode: Mode): Root[] {
     const read = (root: Root) => reads.get(root.identity) as Read;
@@ -543,18 +550,21 @@ export class LimitsService {
       return recheck === undefined ? [] : [recheck];
     }
     if (this.#heldUntil(unit, status) !== null) return [];
-    const changed =
-      unit.members.length > 1 &&
-      unit.members.some(
-        (root) =>
-          this.#credentialsChanged(root, read(root).status) &&
-          this.#askable(root, read(root).status),
-      );
-    const due =
-      (changed && this.#mayStandIn(first, read(first).status)) ||
-      this.#due(first, read(first).status, current, mode);
-    if (!due) return [];
+    const verify =
+      mode.kind === "scheduled" &&
+      this.#mayStandIn(first, read(first).status) &&
+      this.#verifiers(unit, first, reads, this.#changed(unit, reads)).length > 0;
+    if (!verify && !this.#due(first, read(first).status, current, mode)) return [];
     return [first, ...others.filter((root) => this.#mayStandIn(root, read(root).status))];
+  }
+
+  /** The unit's members whose credential file changed since their own last fetch. */
+  #changed(unit: Unit, reads: ReadonlyMap<string, Read>): Set<string> {
+    return new Set(
+      unit.members
+        .filter((root) => this.#credentialsChanged(root, (reads.get(root.identity) as Read).status))
+        .map((root) => root.identity),
+    );
   }
 
   /**
@@ -621,9 +631,10 @@ export class LimitsService {
    * (`.limits-leases/<key>.lease` beside limits.json), so one process at a time fetches an
    * account; the holder decides again on the file as it is then and records the attempt
    * before fetching, so a process that comes after it within 30 s does not fetch. A
-   * process that cannot get the lease serves what limits.json holds. A capture fetched
-   * here is followed, back to back, by the fetches that let auto-detection compare it:
-   * the group's members due for verification, and unlinked partners (`#partners`).
+   * process that cannot get the lease serves what limits.json holds. In a scheduled round,
+   * a capture fetched here is followed, back to back, by the fetches that let
+   * auto-detection compare it: the group's members due for verification, and unlinked
+   * partners (`#partners`).
    */
   async #run(unit: Unit, mode: Mode, round: Round): Promise<RefreshOutcome[]> {
     let reads = this.#readUnit(unit);
@@ -634,13 +645,7 @@ export class LimitsService {
       if (lease !== null) {
         try {
           reads = this.#readUnit(unit);
-          const changed = new Set(
-            unit.members
-              .filter((root) =>
-                this.#credentialsChanged(root, (reads.get(root.identity) as Read).status),
-              )
-              .map((root) => root.identity),
-          );
+          const changed = this.#changed(unit, reads);
           for (const root of this.#plan(unit, reads, mode)) {
             fetched = true;
             const attempt = await this.#ask(root, reads.get(root.identity) as Read);
@@ -655,7 +660,7 @@ export class LimitsService {
             // Another member would fail the same way (a 429, the network): stop here.
             if (failover(attempt.error) === "hold") break;
           }
-          if (by !== null) {
+          if (by !== null && mode.kind === "scheduled") {
             for (const root of this.#verifiers(unit, by.root, reads, changed)) {
               if (this.#stopped) break;
               await this.#ask(root, reads.get(root.identity) as Read);
@@ -692,7 +697,9 @@ export class LimitsService {
         unit.members.filter((root) => root !== owner),
       );
     }
-    if (by !== null && !this.#stopped) await this.#partners(by, unit, round);
+    if (by !== null && mode.kind === "scheduled" && !this.#stopped) {
+      await this.#partners(by, unit, round);
+    }
     const error = groupError(unit.members, (id) => reads.get(id)?.status, capture);
     return unit.members.map((root) => ({ account: root.identity, fetched, error }));
   }
