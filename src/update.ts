@@ -108,7 +108,12 @@ export function npmGlobalPrefix(): string | null {
       ? ["cmd.exe", "/d", "/s", "/c", "npm prefix -g"]
       : ["npm", "prefix", "-g"];
   try {
-    const out = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "ignore", timeout: 10_000 });
+    const out = Bun.spawnSync(cmd, {
+      env: { ...process.env },
+      stdout: "pipe",
+      stderr: "ignore",
+      timeout: 10_000,
+    });
     const text = out.stdout.toString().trim();
     return out.exitCode === 0 && text !== "" ? text : null;
   } catch {

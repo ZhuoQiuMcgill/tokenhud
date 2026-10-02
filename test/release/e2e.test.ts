@@ -25,7 +25,10 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { VERSION } from "../../src/version.ts";
+import { guard } from "../guard.ts";
 import { type FakeGitHub, fakeGitHub } from "./fake-github.ts";
+
+guard();
 
 const DIST = process.env.TOKENHUD_E2E_DIST;
 const OLD = process.env.TOKENHUD_E2E_OLD;

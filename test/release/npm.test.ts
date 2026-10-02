@@ -13,6 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { npmPackage, RELEASE_TARGETS } from "../../src/release.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 const SHIM = join(import.meta.dir, "..", "..", "npm", "tokenhud", "bin", "tokenhud.cjs");
 const node = Bun.which("node");

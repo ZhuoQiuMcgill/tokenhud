@@ -5,6 +5,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { guard } from "../guard.ts";
+
+guard();
 
 const script = readFileSync(join(import.meta.dir, "..", "..", "install.sh"), "utf8");
 const hostLibc = /^host_libc\(\) \{\n[\s\S]*?\n\}$/m.exec(script)?.[0] ?? "";

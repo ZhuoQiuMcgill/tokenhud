@@ -9,6 +9,9 @@ import {
   targetById,
   targetId,
 } from "../../src/release.ts";
+import { guard } from "../guard.ts";
+
+guard();
 
 describe("release targets", () => {
   test("every target's asset, Bun target and npm package, as the release and npm name them", () => {

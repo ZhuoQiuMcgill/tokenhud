@@ -29,6 +29,9 @@ import {
   replaceBinary,
   type Version,
 } from "../src/update.ts";
+import { guard } from "./guard.ts";
+
+guard();
 
 const v = (text: string) => parseVersion(text) as Version;
 const sha256 = (data: string) => new Bun.CryptoHasher("sha256").update(data).digest("hex");

@@ -56,7 +56,12 @@ function versionOf(bin: string): string {
   try {
     // A just-written .exe is locked while Windows scans it; spawning then fails with EBUSY.
     const run = whenFree(() =>
-      Bun.spawnSync([bin, "--version"], { stdout: "pipe", stderr: "pipe", timeout: 60_000 }),
+      Bun.spawnSync([bin, "--version"], {
+        env: { ...process.env },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 60_000,
+      }),
     );
     if (run.exitCode === 0) return run.stdout.toString().trim();
     return `exit ${run.exitCode}: ${run.stderr.toString().trim().split("\n")[0] ?? ""}`;
