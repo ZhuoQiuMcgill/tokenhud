@@ -26,49 +26,46 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # A Windows run takes about 3 minutes; this bounds a hung run, not a slow one.
+    # A Windows run takes about 80 s; this bounds a hung run, not a slow one.
     timeout-minutes: 180
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
+      # pwsh, the shell ci.yml's `bun test` runs in on Windows. Git Bash hands Bun a different
+      # environment there (`PATH` where pwsh says `Path`), and that once decided whether a
+      # test passed (T15).
       - name: bun test, ${{ inputs.runs }} times
+        shell: pwsh
         env:
           RUNS: ${{ inputs.runs }}
         run: |
-          if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::runs must be a positive whole number, got '$RUNS'"
+          if ($env:RUNS -notmatch '^[1-9][0-9]*$') {
+            Write-Output "::error::runs must be a positive whole number, got '$env:RUNS'"
             exit 1
-          fi
-          {
-            echo "### $RUNNER_OS: bun test × $RUNS"
-            echo
-            echo "| run | result | seconds | failed tests |"
-            echo "|---|---|---|---|"
-          } >> "$GITHUB_STEP_SUMMARY"
-          failed=0
-          for i in $(seq 1 "$RUNS"); do
-            echo "======== run $i of $RUNS on $RUNNER_OS ========"
-            start=$SECONDS
-            if bun test 2>&1 | tee run.log; then
-              result=pass
-            else
-              result=FAIL
-              failed=$((failed + 1))
-            fi
+          }
+          $runs = [int]$env:RUNS
+          $summary = @("### ${env:RUNNER_OS}: bun test x $runs", "", "| run | result | seconds | failed tests |", "|---|---|---|---|")
+          $failed = 0
+          foreach ($i in 1..$runs) {
+            Write-Output "======== run $i of $runs on $env:RUNNER_OS ========"
+            $start = Get-Date
+            bun test *> run.log
+            $code = $LASTEXITCODE
+            Get-Content run.log
+            if ($code -eq 0) { $result = "pass" } else { $result = "FAIL"; $failed++ }
             # Bun prints each failure twice (in place and in the closing summary).
-            names=$({ grep -E '^\(fail\) ' run.log || true; } | tr -d '\r' | sort -u \
-              | sed -E 's/^\(fail\) //; s/ \[[0-9.]+m?s\]$//; s/\|/\\|/g' | paste -s -d ';' -)
-            echo "| $i | $result | $((SECONDS - start)) | ${names} |" >> "$GITHUB_STEP_SUMMARY"
-          done
-          echo >> "$GITHUB_STEP_SUMMARY"
-          echo "**$((RUNS - failed)) of $RUNS runs passed on $RUNNER_OS.**" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$failed" -gt 0 ]; then
-            echo "::error::$failed of $RUNS runs failed on $RUNNER_OS; the step summary lists the tests"
+            $names = Select-String -Path run.log -Pattern '^\(fail\) (.*?)( \[[0-9.]+m?s\])?$' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value.Replace('|', '\|') } |
+              Sort-Object -Unique
+            $seconds = [int]((Get-Date) - $start).TotalSeconds
+            $summary += "| $i | $result | $seconds | $($names -join ';') |"
+          }
+          $summary += @("", "**$($runs - $failed) of $runs runs passed on $env:RUNNER_OS.**")
+          $summary | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          if ($failed -gt 0) {
+            Write-Output "::error::$failed of $runs runs failed on $env:RUNNER_OS; the step summary lists the tests"
             exit 1
-          fi
+          }
