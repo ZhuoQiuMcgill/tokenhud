@@ -11,44 +11,49 @@ tokenhud succeeds [cc-usage](https://github.com/ZhuoQiuMcgill/cc-usage) and impo
 history on first run.
 
 ```
- tokenhud   1 Overview   2 History   3 Models   4 Accounts         scope all accounts   as of 23:16
-────────────────────────────────────────────────────────────────────────────────────────────────────
+ tokenhud   1 Overview   2 History   3 Models   4 Accounts              scope all accounts   as of 15:10
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
- LIMITS                                                                         limits: coming soon
- ╭─ personal · claude ──────────────────────────╮  ╭─ work · claude ──────────────────────────────╮
- │ today $1.62*  2.9M                           │  │ today $0.00  0                               │
- │ 24h   $1.62*  2.9M                           │  │ 24h   $0.00  0                               │
- │ limits: coming soon                          │  │ limits: coming soon                          │
- ╰──────────────────────────────────────────────╯  ╰──────────────────────────────────────────────╯
- ╭─ codex · codex ──────────────────────────────╮  ╭─ codex-win · codex ──────────────────────────╮
- │ today $2.38  1.6M                            │  │ today $0.00  0                               │
- │ 24h   $2.38  1.6M                            │  │ 24h   $0.00  0                               │
- │ limits: coming soon                          │  │ limits: coming soon                          │
- ╰──────────────────────────────────────────────╯  ╰──────────────────────────────────────────────╯
+ LIMITS                                     pace = spend rate over the last 30 min · times are estimates
+ ╭─ personal · claude ─────────────────────────────╮  ╭─ old-laptop · claude ──────────────────────────╮
+ │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━         78%  1h47m │  │ not signed in here                             │
+ │ week ━━━━━━━━                        27%  4d05h │  │                                                │
+ │ pace $1.3/h → hits 100% at 16:29                │  │ pace $0/h   → idle                             │
+ ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯
+ ╭─ work · claude (47m old) ───────────────────────╮  ╭─ codex · codex ────────────────────────────────╮
+ │ 5h   ━━━━                            12%  3h54m │  │ 5h   ━━                              8%  4h30m │
+ │ week ━━━                              9%  2d10h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━       83% 19h04m │
+ │ pace $0/h   → idle                              │  │ pace $0.04/h → week ends ~89%                  │
+ ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯
 
- SPEND                                                                      * not all tokens priced
+ SPEND                                                                           * not all tokens priced
                 today    this week   this month     all-time
-  cost         $4.00*      $19.57*       $4.00*     $334.63*
-  tokens         4.5M        18.2M         4.5M       310.7M
+  cost        $10.07*      $21.38*      $13.48*     $226.19*
+  tokens         8.5M        20.7M        12.5M       240.9M
 
- ACTIVITY · cost per 20 min · 24h                                               peak $1.41 at 09:00
- $1.41                              █
-                                    █
-                                    █                               ▆
- $0.71                              █                     ▄▄        █
-                                    █                     ██        █
-                                    █▁                    ██        █
-     0                              ██                    ██        █
-       -24h              -18h              -12h             -6h             now
+ ACTIVITY · cost per 15 min · 24h                                                    peak $1.46 at 01:00
+ $1.46                                        █                                             ▃ ▃ ▃ ▃
+                                              █                                             █ █ █ █
+                                              █                             ▄               █ █ █ █
+ $0.73                                        █                             █               █ █ █ █
+                                              █                            ▂█           ▁▃  █ █ █ █  ▁
+                                              █                            ██           ██  █ █ █ █  █▁
+     0                                        █▆                           ██           ██  █ █ █ █  ██
+       -24h                    -18h                    -12h                   -6h                   now
 
  TOP MODELS · 24h
- claude-opus-4-8                           $1.62  40% ━━
- gpt-5.6-sol                               $1.42  35% ━━
- gpt-5.5                                   $0.96  24% ━
- claude-mystery-9                       unpriced   0%
+ Opus 4.8                    $7.66  76% ━━━━━
+ gpt-5.6-sol                 $1.42  14% ━
+ gpt-5.5                     $0.99  10% ━
+ Mystery 9                unpriced   0%
+
+ LIMIT EVENTS · 7 days
+  Fri 12:10  work      5-hour limit reached  —
+  Mon 13:10  personal  5-hour limit reached  resumed 15:10
+  Wed 01:10  codex     weekly passed 80%     —
 ```
 
-<sub>`tokenhud --once --width 100` on made-up data.</sub>
+<sub>`tokenhud --once --width 105` on made-up accounts and usage.</sub>
 
 ## Install
 
@@ -134,6 +139,15 @@ the store, the accounts it follows, unpriced models, and anything still only in 
 
 The footer shows the keys of the view you are in.
 
+### Overview
+
+| Key | Does |
+|---|---|
+| `←/→` | Change the activity span: the last 5 hours, 24 hours or 7 days |
+| `t` | Show cost or tokens; the top models follow (`↑/↓` too) |
+| `tab` | Select the next account card; `esc` clears the selection |
+| `enter` | Open the selected card's account (the first card's when none is selected) in Accounts |
+
 ### History
 
 | Key | Does |
@@ -180,10 +194,13 @@ accounts. They are saved in `~/.config/tokenhud/config.json`.
 
 ## Views
 
-1. **Overview**: a card per account with its limits (5-hour and weekly windows, reset
-   times, spend pace and when it would run out at that pace), the MCP agents using
-   tokenhud, spend for today, this week, this month and all time, the last 24 hours of
-   activity, the top models, and recent limit events.
+1. **Overview**: a card per account with its 5-hour and weekly limits (how full, and how
+   long until each resets), its spend pace over the last 30 minutes, and what that pace
+   leads to: the time it hits 100 %, where the week ends, or "safe until reset". A card
+   says when its limits are stale, or "not signed in here" for an account that isn't. Then
+   the agents using tokenhud's MCP server, spend for today, this week, this month and all
+   time (also the last 1 and 5 hours on a wide screen), activity over the last 5 hours, 24
+   hours or 7 days, the top models, and the past week's limit events.
 2. **History**: a 26-week calendar heat map of daily cost, a card for the selected day
    (cost, tokens, models and any limit hits), and a table by day, week or month with each
    period compared to the 30-day average. A model filter narrows every number to one model.

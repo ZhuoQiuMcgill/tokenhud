@@ -8,15 +8,33 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
-The first release, v0.1.0: tokenhud succeeds cc-usage 2.6.1 and imports its history.
+The first release, v0.1.0: tokenhud succeeds cc-usage 2.6.1 and imports its history. The
+release candidate 0.1.0-rc.1 has all of it.
 
 ### Added
 
-- **Interactive TUI** (`tokenhud`) with four views: Overview (limits per account, spend,
-  24-hour activity, top models, limit events), History, Models and Accounts. Layouts for
-  half a 1080p screen, a portrait half, 80 × 24 and wide terminals; a settings screen;
-  dark, light and high-contrast themes. It reads stored totals, so it starts and switches
-  views without rescanning transcripts.
+- **Interactive TUI** (`tokenhud`) with four views, each with its own keys (`?` lists them):
+  - **Overview:** a card per account with its 5-hour and weekly limits, time to each reset,
+    spend pace and its projection (when the window hits 100 %, where the week ends, or safe
+    until reset), marked when the limits are stale or the account isn't signed in here;
+    the MCP agents at work; spend from the last hour to all time; activity over 5 hours,
+    24 hours or 7 days, in cost or tokens; the top models; the past week's limit events.
+    `tab` selects a card and `enter` opens its account.
+  - **History:** a 26-week calendar heat map, the selected day's card with its limit hits,
+    and a table by day, week or month against the 30-day average; this week or this month
+    at a key, and a filter that narrows every number to one model.
+  - **Models:** a rate board (tokens, the rates each model is billed at, cost and share) for
+    a window you pick, sortable, with the selected model's full rates, their sources, and
+    which accounts used it.
+  - **Accounts:** every account with its status; the selected one's root, history, limit
+    windows, weekly use at the last 8 resets, 30 days of spend, models and agents. Accounts
+    can be scoped to, turned off, renamed or marked history only right there.
+
+  Layouts for half a 1080p screen, a portrait half, 80 × 24 and wide terminals; a settings
+  screen; dark, light and high-contrast themes. It reads stored totals, so it starts and
+  switches views without rescanning transcripts. While it runs, it fetches each account's
+  limits itself, and a damaged ingest lock is repaired, or the TUI stays read-only with the
+  reason and retries.
 - **`tokenhud --once`** prints the Overview once, for scripts and terminals without a TUI.
 - **Usage store** (`~/.config/tokenhud/tokenhud.db`): every usage event tokenhud parses, as
   token counts only, kept after Claude Code deletes the transcript. Hourly rollups keep the
@@ -49,6 +67,17 @@ The first release, v0.1.0: tokenhud succeeds cc-usage 2.6.1 and imports its hist
   or tells npm, npx and bunx users the command. `--check` only reports. The TUI notes a
   newer release in its footer, checking at most once a day (a setting turns it off); it
   never updates on its own.
+
+### For contributors
+
+- Tests can never start the real `claude` or `codex`: a test guard puts stubs first on
+  every test's PATH and the product refuses any other client under test. Every test file
+  calls `guard()`, and every process `src/` starts gets an explicit environment; a lint
+  test enforces both.
+- CI is deterministic on Linux, macOS and Windows, and `.github/workflows/repeat.yml` runs
+  the suite many times on demand to measure flakiness.
+- `.github/workflows/release.yml` builds, tests and publishes a release from a `v*` tag, and
+  runs everything but publishing on pull requests that touch the release path.
 
 ### Differences from cc-usage
 
