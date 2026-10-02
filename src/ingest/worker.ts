@@ -39,7 +39,13 @@ function limitsService(live: IngestEngine, options: LimitsWorkerOptions, cachePa
     roots: () => live.discover(),
     knownAccounts: () => [...live.store.accounts().values()],
     snapshots: codexSnapshotsFrom(cachePath),
-    recordEvents: (root, capture) => recordCaptureEvents(live.store, root, capture),
+    // New limit events change the TUI's views though no usage did: they go out as a
+    // change at the capture's instant, like rows written then.
+    recordEvents: (root, capture) => {
+      if (recordCaptureEvents(live.store, root, capture) === 0) return;
+      const at = Math.round(capture.captured_at * 1000);
+      post({ type: "changed", accounts: [root.identity], fromTs: at, toTs: at });
+    },
     log: (level, message) => post({ type: "log", level, message }),
     onChanged: (accounts) => post({ type: "limits", accounts }),
   });

@@ -14,6 +14,7 @@ import type {
   AccountRow,
   AccountsVM,
   HistoryDay,
+  HistoryPeriod,
   HistoryVM,
   ModelsVM,
   OverviewVM,
@@ -155,25 +156,29 @@ describe("Overview", () => {
 });
 
 describe("History", () => {
-  test("26 Monday-first weeks ending with this week; nothing after today", () => {
+  test("days from the 1st of the heat map's first month to today; 26 Monday weeks; whole months", () => {
     const vm = views.history as HistoryVM;
-    expect(vm.weeks).toBe(26);
-    expect(vm.days).toHaveLength(182);
-    // This week starts Mon Sep 28; 25 weeks (175 days) earlier is Mon Apr 6.
-    expect(vm.days[0]?.key).toBe("2026-04-06");
-    expect(vm.today).toBe(25 * 7 + 1);
-    expect(vm.days[vm.today]?.key).toBe("2026-09-29");
-    expect(vm.days.slice(vm.today + 1)).toEqual([null, null, null, null, null]);
+    // This week starts Mon Sep 28; 25 weeks (175 days) earlier is Mon Apr 6, in April.
+    expect(vm.days[0]?.key).toBe("2026-04-01");
+    expect(vm.days[vm.gridStart]?.key).toBe("2026-04-06");
+    expect(vm.days.at(-1)?.key).toBe("2026-09-29");
+    expect(vm.weeks).toHaveLength(26);
+    expect(vm.weeks[0]?.key).toBe("2026-04-06");
+    expect(vm.weeks.at(-1)).toMatchObject({ key: "2026-09-28", days: 2 });
+    expect(vm.months.map((m) => [m.key, m.days])).toEqual([
+      ["2026-04", 30],
+      ["2026-05", 31],
+      ["2026-06", 30],
+      ["2026-07", 31],
+      ["2026-08", 31],
+      ["2026-09", 29],
+    ]);
   });
 
   test("each day is its local day's usage", () => {
     const vm = views.history as HistoryVM;
-    for (const [i, offset] of [
-      [vm.today, 0],
-      [vm.today - 1, 1],
-      [vm.today - 30, 30],
-    ] as const) {
-      const day = vm.days[i] as HistoryDay;
+    for (const offset of [0, 1, 30]) {
+      const day = vm.days[vm.days.length - 1 - offset] as HistoryDay;
       // EDT all along these dates: local midnight is 04:00Z.
       const from = TODAY.from - offset * 86_400_000;
       const want = oracle(from, from + 86_400_000);
@@ -181,17 +186,11 @@ describe("History", () => {
       expect(day.tokens).toBe(want.tokens);
     }
     // The fixture starts 60 days back: older days are empty, not missing.
-    expect(vm.days[0]).toEqual({
-      key: "2026-04-06",
-      cost: 0,
-      tokens: 0,
-      pricedShare: 1,
-      estimatedCost: 0,
-      input: 0,
-      output: 0,
-      cache: 0,
-      topModel: null,
-    });
+    expect(vm.days[0]).toMatchObject({ key: "2026-04-01", cost: 0, tokens: 0, models: [] });
+    // This week and this month are calendar ones, as the Overview's spend row.
+    const overview = views.overview as OverviewVM;
+    close((vm.weeks.at(-1) as HistoryPeriod).cost, overview.spend.this_week.cost);
+    close((vm.months.at(-1) as HistoryPeriod).cost, overview.spend.this_month.cost);
   });
 });
 

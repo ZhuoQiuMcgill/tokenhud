@@ -7,14 +7,13 @@ import type { Window } from "../../config.ts";
 import type { UsageQueries } from "../../query/engine.ts";
 import { type Period, resolvePeriod } from "../../query/periods.ts";
 import type { Range, Usage } from "../../query/types.ts";
-import { addDays, formatDate, mondayOf, type Zone } from "../../query/tz.ts";
+import { addDays, type Zone } from "../../query/tz.ts";
+import { type AccountEvent, computeHistory } from "./history.ts";
 import type {
   AccountInfo,
   AccountRow,
   AccountsVM,
   Amount,
-  HistoryDay,
-  HistoryVM,
   ModelRow,
   ModelsVM,
   OverviewVM,
@@ -24,7 +23,6 @@ import type {
 
 export const ACTIVITY_BUCKETS = 72;
 export const ACTIVITY_BUCKET_MS = 20 * 60_000;
-export const HISTORY_WEEKS = 26;
 export const SPARK_DAYS = 30;
 /** Rolling windows (1h, 5h, 24h) move with the clock; their views refresh this often. */
 const ROLLING_REFRESH_MS = 60_000;
@@ -40,6 +38,8 @@ export interface ComputeContext {
   /** An account id, or null for all. */
   readonly scope: number | null;
   readonly window: Window;
+  /** T8's limit events with `from <= at < to`, oldest first; none when absent. */
+  readonly limitEvents?: (range: Range) => readonly AccountEvent[];
 }
 
 export interface Computed<V> {
@@ -123,60 +123,6 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
     vm,
     deps: [ranges.today, ranges.this_week, ranges.this_month, ranges.all, day],
     validUntil: Math.min(day.to, ranges.today.to),
-  };
-}
-
-export function computeHistory(ctx: ComputeContext): Computed<HistoryVM> {
-  const today = ctx.zone.dateAt(ctx.now);
-  const first = addDays(mondayOf(today), -(HISTORY_WEEKS - 1) * 7);
-  const range: Range = {
-    from: ctx.zone.startOf(first),
-    to: ctx.zone.startOf(addDays(today, 1)),
-  };
-  const byKey = new Map(ctx.q.byDay({ range, ...scoped(ctx) }).map((d) => [d.key, d]));
-  const todayKey = formatDate(today);
-  const days: (HistoryDay | null)[] = [];
-  let todayIndex = 0;
-  let future = false;
-  for (let i = 0; i < HISTORY_WEEKS * 7; i++) {
-    const key = formatDate(addDays(first, i));
-    const d = future ? undefined : byKey.get(key);
-    if (future || d === undefined) {
-      days.push(future ? null : emptyDay(key));
-    } else {
-      const t = d.usage.tokens;
-      days.push({
-        ...amount(d.usage),
-        key,
-        input: t.input,
-        output: t.output,
-        cache: t.cacheRead + t.cacheWrite,
-        topModel: d.topModel,
-      });
-    }
-    if (key === todayKey) {
-      todayIndex = i;
-      future = true;
-    }
-  }
-  return {
-    vm: { weeks: HISTORY_WEEKS, days, today: todayIndex },
-    deps: [range],
-    validUntil: range.to,
-  };
-}
-
-function emptyDay(key: string): HistoryDay {
-  return {
-    key,
-    cost: 0,
-    tokens: 0,
-    pricedShare: 1,
-    estimatedCost: 0,
-    input: 0,
-    output: 0,
-    cache: 0,
-    topModel: null,
   };
 }
 

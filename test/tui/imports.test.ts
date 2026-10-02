@@ -43,7 +43,7 @@ const FORBIDDEN = [
   /^query\//,
   /^store\//,
   /^commands\//,
-  /^tui\/vm\/(compute|session|worker)\.ts$/,
+  /^tui\/vm\/(compute|history|session|worker)\.ts$/,
   /^tui\/once\.tsx$/,
   /^ingest\/(?!client\.ts$|worker-url\.ts$)/,
 ];

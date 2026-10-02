@@ -2,7 +2,7 @@ import type { OptimizedBuffer, RenderContext } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { fit, textWidth } from "../format.ts";
 import { onSel, type Role } from "../theme.ts";
-import { Themed, type ThemedOptions } from "./base.ts";
+import { drawRun, Themed, type ThemedOptions } from "./base.ts";
 import { shareCells } from "./hbar.ts";
 
 export interface Column<R> {
@@ -175,8 +175,8 @@ export class TableRenderable<R = unknown> extends Themed {
         // A totals row has no share of itself.
       } else if (col.bar) {
         const n = shareCells(col.bar(row), w);
-        if (n > 0) buffer.drawText("━".repeat(n), x, y, this.color(role));
-        if (n < w) buffer.drawText("━".repeat(w - n), x + n, y, this.color("empty"));
+        drawRun(buffer, "━", x, y, n, this.color(role));
+        drawRun(buffer, "━", x + n, y, w - n, this.color("empty"));
       } else {
         const bold = typeof col.bold === "function" ? col.bold(row) : col.bold === true;
         buffer.drawText(

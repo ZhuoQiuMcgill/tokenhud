@@ -29,7 +29,7 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       await run.waitFor(LIVE, "the live indicator");
       expect(run.vt.altScreen).toBe(true);
       for (const [key, marker] of [
-        ["2", "BY DAY"],
+        ["2", "This month"],
         ["3", "MODELS ·"],
         ["4", "ACCOUNTS ·"],
         ["1", " LIMITS"],

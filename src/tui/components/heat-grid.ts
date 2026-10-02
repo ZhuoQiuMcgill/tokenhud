@@ -1,7 +1,7 @@
 import type { OptimizedBuffer, RenderContext } from "@opentui/core";
 import { TextAttributes } from "@opentui/core";
 import { HEAT_ROLES, type Role } from "../theme.ts";
-import { Themed, type ThemedOptions } from "./base.ts";
+import { drawRun, Themed, type ThemedOptions } from "./base.ts";
 
 export interface MonthLabel {
   /** The week column the label starts at. */
@@ -104,12 +104,13 @@ export class HeatGridRenderable extends Themed {
         if (v === null || v === undefined) continue;
         const selected = index === this.#selected;
         const role: Role = selected ? "head" : (HEAT_ROLES[heatLevel(v, hi)] as Role);
-        buffer.drawText(
+        drawRun(
+          buffer,
           "■",
           this.x + gutter + w * 2,
           y,
+          1,
           this.color(role),
-          undefined,
           selected ? TextAttributes.BOLD : TextAttributes.NONE,
         );
       }
