@@ -3,9 +3,10 @@
 //
 //   dist/npm/<platform>/   @tokenhud/<platform>: one binary, with os, cpu and libc set so
 //                          a package manager installs it only where it runs
-//   dist/npm/tokenhud/     tokenhud: the launcher (npm/tokenhud/bin/tokenhud.cjs) and its
-//                          preinstall, with the platform packages as optional dependencies at
-//                          this exact version
+//   dist/npm/tokenhud/     tokenhud: the command (npm/tokenhud/bin/tokenhud, a sh script that
+//                          runs the binary), the Windows launcher (lib/tokenhud.cjs) and the
+//                          preinstall that puts it in place on Windows, with the platform
+//                          packages as optional dependencies at this exact version
 //
 //   bun scripts/stage-npm.ts      # after `bun run build --release`
 //
@@ -87,11 +88,12 @@ function stagePlatform(t: ReleaseTarget, dist: string, out: string, version: str
 
 function stageLauncher(out: string, version: string): string {
   const dir = join(out, "tokenhud");
-  mkdirSync(join(dir, "bin"), { recursive: true });
-  const shim = join(dir, "bin", "tokenhud.cjs");
-  copyFileSync(join(root, "npm", "tokenhud", "bin", "tokenhud.cjs"), shim);
-  chmodSync(shim, 0o755);
-  copyFileSync(join(root, "npm", "tokenhud", "preinstall.cjs"), join(dir, "preinstall.cjs"));
+  const src = join(root, "npm", "tokenhud");
+  for (const file of ["bin/tokenhud", "lib/tokenhud.cjs", "preinstall.cjs"]) {
+    mkdirSync(join(dir, file, ".."), { recursive: true });
+    copyFileSync(join(src, file), join(dir, file));
+  }
+  chmodSync(join(dir, "bin", "tokenhud"), 0o755);
   copyFileSync(join(root, "LICENSE"), join(dir, "LICENSE"));
   copyFileSync(join(root, "README.md"), join(dir, "README.md"));
   writeJson(join(dir, "package.json"), {
@@ -100,8 +102,8 @@ function stageLauncher(out: string, version: string): string {
     ...common,
     description,
     keywords: ["claude", "claude-code", "codex", "usage", "rate-limits", "tui", "mcp"],
-    bin: { tokenhud: "bin/tokenhud.cjs" },
-    files: ["bin/tokenhud.cjs", "preinstall.cjs"],
+    bin: { tokenhud: "bin/tokenhud" },
+    files: ["bin/tokenhud", "lib/tokenhud.cjs", "preinstall.cjs"],
     scripts: { preinstall: "node preinstall.cjs" },
     engines: { node: ">=18" },
     optionalDependencies: Object.fromEntries(

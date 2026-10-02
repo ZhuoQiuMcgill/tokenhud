@@ -12,7 +12,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, posix, win32 } from "node:path";
 import { testMayRun } from "./limits/clients.ts";
 import { bunGlobalRoot, compareVersions, type InstallMethod, parseVersion } from "./update.ts";
 
@@ -42,13 +42,23 @@ function variable(env: Env, name: string, windows: boolean): string | undefined 
   return key === undefined ? undefined : env[key];
 }
 
-/** The directories on PATH, in order; empty entries (the current directory) left out. */
-export function pathDirs(env: Env, platform: NodeJS.Platform = process.platform): string[] {
+/**
+ * The directories on PATH, in order, as absolute paths: a relative entry (`.`, `bin`) is the
+ * one a shell would search from `cwd`. On POSIX an empty entry is the current directory, as
+ * sh and bash search it; Windows skips empty entries.
+ */
+export function pathDirs(
+  env: Env,
+  platform: NodeJS.Platform = process.platform,
+  cwd: string = process.cwd(),
+): string[] {
   const windows = platform === "win32";
+  const path = windows ? win32 : posix;
   return (variable(env, "PATH", windows) ?? "")
     .split(windows ? ";" : ":")
     .map((dir) => (windows ? dir.replace(/^"(.*)"$/, "$1") : dir))
-    .filter((dir) => dir !== "");
+    .filter((dir) => !windows || dir !== "")
+    .map((dir) => (dir !== "" && path.isAbsolute(dir) ? dir : path.resolve(cwd, dir)));
 }
 
 function real(path: string): string {
@@ -109,7 +119,7 @@ function windowsMethod(path: string): CopyMethod {
   if (ext === ".exe") return existsSync(join(dirname(path), "tokenhud.bunx")) ? "bun" : "binary";
   if (ext === ".cmd" || ext === ".bat") {
     try {
-      // npm's shim starts "%dp0%\node_modules\tokenhud\bin\tokenhud.cjs".
+      // npm's shim starts "%dp0%\node_modules\tokenhud\bin\tokenhud".
       const text = readFileSync(path, "latin1");
       return /node_modules[/\\]tokenhud[/\\]bin[/\\]/i.test(text) ? "npm" : "other";
     } catch {
@@ -127,6 +137,7 @@ function windowsMethod(path: string): CopyMethod {
 export function tokenhudsOnPath(
   env: Env,
   platform: NodeJS.Platform = process.platform,
+  cwd: string = process.cwd(),
 ): PathCopy[] {
   const windows = platform === "win32";
   const exts = windows
@@ -137,7 +148,7 @@ export function tokenhudsOnPath(
     : [""];
   const seen = new Set<string>();
   const copies: PathCopy[] = [];
-  for (const dir of pathDirs(env, platform)) {
+  for (const dir of pathDirs(env, platform, cwd)) {
     for (const ext of exts) {
       const path = join(dir, `tokenhud${ext}`);
       if (!runnable(path, windows)) continue;
@@ -180,10 +191,13 @@ export function bunInstallRoot(env: Env, home: string): string | null {
   return existsSync(pkg) ? root : null;
 }
 
-/** What `copy --version` says (`0.1.0`), or null when it can't be run or says otherwise. */
+/**
+ * What `copy --version` says (`0.1.0`), or null when it can't be run, says otherwise, or
+ * isn't one of tokenhud's installs ("other": a wrapper this has no business running).
+ */
 export function copyVersion(copy: PathCopy, env: Env, platform: NodeJS.Platform): string | null {
   // In a test, only a copy the test made: never the machine's own tokenhud.
-  if (!testMayRun(copy.path)) return null;
+  if (copy.method === "other" || !testMayRun(copy.path)) return null;
   // npm's tokenhud.cmd runs only through cmd.exe, which takes the path quoted as written.
   const shim = platform === "win32" && /\.(?:cmd|bat)$/i.test(copy.path);
   const cmd = shim
@@ -194,7 +208,8 @@ export function copyVersion(copy: PathCopy, env: Env, platform: NodeJS.Platform)
       env: { ...env },
       stdout: "pipe",
       stderr: "ignore",
-      timeout: 30_000,
+      // `--version` answers at once; a copy that hangs is shown with no version.
+      timeout: 5_000,
       windowsVerbatimArguments: shim,
     });
     const m = /^tokenhud (\S+)$/.exec(run.stdout.toString().trim());
@@ -212,21 +227,31 @@ export const COPY_METHODS: Readonly<Record<CopyMethod, string>> = {
   other: "another installer",
 };
 
-/** The command that removes `copy`, its path written by `shown`. */
-export function removeCommand(
-  copy: PathCopy,
-  platform: NodeJS.Platform,
-  shown: (path: string) => string = (path) => path,
-): string {
+/**
+ * A path as one word for a POSIX shell, to paste as it is: `~/…` under `home`, and quoted
+ * only when it has to be, so `~/My Tools/x` becomes `"$HOME/My Tools/x"`.
+ */
+export function shellWord(path: string, home: string): string {
+  const plain = /^[\w@%+=:,./-]+$/;
+  if (home !== "" && path.startsWith(`${home}/`)) {
+    const rest = path.slice(home.length);
+    return plain.test(rest) ? `~${rest}` : `"$HOME${rest.replace(/["\\$`]/g, "\\$&")}"`;
+  }
+  return plain.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
+}
+
+/** The command that removes `copy`; a path under `home` is written from `~` on POSIX. */
+export function removeCommand(copy: PathCopy, platform: NodeJS.Platform, home: string): string {
+  const shown = platform === "win32" ? `"${copy.path}"` : shellWord(copy.path, home);
   switch (copy.method) {
     case "bun":
       return "bun remove -g tokenhud";
     case "npm":
       return "npm uninstall -g tokenhud";
     case "binary":
-      return platform === "win32" ? `del "${copy.path}"` : `rm ${shown(copy.path)}`;
+      return platform === "win32" ? `del ${shown}` : `rm ${shown}`;
     default:
-      return `delete ${shown(copy.path)}, or uninstall it the way it was installed`;
+      return `delete ${shown}, or uninstall it the way it was installed`;
   }
 }
 

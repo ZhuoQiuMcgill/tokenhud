@@ -544,6 +544,13 @@ function defaultProbe(env: Env): InstallProbe {
   };
 }
 
+/** `path` inside a POSIX shell's double quotes, from `$HOME` when it is under `home`. */
+function inQuotes(path: string, home: string): string {
+  const under = home !== "" && path.startsWith(`${home}/`);
+  const rest = (under ? path.slice(home.length) : path).replace(/["\\$`]/g, "\\$&");
+  return under ? `$HOME${rest}` : rest;
+}
+
 /** "a", "a and b", "a, b and c". */
 function listed(items: readonly string[]): string {
   return items.length < 2
@@ -573,7 +580,7 @@ function installSection(env: Env, home: string, probe: InstallProbe): DoctorRepo
         `tokenhud is installed ${methods.length} ways: ${listed(methods.map((m) => COPY_METHODS[m]))}. ` +
         `Keep one; to keep ${shown(keep.path)}${keep.version === null ? "" : ` (${keep.version})`}, ` +
         `remove ${others.length === 1 ? "the other" : "the others"}:`,
-      fix: others.map((c) => removeCommand(c, platform, shown)),
+      fix: others.map((c) => removeCommand(c, platform, home)),
     });
   }
   const first = copies[0];
@@ -586,7 +593,7 @@ function installSection(env: Env, home: string, probe: InstallProbe): DoctorRepo
           `${shown(first.path)} comes first on PATH, so \`tokenhud\` runs it, but it is ` +
           `${first.version} and ${shown(keep.path)} is ${keep.version}` +
           (removed.has(first) ? "." : ". If you don't use it:"),
-        fix: removed.has(first) ? [] : [removeCommand(first, platform, shown)],
+        fix: removed.has(first) ? [] : [removeCommand(first, platform, home)],
       });
     }
   }
@@ -603,7 +610,7 @@ function installSection(env: Env, home: string, probe: InstallProbe): DoctorRepo
         fix: [
           platform === "win32"
             ? `add ${bin} to your user PATH (bun's installer does)`
-            : `add it in your shell's profile (bun's installer does): export PATH="${shown(bin).replace(/^~/, "$HOME")}:$PATH"`,
+            : `add it in your shell's profile (bun's installer does): export PATH="${inQuotes(bin, home)}:$PATH"`,
         ],
       });
     }

@@ -74,15 +74,15 @@ describe("staging the npm packages", () => {
     }
   });
 
-  test("the launcher: Bun's line, npm's preinstall, and every platform but musl as an optional dependency", () => {
+  test("the launcher: the sh command, the Windows launcher and its preinstall, every platform but musl as an optional dependency", () => {
     const out = join(dir, "npm");
     stageNpm({ dist: join(dir, "dist"), out, version: "1.2.3" });
     const pkg = json(join(out, "tokenhud", "package.json"));
     expect(pkg).toMatchObject({
       name: "tokenhud",
       version: "1.2.3",
-      bin: { tokenhud: "bin/tokenhud.cjs" },
-      files: ["bin/tokenhud.cjs", "preinstall.cjs"],
+      bin: { tokenhud: "bin/tokenhud" },
+      files: ["bin/tokenhud", "lib/tokenhud.cjs", "preinstall.cjs"],
       scripts: { preinstall: "node preinstall.cjs" },
     });
     // Bun ignores `libc`: as dependencies, the musl packages would download on every Linux.
@@ -98,11 +98,25 @@ describe("staging the npm packages", () => {
       "LICENSE",
       "README.md",
       "bin",
+      "lib",
       "package.json",
       "preinstall.cjs",
     ]);
-    const launcher = readFileSync(join(out, "tokenhud", "bin", "tokenhud.cjs"), "utf8");
-    expect(launcher.split(/\r?\n/)[0]).toBe("#!/usr/bin/env bun");
+    // As in the repo, byte for byte: .gitattributes keeps them LF on every checkout.
+    const src = join(import.meta.dir, "..", "..", "npm", "tokenhud");
+    for (const file of ["bin/tokenhud", "lib/tokenhud.cjs", "preinstall.cjs"]) {
+      expect([file, readFileSync(join(out, "tokenhud", file), "utf8")]).toEqual([
+        file,
+        readFileSync(join(src, file), "utf8"),
+      ]);
+    }
+    expect(readFileSync(join(out, "tokenhud", "bin", "tokenhud"), "utf8")).toStartWith(
+      "#!/bin/sh\n",
+    );
+    expect(readFileSync(join(out, "tokenhud", "lib", "tokenhud.cjs"), "utf8")).not.toContain("\r");
+    if (process.platform !== "win32") {
+      expect(statSync(join(out, "tokenhud", "bin", "tokenhud")).mode & 0o777).toBe(0o755);
+    }
   });
 
   test("only the platforms asked for, from where they are; the launcher lists them all", () => {

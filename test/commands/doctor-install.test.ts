@@ -38,7 +38,7 @@ function file(path: string, text: string): string {
 /** `bun add -g tokenhud` under ~/.bun: the link in ~/.bun/bin and the platform binary. */
 function bunInstall(): { link: string; exe: string } {
   const global = join(home, ".bun", "install", "global", "node_modules");
-  const launcher = file(join(global, "tokenhud", "bin", "tokenhud.cjs"), "#!/usr/bin/env bun\n");
+  const launcher = file(join(global, "tokenhud", "bin", "tokenhud"), "#!/bin/sh\n");
   file(join(global, "tokenhud", "package.json"), "{}");
   const exe = file(join(global, "@tokenhud", "linux-x64", "bin", "tokenhud"), "\x7fELF");
   mkdirSync(join(home, ".bun", "bin"), { recursive: true });

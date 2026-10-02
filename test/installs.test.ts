@@ -1,14 +1,25 @@
 // Finding every tokenhud on PATH and telling how each was installed, on synthetic PATH
 // directories laid out as bun, npm, install.sh and other installers lay them out.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   copyToKeep,
+  copyVersion,
   isCopyOf,
+  type PathCopy,
   pathDirs,
   removeCommand,
+  shellWord,
   tokenhudsOnPath,
   type VersionedCopy,
 } from "../src/installs.ts";
@@ -33,7 +44,7 @@ function file(path: string, text: string, mode = 0o755): string {
 
 /** A launcher in a package tree and a link to it in `binDir`, as bun and npm make them. */
 function linked(binDir: string, launcher: string): string {
-  file(launcher, "#!/usr/bin/env bun\n");
+  file(launcher, "#!/bin/sh\n");
   mkdirSync(binDir, { recursive: true });
   symlinkSync(launcher, join(binDir, "tokenhud"));
   return join(binDir, "tokenhud");
@@ -44,15 +55,15 @@ describe.skipIf(process.platform === "win32")("tokenhud on PATH, POSIX", () => {
     const curl = file(join(dir, "local", "bin", "tokenhud"), "\x7fELF a binary");
     const bun = linked(
       join(dir, ".bun", "bin"),
-      join(dir, ".bun", "install", "global", "node_modules", "tokenhud", "bin", "tokenhud.cjs"),
+      join(dir, ".bun", "install", "global", "node_modules", "tokenhud", "bin", "tokenhud"),
     );
     const npm = linked(
       join(dir, "npm", "bin"),
-      join(dir, "npm", "lib", "node_modules", "tokenhud", "bin", "tokenhud.cjs"),
+      join(dir, "npm", "lib", "node_modules", "tokenhud", "bin", "tokenhud"),
     );
     const pnpm = file(
       join(dir, "pnpm", "tokenhud"),
-      '#!/bin/sh\nexec node "$basedir/global/node_modules/tokenhud/bin/tokenhud.cjs" "$@"\n',
+      '#!/bin/sh\nexec node "$basedir/global/node_modules/tokenhud/bin/tokenhud" "$@"\n',
     );
     file(join(dir, "data", "tokenhud"), "not executable", 0o644);
     const PATH = [
@@ -73,11 +84,43 @@ describe.skipIf(process.platform === "win32")("tokenhud on PATH, POSIX", () => {
     ]);
   });
 
+  // Critique m2: `.` was reported as `tokenhud`, with the fix `rm tokenhud`, right only from
+  // that directory; an empty entry, which sh searches as the current directory, was skipped.
+  test("relative and empty entries are the directories a shell would search from the cwd", () => {
+    const here = join(dir, "here");
+    const curl = file(join(here, "tokenhud"), "\x7fELF");
+    const sub = file(join(here, "bin", "tokenhud"), "\x7fELF");
+    expect(pathDirs({ PATH: ":.:bin:./bin/:/usr/bin" }, "linux", here)).toEqual([
+      here,
+      here,
+      join(here, "bin"),
+      join(here, "bin"),
+      "/usr/bin",
+    ]);
+    expect(tokenhudsOnPath({ PATH: ".:bin::bin/" }, "linux", here)).toEqual([
+      { path: curl, method: "binary" },
+      { path: sub, method: "binary" },
+    ]);
+  });
+
+  // Critique n3: doctor ran every tokenhud on PATH, wrappers too, with a 30 s timeout each.
+  test("another installer's wrapper is listed but never run", () => {
+    const marker = join(dir, "ran");
+    const wrapper = file(
+      join(dir, "w", "tokenhud"),
+      `#!/bin/sh\n: > '${marker}'\necho tokenhud 9.9.9\n`,
+    );
+    const [copy] = tokenhudsOnPath({ PATH: join(dir, "w") }, "linux");
+    expect(copy).toEqual({ path: wrapper, method: "other" });
+    expect(copyVersion(copy as PathCopy, {}, "linux")).toBeNull();
+    expect(existsSync(marker)).toBe(false);
+  });
+
   test("bun's install anywhere BUN_INSTALL points; the same layout elsewhere is npm-like", () => {
     const root = join(dir, "opt", "bun");
     const link = linked(
       join(root, "bin"),
-      join(root, "install", "global", "node_modules", "tokenhud", "bin", "tokenhud.cjs"),
+      join(root, "install", "global", "node_modules", "tokenhud", "bin", "tokenhud"),
     );
     const PATH = join(root, "bin");
     expect(tokenhudsOnPath({ PATH, BUN_INSTALL: root }, "linux")).toEqual([
@@ -90,7 +133,7 @@ describe.skipIf(process.platform === "win32")("tokenhud on PATH, POSIX", () => {
     const home = join(dir, ".bun");
     const bun = linked(
       join(home, "bin"),
-      join(home, "install", "global", "node_modules", "tokenhud", "bin", "tokenhud.cjs"),
+      join(home, "install", "global", "node_modules", "tokenhud", "bin", "tokenhud"),
     );
     const curl = file(join(dir, "local", "bin", "tokenhud"), "\x7fELF");
     const bunCopy = { path: bun, method: "bun" } as const;
@@ -116,7 +159,7 @@ describe("tokenhud on PATH, Windows", () => {
     file(join(dir, "bun", "tokenhud.bunx"), "metadata");
     const npm = file(
       join(dir, "npm", "tokenhud.cmd"),
-      '@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\tokenhud\\bin\\tokenhud.cjs" %*\r\n',
+      '@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\tokenhud\\bin\\tokenhud" %*\r\n',
     );
     const ps1 = file(join(dir, "local", "tokenhud.exe"), "MZ the binary");
     const other = file(join(dir, "scoop", "tokenhud.cmd"), "@echo off\r\nsomething.exe %*\r\n");
@@ -140,10 +183,11 @@ describe("tokenhud on PATH, Windows", () => {
     ).toEqual(["other"]);
   });
 
-  test("PATH entries in quotes, empty ones skipped", () => {
-    expect(pathDirs({ Path: 'C:\\a;;"C:\\Program Files\\b";' }, "win32")).toEqual([
+  test("PATH entries in quotes, empty ones skipped, relative ones from the cwd", () => {
+    expect(pathDirs({ Path: 'C:\\a;;"C:\\Program Files\\b";bin' }, "win32", "D:\\w")).toEqual([
       "C:\\a",
       "C:\\Program Files\\b",
+      "D:\\w\\bin",
     ]);
   });
 });
@@ -172,19 +216,50 @@ describe("which copy to keep, and how to remove the others", () => {
     expect(copyToKeep([])).toBeUndefined();
   });
 
-  test("each method's own command; a binary's file by name", () => {
-    expect(removeCommand({ path: "/p", method: "bun" }, "linux")).toBe("bun remove -g tokenhud");
-    expect(removeCommand({ path: "/p", method: "npm" }, "win32")).toBe("npm uninstall -g tokenhud");
-    expect(
-      removeCommand({ path: "/home/u/.local/bin/tokenhud", method: "binary" }, "linux", (p) =>
-        p.replace("/home/u", "~"),
-      ),
-    ).toBe("rm ~/.local/bin/tokenhud");
-    expect(removeCommand({ path: "C:\\t\\tokenhud.exe", method: "binary" }, "win32")).toBe(
-      'del "C:\\t\\tokenhud.exe"',
+  test("each method's own command; a binary's file by name, from ~ under home", () => {
+    const home = "/home/u";
+    expect(removeCommand({ path: "/p", method: "bun" }, "linux", home)).toBe(
+      "bun remove -g tokenhud",
     );
-    expect(removeCommand({ path: "/opt/x/tokenhud", method: "other" }, "linux")).toBe(
+    expect(removeCommand({ path: "/p", method: "npm" }, "win32", home)).toBe(
+      "npm uninstall -g tokenhud",
+    );
+    expect(
+      removeCommand({ path: "/home/u/.local/bin/tokenhud", method: "binary" }, "linux", home),
+    ).toBe("rm ~/.local/bin/tokenhud");
+    expect(removeCommand({ path: "C:\\t x\\tokenhud.exe", method: "binary" }, "win32", home)).toBe(
+      'del "C:\\t x\\tokenhud.exe"',
+    );
+    expect(removeCommand({ path: "/opt/x/tokenhud", method: "other" }, "linux", home)).toBe(
       "delete /opt/x/tokenhud, or uninstall it the way it was installed",
     );
   });
+
+  // Critique m3: `rm ~/My Tools/tokenhud`, pasted, removes ~/My and ./Tools/tokenhud.
+  test("a path a shell would split or expand is quoted, so the pasted command removes that file only", () => {
+    const home = "/home/u";
+    const rm = (path: string) => removeCommand({ path, method: "binary" }, "linux", home);
+    expect(rm("/home/u/My Tools/tokenhud")).toBe('rm "$HOME/My Tools/tokenhud"');
+    expect(rm('/home/u/a"b$c`d\\e/tokenhud')).toBe('rm "$HOME/a\\"b\\$c\\`d\\\\e/tokenhud"');
+    expect(rm("/opt/My Tools/tokenhud")).toBe("rm '/opt/My Tools/tokenhud'");
+    expect(rm("/opt/it's/tokenhud")).toBe("rm '/opt/it'\\''s/tokenhud'");
+    // Not under home, though it starts the same way.
+    expect(rm("/home/user/tokenhud")).toBe("rm /home/user/tokenhud");
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "each quoted path, run by sh, names exactly that file",
+    () => {
+      for (const name of ["My Tools", 'a"b$c`d\\e', "it's", "*", "~x"]) {
+        const path = join(dir, name, "tokenhud");
+        const word = shellWord(path, dir);
+        const said = Bun.spawnSync([
+          "sh",
+          "-c",
+          `HOME='${dir}'; printf '%s' ${word}`,
+        ]).stdout.toString();
+        expect([name, said]).toEqual([name, path]);
+      }
+    },
+  );
 });

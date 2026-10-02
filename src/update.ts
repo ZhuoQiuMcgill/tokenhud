@@ -141,44 +141,128 @@ export function installMethod(
   return { kind: "npm", global: under };
 }
 
-/** The platform package a binary in node_modules comes from (`@tokenhud/linux-x64`), or null. */
-export function platformPackageOf(execPath: string): string | null {
-  const m = /\/node_modules\/(@tokenhud\/[^/]+)\/bin\/[^/]+$/.exec(execPath.replaceAll("\\", "/"));
-  return m === null ? null : (m[1] as string);
-}
-
-/** A package-manager command that updates tokenhud. */
-export interface PackageManagerUpdate {
-  /** The command, as typed: its first word is looked up on PATH. */
-  readonly argv: readonly string[];
-  /** Variables it runs with, over the environment. */
+/** A global bun or npm install of tokenhud, as `tokenhud update` updates it. */
+export interface PackageManager {
+  readonly name: "bun" | "npm";
+  /**
+   * What to install: tokenhud, and on musl the binary's own package too, which is not a
+   * dependency of tokenhud (scripts/stage-npm.ts says why).
+   */
+  readonly packages: readonly string[];
+  /** Variables it runs with, over the environment: for bun, the root that holds this copy. */
   readonly env: Readonly<Record<string, string>>;
+  /**
+   * Where it runs: the directory that holds this install's node_modules. Never the user's
+   * working directory, whose bunfig.toml and .env bun would read, and .npmrc npm would.
+   */
+  readonly cwd: string;
+  /** The command a shell runs for this install, which an update must leave working. */
+  readonly command: string;
 }
 
 /**
- * The command that updates a global bun or npm install to the `tag` dist-tag, or null for
- * other installs. The musl packages are not dependencies of tokenhud (scripts/stage-npm.ts
- * says why), so a musl binary's package is named too.
+ * The global bun or npm install this binary belongs to, or null for any other install.
+ * `npmPrefix` is `npm prefix -g`; without it, the prefix is read off the binary's path.
  */
-export function packageManagerUpdate(
+export function packageManagerFor(
   method: InstallMethod,
-  tag: "latest" | "next",
-  platformPackage: string | null,
-): PackageManagerUpdate | null {
-  const extra = platformPackage?.endsWith("-musl") ? [`${platformPackage}@${tag}`] : [];
+  execPath: string,
+  platform: NodeJS.Platform,
+  npmPrefix: string | null,
+): PackageManager | null {
+  const windows = platform === "win32";
+  const sep = windows ? "\\" : "/";
+  const at = execPath.replaceAll("\\", "/").indexOf("/node_modules/");
+  if (at < 0) return null;
+  const cwd = execPath.slice(0, at);
+  const platformPackage = /\/node_modules\/(@tokenhud\/[^/]+)\/bin\/[^/]+$/.exec(
+    execPath.replaceAll("\\", "/"),
+  )?.[1];
+  const packages = ["tokenhud", ...(platformPackage?.endsWith("-musl") ? [platformPackage] : [])];
   if (method.kind === "bun-global") {
     return {
-      // --no-cache: bun otherwise answers from a registry reply it keeps for minutes, and
-      // would miss a release that new.
-      argv: ["bun", "add", "-g", "--no-cache", `tokenhud@${tag}`, ...extra],
+      name: "bun",
+      packages,
       // The bun install that holds this copy, whatever BUN_INSTALL the shell has.
       env: { BUN_INSTALL: method.root },
+      cwd,
+      command: [method.root, "bin", windows ? "tokenhud.exe" : "tokenhud"].join(sep),
     };
   }
   if (method.kind === "npm" && method.global) {
-    return { argv: ["npm", "install", "-g", `tokenhud@${tag}`, ...extra], env: {} };
+    // npm's global packages are in <prefix>/lib/node_modules, or <prefix>\node_modules.
+    const prefix = npmPrefix?.replace(/[/\\]+$/, "") || (windows ? cwd : cwd.replace(/\/lib$/, ""));
+    return {
+      name: "npm",
+      packages,
+      env: {},
+      cwd,
+      command: windows ? `${prefix}\\tokenhud.cmd` : `${prefix}/bin/tokenhud`,
+    };
   }
   return null;
+}
+
+/** The command that lists tokenhud's dist-tags as JSON (`{"latest": "0.1.0", …}`). */
+export function distTagsCommand(pm: PackageManager): string[] {
+  return pm.name === "bun"
+    ? ["bun", "info", "tokenhud", "dist-tags", "--json"]
+    : ["npm", "view", "tokenhud", "dist-tags", "--json"];
+}
+
+/** The command that installs `spec` (a version or a dist-tag) of tokenhud's packages. */
+export function installCommand(pm: PackageManager, spec: string): string[] {
+  const packages = pm.packages.map((p) => `${p}@${spec}`);
+  // --no-cache: bun otherwise answers from a registry reply it keeps for minutes, and would
+  // miss a release that new.
+  return pm.name === "bun"
+    ? ["bun", "add", "-g", "--no-cache", ...packages]
+    : ["npm", "install", "-g", ...packages];
+}
+
+export interface DistTags {
+  readonly latest?: string;
+  readonly next?: string;
+}
+
+/** The `latest` and `next` versions in a dist-tags JSON answer; null if it isn't one. */
+export function parseDistTags(text: string): DistTags | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const { latest, next } = raw as Record<string, unknown>;
+  const valid = (v: unknown) => (typeof v === "string" && parseVersion(v) !== null ? v : undefined);
+  const tags: { latest?: string; next?: string } = {};
+  if (valid(latest) !== undefined) tags.latest = latest as string;
+  if (valid(next) !== undefined) tags.next = next as string;
+  return tags;
+}
+
+/**
+ * The dist-tag to follow and its version, or null when the registry lacks it. `--prerelease`
+ * follows `next`. So does a prerelease build, as long as `next` isn't older than it;
+ * otherwise `latest`.
+ */
+export function chooseTarget(
+  tags: DistTags,
+  running: Version,
+  prerelease: boolean,
+): { tag: "latest" | "next"; version: string } | null {
+  const next = tags.next === undefined ? null : parseVersion(tags.next);
+  const followNext =
+    prerelease || (running.pre.length > 0 && next !== null && compareVersions(next, running) >= 0);
+  const tag = followNext ? "next" : "latest";
+  const version = tags[tag];
+  return version === undefined ? null : { tag, version };
+}
+
+/** The dist-tag `--print` names, which it chooses without asking the registry. */
+export function printTag(running: Version | null, prerelease: boolean): "latest" | "next" {
+  return prerelease || (running !== null && running.pre.length > 0) ? "next" : "latest";
 }
 
 /** `npm prefix -g`, or null when npm can't be run. */

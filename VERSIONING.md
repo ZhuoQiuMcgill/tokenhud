@@ -43,7 +43,10 @@ before its release (`0.1.0-rc.2` < `0.1.0`). Prereleases are published as GitHub
 prereleases, which `install.sh`, `install.ps1` and `tokenhud update` install only when asked
 (`TOKENHUD_VERSION=0.1.0-rc.2`, `tokenhud update --prerelease`), and on npm under the `next`
 tag (`bun add -g tokenhud@next`, `npm install -g tokenhud@next`). A release moves `next` up
-to it too, so `next` is never older than `latest`.
+to it too when it is newer than `next`, so `next` is never older than `latest`; a `next`
+already on the following release's candidates stays. `tokenhud update` on a bun or npm
+install of a release candidate follows `next` while `next` is no older than it, and never
+installs an older version unless given `--allow-downgrade`.
 
 ## Making a release
 

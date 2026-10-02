@@ -16,15 +16,15 @@ history on first run.
 
 ## Install
 
-**With Bun** (recommended, once the packages are on npm):
+**With Bun** (recommended on Linux and macOS, once the packages are on npm):
 
 ```sh
 bun add -g tokenhud
 ```
 
-No Node is needed. Bun puts the `tokenhud` command in `~/.bun/bin` (`%USERPROFILE%\.bun\bin`
-on Windows), which Bun's installer adds to your PATH; `tokenhud doctor` says if it isn't
-there. Release candidates: `bun add -g tokenhud@next`.
+No Node is needed. Bun puts the `tokenhud` command in `~/.bun/bin`, which Bun's installer
+adds to your PATH; `tokenhud doctor` says if it isn't there. Release candidates:
+`bun add -g tokenhud@next`.
 
 **With npm:**
 
@@ -32,11 +32,28 @@ there. Release candidates: `bun add -g tokenhud@next`.
 npm install -g tokenhud     # or run it without installing: npx tokenhud, bunx tokenhud
 ```
 
-Either way you get `tokenhud`, a small launcher, and the prebuilt binary for your machine in
-a platform package (`@tokenhud/linux-x64` and so on), which the package manager installs as
-an optional dependency: don't install with `--omit=optional`. Under npm the launcher runs on
-Node 18 or later: npm's install script switches it from Bun to Node, so with
-`--ignore-scripts` the command needs Bun on your PATH.
+Either way you get `tokenhud`, and the prebuilt binary for your machine in a platform
+package (`@tokenhud/linux-x64` and so on), which the package manager installs as an optional
+dependency: don't install with `--omit=optional`. On Linux and macOS the `tokenhud` command
+is a small sh script that starts the binary: no JS runtime runs, so it needs neither Node
+nor Bun, and nothing in the directory you run it in (a `.env`, a `bunfig.toml`) can reach
+tokenhud.
+
+**On Windows**, install with npm (Node 18 or later), or with `install.ps1` below. npm's
+install script sets up a Node launcher for the command. Bun can't run the command on
+Windows: after `bun add -g tokenhud` it fails at once, with `interpreter executable
+"/bin/sh" not found`.
+
+On Windows the command needs that install script. Where scripts are off, the command fails
+at once with `The system cannot find the path specified.` (`tokenhud update` says so too);
+each of these puts it right:
+
+| Scripts off by | Repair |
+|---|---|
+| `npm install -g --ignore-scripts`, or `ignore-scripts=true` in your `.npmrc` | `npm rebuild -g --ignore-scripts=false tokenhud` |
+| `npx` with `ignore-scripts=true` | delete the `_npx` folder in npm's cache (`npm config get cache` shows where), then `npx --ignore-scripts=false tokenhud` |
+| pnpm 10 or later, which runs no dependency's scripts unless approved | `pnpm approve-builds -g`, choose tokenhud, then `pnpm add -g tokenhud` |
+| yarn 1, which writes the command before it runs install scripts | `yarn global remove tokenhud`, then install with npm |
 
 **Without a package manager**, on Linux and macOS:
 
@@ -75,10 +92,12 @@ $env:TOKENHUD_VERSION = '0.1.0-rc.1'; irm https://raw.githubusercontent.com/Zhuo
 
 **Alpine and other musl-based Linux** need the C++ runtime the binary links against:
 `apk add libstdc++ libgcc`. With Bun or npm, name the musl binary's package as well, since
-it is not an optional dependency (Bun would download it on every Linux machine):
+it is not an optional dependency (Bun would download it on every Linux machine), and do the
+same to install another version by hand. `tokenhud update` updates both.
 
 ```sh
-bun add -g @tokenhud/linux-x64-musl tokenhud     # on arm64: @tokenhud/linux-arm64-musl
+bun add -g @tokenhud/linux-x64-musl tokenhud       # on arm64: @tokenhud/linux-arm64-musl
+npm install -g @tokenhud/linux-x64-musl tokenhud
 ```
 
 **By hand:** download `tokenhud-<os>-<arch>` (`linux-x64`, `linux-arm64`, `linux-x64-musl`,
@@ -543,10 +562,13 @@ tokenhud update             # install it
 
 How `tokenhud update` updates depends on how tokenhud was installed:
 
-- **With Bun or npm** (globally): it runs the package manager for you,
-  `bun add -g --no-cache tokenhud@latest` or `npm install -g tokenhud@latest`, then checks
-  the version it installed and says which version it went from and to. `--no-cache` makes
-  Bun ask the registry rather than reuse an answer from a few minutes ago.
+- **With Bun or npm** (globally): it asks the package manager which version npm's `latest`
+  tag points at (`next` for a release candidate, as long as `next` is no older than it),
+  installs exactly that version (`bun add -g --no-cache tokenhud@0.2.0` or
+  `npm install -g tokenhud@0.2.0`), then checks that the `tokenhud` command runs it and says
+  which version it went from and to. It never installs an older version than the one you
+  have; `--allow-downgrade` does. `--no-cache` makes Bun ask the registry rather than reuse
+  an answer from a few minutes ago.
 - **With `install.sh` or `install.ps1`**: the binary replaces itself. It downloads the new
   release, checks its SHA-256 against the release's `SHA256SUMS`, checks that it starts, and
   only then swaps it in.
@@ -554,7 +576,7 @@ How `tokenhud update` updates depends on how tokenhud was installed:
   it.
 
 `--prerelease` includes release candidates (npm's `next` tag). `--print` prints the command
-that updates your install and runs nothing. After updating, `tokenhud update` warns if
+that updates your install, naming the tag rather than its version, and runs nothing. After updating, `tokenhud update` warns if
 another tokenhud comes first on your PATH, since a shell would still run that one.
 
 Nothing updates on its own. When a newer release is out, the TUI says so in its footer, in
@@ -567,8 +589,8 @@ lists every tokenhud on your PATH, with its version and how it was installed, ma
 a shell runs, and names the file the old install left, such as `~/.local/bin/tokenhud`.
 Delete that file (`rm ~/.local/bin/tokenhud`): doctor never deletes anything. Until you do,
 if `~/.local/bin` comes before `~/.bun/bin` on your PATH, typing `tokenhud` still runs the
-old copy. On Windows, delete `%LOCALAPPDATA%\tokenhud` and remove its `bin` folder from
-your user PATH.
+old copy. On Windows the same goes for switching from `install.ps1` to npm: delete
+`%LOCALAPPDATA%\tokenhud` and remove its `bin` folder from your user PATH.
 
 To uninstall:
 
@@ -618,7 +640,8 @@ src/installs.ts    every tokenhud on PATH and how it was installed, for doctor a
 test/              bun test suites
 scripts/build.ts   builds, checksums and smoke-tests the binaries
 install.sh         the Linux and macOS installer; install.ps1 is the Windows one
-npm/               the npm launcher; scripts/stage-npm.ts builds the npm packages
+npm/               the npm package's command (sh) and Windows launcher; scripts/stage-npm.ts
+                   builds the npm packages
 plugin/            the Claude Code plugin (listed by .claude-plugin/marketplace.json)
 ```
 

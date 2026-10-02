@@ -1,0 +1,3 @@
+# The npm launcher files ship as they are in the repo. On Linux and macOS the command is a
+# sh script, which a CR breaks, and a pack made on Windows must match one made elsewhere.
+npm/tokenhud/** text eol=lf

@@ -1,15 +1,17 @@
 // `bun add -g tokenhud` and `npm install -g tokenhud` end to end: this platform's packages,
 // staged by scripts/stage-npm.ts and packed by `bun pm pack`, served by a fake npm registry
 // on localhost (fake-npm.ts) beside a document for every other platform's package. Skipped
-// unless pointed at two builds for this machine:
+// unless pointed at two builds for this machine (on Alpine, the musl ones):
 //
 //   TOKENHUD_NPM_E2E_NEW=dist/tokenhud     this commit's build
 //   TOKENHUD_NPM_E2E_OLD=old/tokenhud      a build that says it is 0.0.1, to update from
 //
 // bun runs with no Node on PATH, npm with no Bun on it. Each installs version 0.0.1, runs
-// `tokenhud --version`, `doctor` and `update --print`, then `tokenhud update` moves it to
-// this version through the package manager. Everything goes to temp dirs: BUN_INSTALL,
-// npm's prefix, cache and config, HOME and the tokenhud config.
+// `tokenhud --version`, `doctor` and `update --print`, and runs the command in a project
+// whose .env and bunfig.toml must not reach tokenhud. Then `tokenhud update` moves it to
+// this version through the package manager. On Windows, bun can't run the command at all
+// (it is a sh script there), and the test checks it fails before anything runs. Everything
+// goes to temp dirs: BUN_INSTALL, npm's prefix, cache and config, HOME and the config.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   copyFileSync,
@@ -20,6 +22,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,6 +45,8 @@ guard();
 const NEW = process.env.TOKENHUD_NPM_E2E_NEW;
 const OLD = process.env.TOKENHUD_NPM_E2E_OLD;
 const OLD_VERSION = "0.0.1";
+/** The dist-tag an update of this version follows: next, for a release candidate. */
+const TAG_NOW = VERSION.includes("-") ? "next" : "latest";
 const windows = process.platform === "win32";
 const SLOW = 300_000;
 
@@ -93,12 +98,28 @@ async function run(cmd: string[], env: Record<string, string>, cwd?: string): Pr
 }
 
 /** PATH's directories, less any that holds `name` (an executable of that name). */
-function pathWithout(name: string): string[] {
-  const exes = windows ? [`${name}.exe`, `${name}.cmd`] : [name];
+/**
+ * PATH's directories with none of the executables `names`: a directory that holds one beside
+ * other tools (/usr/bin on Alpine, where Node is a system package) is replaced, on POSIX, by
+ * a temp dir of links to all of them but those; on Windows it is left out. tokenhud is
+ * always hidden: the test must see only the installs it makes, never the machine's own.
+ */
+function pathWithout(...hide: string[]): string[] {
+  const names = [...hide, "tokenhud"];
+  const exes = names.flatMap((name) => (windows ? [`${name}.exe`, `${name}.cmd`] : [name]));
   const path = process.env.PATH ?? process.env.Path ?? "";
   return path
     .split(delimiter)
-    .filter((dir) => dir !== "" && !exes.some((exe) => existsSync(join(dir, exe))));
+    .filter((dir) => dir !== "")
+    .flatMap((dir) => {
+      if (!exes.some((exe) => existsSync(join(dir, exe)))) return [dir];
+      if (windows) return [];
+      const mirror = tempDir();
+      for (const entry of readdirSync(dir)) {
+        if (!names.includes(entry)) symlinkSync(join(dir, entry), join(mirror, entry));
+      }
+      return [mirror];
+    });
 }
 
 const which = (name: string, path: string[]) => Bun.which(name, { PATH: path.join(delimiter) });
@@ -219,11 +240,83 @@ describe.skipIf(NEW === undefined || OLD === undefined)(
       }
     });
 
+    /**
+     * A project dir whose .env names another Claude config dir (one that exists) and whose
+     * bunfig.toml preloads a script, `existing` or missing: what Bun would read if it ran the
+     * command there. Returns the dir and the file the preload would write.
+     */
+    function hostileProject(dir: string, name: string, existing: boolean) {
+      const project = join(dir, name);
+      mkdirSync(join(project, "attacker", "projects"), { recursive: true });
+      const marker = join(project, "PRELOAD-RAN");
+      writeFileSync(
+        join(project, ".env"),
+        `CLAUDE_CONFIG_DIR=${join(project, "attacker")}\nBUN_CONFIG_REGISTRY=http://127.0.0.1:9/\n`,
+      );
+      // And a registry nothing answers on, for bun and npm themselves.
+      writeFileSync(
+        join(project, "bunfig.toml"),
+        `preload = ["./${existing ? "evil" : "missing"}.ts"]\n[install]\nregistry = "http://127.0.0.1:9/"\n`,
+      );
+      writeFileSync(join(project, ".npmrc"), "registry=http://127.0.0.1:9/\n");
+      writeFileSync(
+        join(project, "evil.ts"),
+        `require("fs").writeFileSync(${JSON.stringify(marker)}, "ran");\n`,
+      );
+      return { project, marker };
+    }
+
+    /** The roots `doctor --json` reports, by label and how each was found. */
+    async function roots(tokenhud: string, env: Record<string, string>, cwd: string) {
+      const doctor = await run([tokenhud, "doctor", "--json"], env, cwd);
+      expect([cwd, doctor.code]).toEqual([cwd, 0]);
+      const report = JSON.parse(doctor.out) as {
+        sources: { roots: Array<Record<string, unknown>> };
+      };
+      return report.sources.roots.map((r) => `${r.label} (${r.found_by})`);
+    }
+
+    // Critique B1: under `bun add -g`, the command was Bun running a JS launcher in the
+    // user's working directory, so that directory's .env reached tokenhud and its bunfig.toml
+    // preload ran: in every project Claude Code starts `tokenhud mcp` in.
+    async function ignoresProject(tokenhud: string, env: Record<string, string>, dir: string) {
+      const clean = join(dir, "clean");
+      mkdirSync(clean, { recursive: true });
+      const expected = await roots(tokenhud, env, clean);
+      for (const existing of [true, false]) {
+        const { project, marker } = hostileProject(dir, `project-${existing}`, existing);
+        expect(await run([tokenhud, "--version"], env, project)).toEqual({
+          code: 0,
+          out: expect.stringMatching(/^tokenhud \S+\n$/),
+          err: "",
+        });
+        expect([existing, await roots(tokenhud, env, project)]).toEqual([existing, expected]);
+        // `tokenhud update` runs the package manager away from the project, so its registry
+        // settings there don't count either.
+        const check = await run([tokenhud, "update", "--check"], env, project);
+        expect([existing, check.code, check.out]).toEqual([
+          existing,
+          0,
+          expect.stringMatching(/^(update available|tokenhud \S+ is up to date)/),
+        ]);
+        expect([existing, existsSync(marker)]).toEqual([existing, false]);
+      }
+    }
+
+    /**
+     * What a user installs at `version`: tokenhud, and on musl the binary's own package by
+     * name, since it isn't one of tokenhud's dependencies.
+     */
+    const specs = (version: string) =>
+      host.musl ? [`tokenhud@${version}`, `${platform}@${version}`] : [`tokenhud@${version}`];
+    /** The glibc package bun also tries on musl: it ignores `libc` (its tarball is a 404 here). */
+    const glibcTwin = host.musl ? npmPackage({ ...host, musl: false }) : null;
+
     /** The tarballs asked for since `from`, sorted. */
     const fetchedSince = (from: number) => registry.tarballs.slice(from).sort();
 
-    test(
-      "bun, with no Node: installs only this platform's package, runs, and updates through bun",
+    test.skipIf(windows)(
+      "bun, with no Node: installs only this platform's package, runs, ignores the project, and updates through bun",
       async () => {
         const dir = tempDir();
         const bunHome = join(dir, "bun");
@@ -236,24 +329,29 @@ describe.skipIf(NEW === undefined || OLD === undefined)(
         };
 
         const from = registry.tarballs.length;
-        const add = await run([process.execPath, "add", "-g", `tokenhud@${OLD_VERSION}`], env);
+        const add = await run([process.execPath, "add", "-g", ...specs(OLD_VERSION)], env);
         expect([add.code, add.err]).toEqual([0, expect.any(String)]);
-        // Not one other platform's package was downloaded, nor its document's tarball asked for.
-        expect(fetchedSince(from)).toEqual([
-          `${platform}@${OLD_VERSION}`,
-          `tokenhud@${OLD_VERSION}`,
-        ]);
+        // Not one other platform's package was downloaded, nor its document's tarball asked
+        // for; but for the glibc one on musl, which bun asks for and can't get.
+        expect(fetchedSince(from)).toEqual(
+          [
+            `${platform}@${OLD_VERSION}`,
+            `tokenhud@${OLD_VERSION}`,
+            ...(glibcTwin === null ? [] : [`${glibcTwin}@${OLD_VERSION}`]),
+          ].sort(),
+        );
         const global = join(bunHome, "install", "global", "node_modules");
         expect(readdirSync(join(global, "@tokenhud"))).toEqual([
           platform.slice("@tokenhud/".length),
         ]);
 
-        const tokenhud = join(bunHome, "bin", windows ? "tokenhud.exe" : "tokenhud");
+        const tokenhud = join(bunHome, "bin", "tokenhud");
         expect(await run([tokenhud, "--version"], env)).toEqual({
           code: 0,
           out: `tokenhud ${OLD_VERSION}\n`,
           err: "",
         });
+        await ignoresProject(tokenhud, env, dir);
         const doctor = await run([tokenhud, "doctor"], env);
         expect(doctor.code).toBe(0);
         expect(doctor.out).toContain("  this copy     bun (bun add -g)");
@@ -262,36 +360,56 @@ describe.skipIf(NEW === undefined || OLD === undefined)(
         expect(doctor.out).not.toContain("  warning ");
         expect(await run([tokenhud, "update", "--print"], env)).toEqual({
           code: 0,
-          out: "bun add -g --no-cache tokenhud@latest\n",
+          out: `bun add -g --no-cache ${specs("latest").join(" ")}\n`,
           err: "",
         });
 
         const update = await run([tokenhud, "update"], env);
         expect(update.code).toBe(0);
         expect(update.err).not.toContain("WARNING");
-        expect(update.out).toContain("running: bun add -g --no-cache tokenhud@latest");
+        expect(update.out).toContain(`running: bun add -g --no-cache ${specs(VERSION).join(" ")}`);
         expect(update.out).toEndWith(`updated tokenhud ${OLD_VERSION} → ${VERSION}\n`);
         expect(fetchedSince(from)).toContain(`${platform}@${VERSION}`);
         expect((await run([tokenhud, "--version"], env)).out).toBe(`tokenhud ${VERSION}\n`);
-        if (windows) {
-          // The .exe the update moved aside is deleted by a later start, once it is unlocked.
-          const parked = () =>
-            readdirSync(join(bunHome, "install", "global")).filter((n) => n.endsWith(".old"));
-          for (let start = 1; parked().length > 0 && start < 10; start++) {
-            await Bun.sleep(500);
-            await run([tokenhud, "--version"], env);
-          }
-          expect(parked()).toEqual([]);
-        }
+        await ignoresProject(tokenhud, env, join(dir, "after"));
         const again = await run([tokenhud, "update"], env);
         expect(again.code).toBe(0);
-        expect(again.out).toEndWith(`tokenhud ${VERSION} is up to date\n`);
+        expect(again.out).toEndWith(`tokenhud ${VERSION} is up to date (${TAG_NOW})\n`);
       },
       SLOW,
     );
 
-    test.skipIf(which("npm", pathWithout("bun")) === null)(
-      "npm, with no Bun: the launcher runs on Node, and tokenhud update runs npm",
+    // bun's Windows shim starts the program a bin's first line names, and this one names
+    // /bin/sh: the command fails there before anything of tokenhud's, or Bun, runs. (Bun
+    // running a JS launcher would read the project's .env and bunfig.toml.)
+    test.skipIf(!windows)(
+      "bun on Windows: installs, and the command fails before anything runs, in a project too",
+      async () => {
+        const dir = tempDir();
+        const bunHome = join(dir, "bun");
+        const path = [join(bunHome, "bin"), dirname(process.execPath), ...pathWithout("node")];
+        const env = {
+          ...baseEnv(dir, registry.url),
+          BUN_INSTALL: bunHome,
+          PATH: path.join(delimiter),
+        };
+        const add = await run([process.execPath, "add", "-g", `tokenhud@${OLD_VERSION}`], env);
+        expect(add.code).toBe(0);
+        const tokenhud = join(bunHome, "bin", "tokenhud.exe");
+        for (const existing of [true, false]) {
+          const { project, marker } = hostileProject(dir, `project-${existing}`, existing);
+          const ran = await run([tokenhud, "--version"], env, project);
+          expect(ran.code).not.toBe(0);
+          expect(ran.out).toBe("");
+          expect(ran.err).toContain('"/bin/sh" not found');
+          expect(existsSync(marker)).toBe(false);
+        }
+      },
+      SLOW,
+    );
+
+    test.skipIf(Bun.which("npm") === null)(
+      "npm, with no Bun: runs (on Node on Windows), ignores the project, and tokenhud update runs npm",
       async () => {
         const dir = tempDir();
         const prefix = join(dir, "npm");
@@ -312,18 +430,19 @@ describe.skipIf(NEW === undefined || OLD === undefined)(
         };
 
         const from = registry.tarballs.length;
-        const install = await run([npm, "install", "-g", `tokenhud@${OLD_VERSION}`], env);
+        const install = await run([npm, "install", "-g", ...specs(OLD_VERSION)], env);
         expect([install.code, install.err]).toEqual([0, expect.any(String)]);
         expect(fetchedSince(from)).toEqual([
           `${platform}@${OLD_VERSION}`,
           `tokenhud@${OLD_VERSION}`,
         ]);
-        // npm ran the preinstall before linking the command: Node's line.
+        // On Windows npm ran the preinstall before linking the command: the Node launcher.
+        // Elsewhere the command is the sh script, as published.
         const pkg = windows
           ? join(prefix, "node_modules", "tokenhud")
           : join(prefix, "lib", "node_modules", "tokenhud");
-        expect(readFileSync(join(pkg, "bin", "tokenhud.cjs"), "utf8").split("\n")[0]).toBe(
-          "#!/usr/bin/env node",
+        expect(readFileSync(join(pkg, "bin", "tokenhud"), "utf8").split("\n")[0]).toBe(
+          windows ? "#!/usr/bin/env node" : "#!/bin/sh",
         );
 
         const tokenhud = join(bin, windows ? "tokenhud.cmd" : "tokenhud");
@@ -332,22 +451,29 @@ describe.skipIf(NEW === undefined || OLD === undefined)(
           out: `tokenhud ${OLD_VERSION}\n`,
           err: "",
         });
+        await ignoresProject(tokenhud, env, dir);
         const doctor = await run([tokenhud, "doctor"], env);
         expect(doctor.code).toBe(0);
         expect(doctor.out).toContain("  this copy     npm");
         expect(doctor.out).toContain(`npm · ${OLD_VERSION} · runs as tokenhud · this copy`);
         expect(await run([tokenhud, "update", "--print"], env)).toEqual({
           code: 0,
-          out: "npm install -g tokenhud@latest\n",
+          out: `npm install -g ${specs("latest").join(" ")}\n`,
           err: "",
         });
 
         const update = await run([tokenhud, "update"], env);
         expect(update.code).toBe(0);
         expect(update.err).not.toContain("WARNING");
-        expect(update.out).toContain("running: npm install -g tokenhud@latest");
+        expect(update.out).toContain(`running: npm install -g ${specs(VERSION).join(" ")}`);
         expect(update.out).toEndWith(`updated tokenhud ${OLD_VERSION} → ${VERSION}\n`);
         expect((await run([tokenhud, "--version"], env)).out).toBe(`tokenhud ${VERSION}\n`);
+        await ignoresProject(tokenhud, env, join(dir, "after"));
+        const again = await run([tokenhud, "update"], env);
+        expect([again.code, again.out]).toEqual([
+          0,
+          `tokenhud ${VERSION} is up to date (${TAG_NOW})\n`,
+        ]);
         // npm removed the old package whole: the running .exe wasn't in it (Windows).
         expect(readdirSync(dirname(pkg)).filter((n) => n.startsWith(".tokenhud"))).toEqual([]);
       },

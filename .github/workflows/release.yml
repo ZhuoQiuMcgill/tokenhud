@@ -378,11 +378,21 @@ jobs:
             fi
             npm publish "$dir" --access public --tag "$dist_tag" --provenance
           done
-          # A release moves `next` up to it as well: `tokenhud update --prerelease` installs
-          # next, which must never be older than latest.
+          # A release moves `next` up to it too, so next is never older than latest: but only
+          # when it is newer than next, which may already hold the next release's candidates
+          # (0.3.0-rc.1 while 0.2.1 ships).
           if [ "$dist_tag" = latest ]; then
             for dir in "${packages[@]}" dist/npm/tokenhud/; do
               name=$(node -p "require('./${dir}package.json').name")
-              npm dist-tag add "$name@$version" next
+              next=$(npm view "$name" dist-tags.next 2>/dev/null || true)
+              order=1
+              if [ -n "$next" ]; then
+                order=$(V="$version" N="$next" bun -e 'process.stdout.write(String(Bun.semver.order(process.env.V, process.env.N)))')
+              fi
+              if [ "$order" = 1 ]; then
+                npm dist-tag add "$name@$version" next
+              else
+                echo "$name: next stays at $next, not older than $version"
+              fi
             done
           fi

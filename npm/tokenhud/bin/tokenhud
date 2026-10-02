@@ -1,0 +1,149 @@
+#!/bin/sh
+# The `tokenhud` command of the npm package on Linux and macOS: the file bun, npm, npx,
+# bunx, pnpm and yarn link the command to. It finds the tokenhud binary in the platform
+# package installed beside it, @tokenhud/<os>-<arch>[-musl], and replaces itself with it
+# (exec), so the binary gets the same arguments, exit code and signals.
+#
+# Plain POSIX sh (dash, bash, BusyBox ash, macOS sh), so no JS runtime starts: it needs
+# neither Node nor Bun, and nothing in the working directory is read. Bun running a launcher
+# there would load its .env and bunfig.toml, which the binary itself never does.
+#
+# On Windows, npm's install script puts lib/tokenhud.cjs, which Node runs, in place of this
+# file (preinstall.cjs).
+
+say() {
+  printf '%s\n' "$@" >&2
+}
+
+# The C library this Linux runs on, as the system answers it: glibc knows its own version
+# (getconf), and ldd names its libc. A musl loader on disk proves nothing by itself: glibc
+# systems can have one for building musl programs. It decides only when neither answers.
+host_libc() {
+  if getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
+    echo glibc
+    return
+  fi
+  case "$(ldd --version 2>&1 || true)" in
+    *musl*)
+      echo musl
+      return
+      ;;
+    *GLIBC* | *glibc* | *"GNU C Library"* | *"GNU libc"*)
+      echo glibc
+      return
+      ;;
+  esac
+  for loader in /lib/ld-musl-*.so.1; do
+    if [ -e "$loader" ]; then
+      echo musl
+      return
+    fi
+  done
+  echo glibc
+}
+
+# This package's directory, links resolved: the command on PATH is a link to this file
+# (relative or absolute, maybe through several), and readlink without -f is all macOS has.
+self=$0
+case $self in
+  */*) ;;
+  *) self=./$self ;;
+esac
+while [ -h "$self" ]; do
+  link=$(readlink "$self") || break
+  case $link in
+    /*) self=$link ;;
+    *) self=${self%/*}/$link ;;
+  esac
+done
+pkg=$(cd -P "${self%/*}/.." && pwd -P) || exit 1
+
+case $(uname -s) in
+  Linux) os=linux ;;
+  Darwin) os=darwin ;;
+  *) os=$(uname -s) ;;
+esac
+case $(uname -m) in
+  x86_64 | amd64) arch=x64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *) arch=$(uname -m) ;;
+esac
+id=$os-$arch
+# A glibc binary can't start on musl, nor the other way round: only this libc's package.
+if [ "$os" = linux ] && [ "$(host_libc)" = musl ]; then
+  id=$id-musl
+fi
+case $id in
+  linux-x64 | linux-arm64 | linux-x64-musl | linux-arm64-musl | darwin-x64 | darwin-arm64) ;;
+  *)
+    say "tokenhud: there is no tokenhud binary for $id. Supported: linux-x64, linux-arm64," \
+      "linux-x64-musl, linux-arm64-musl, darwin-x64, darwin-arm64, win32-x64, win32-arm64."
+    exit 1
+    ;;
+esac
+# A Mac runs either one: npm under an x64 Node (Rosetta) installs darwin-x64 on Apple Silicon.
+ids=$id
+case $id in
+  darwin-arm64) ids="$id darwin-x64" ;;
+  darwin-x64) ids="$id darwin-arm64" ;;
+esac
+
+# The platform package as Node finds a dependency: in node_modules beside this package, or in
+# any directory above it (npm nests it, bun and npx hoist it, pnpm puts it beside this one).
+binary=""
+for want in $ids; do
+  dir=$pkg
+  while :; do
+    case $dir in
+      */node_modules) ;;
+      *)
+        if [ -f "$dir/node_modules/@tokenhud/$want/bin/tokenhud" ]; then
+          found=$dir/node_modules/@tokenhud/$want
+          binary=$found/bin/tokenhud
+          break 2
+        fi
+        ;;
+    esac
+    # The root's /node_modules was the last to look in.
+    [ -z "$dir" ] && break
+    dir=${dir%/*}
+  done
+done
+
+if [ -z "$binary" ]; then
+  case $id in
+    *-musl)
+      # Not an optional dependency: Bun ignores `libc`, and would install it on every Linux.
+      say "tokenhud: on musl Linux (Alpine), the tokenhud binary is a package of its own," \
+        "@tokenhud/$id, and it needs the C++ runtime. Install them beside tokenhud:" \
+        "  apk add libstdc++ libgcc                       (as root)" \
+        "  bun add -g @tokenhud/$id tokenhud" \
+        "  npm install -g @tokenhud/$id tokenhud" \
+        "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install"
+      ;;
+    *)
+      say "tokenhud: the package with the tokenhud binary for this machine, @tokenhud/$id," \
+        "is not installed. It comes as an optional dependency, so it is missing when" \
+        "optional dependencies were skipped (--omit=optional, --no-optional, or a lockfile" \
+        "made on another platform). Reinstall tokenhud the same way, without --omit=optional:" \
+        "  bun add -g tokenhud          (a global install with bun)" \
+        "  npm install -g tokenhud      (a global install with npm)" \
+        "  npm install tokenhud         (in a project)" \
+        "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install"
+      ;;
+  esac
+  exit 1
+fi
+
+# Installed by name on musl, the binary's package can lag behind tokenhud's: say so.
+version_of() {
+  sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$1/package.json" 2>/dev/null
+}
+mine=$(version_of "$pkg")
+theirs=$(version_of "$found")
+if [ -n "$mine" ] && [ -n "$theirs" ] && [ "$mine" != "$theirs" ]; then
+  say "tokenhud: warning: ${found##*/node_modules/} is $theirs, but tokenhud is $mine. Update it" \
+    "to match: bun add -g ${found##*/node_modules/}@$mine (or npm install -g ${found##*/node_modules/}@$mine)"
+fi
+
+exec "$binary" "$@"
