@@ -1,0 +1,74 @@
+name: Repeat
+
+# The full test suite, run N times in a row on every OS CI tests on, so a flake that hits
+# one run in ten shows up here before a release, not as a red PR. Run it by hand, e.g.
+#
+#   gh workflow run repeat.yml --ref main -f runs=10
+#
+# Every run is made even after a failure, so the summary gives a failure rate, not just
+# the first failure. Its own file, apart from ci.yml, so neither edit conflicts.
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Times to run the suite on each OS
+        type: number
+        default: 10
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test ×${{ inputs.runs }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # A Windows run takes about 3 minutes; this bounds a hung run, not a slow one.
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: bun test, ${{ inputs.runs }} times
+        env:
+          RUNS: ${{ inputs.runs }}
+        run: |
+          if ! [[ "$RUNS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::runs must be a positive whole number, got '$RUNS'"
+            exit 1
+          fi
+          {
+            echo "### $RUNNER_OS: bun test × $RUNS"
+            echo
+            echo "| run | result | seconds | failed tests |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          failed=0
+          for i in $(seq 1 "$RUNS"); do
+            echo "======== run $i of $RUNS on $RUNNER_OS ========"
+            start=$SECONDS
+            if bun test 2>&1 | tee run.log; then
+              result=pass
+            else
+              result=FAIL
+              failed=$((failed + 1))
+            fi
+            # Bun prints each failure twice (in place and in the closing summary).
+            names=$({ grep -E '^\(fail\) ' run.log || true; } | tr -d '\r' | sort -u \
+              | sed -E 's/^\(fail\) //; s/ \[[0-9.]+m?s\]$//; s/\|/\\|/g' | paste -s -d ';' -)
+            echo "| $i | $result | $((SECONDS - start)) | ${names} |" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "**$((RUNS - failed)) of $RUNS runs passed on $RUNNER_OS.**" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$failed" -gt 0 ]; then
+            echo "::error::$failed of $RUNS runs failed on $RUNNER_OS; the step summary lists the tests"
+            exit 1
+          fi
