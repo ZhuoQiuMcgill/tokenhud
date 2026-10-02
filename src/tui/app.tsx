@@ -92,9 +92,16 @@ function footer(state: UiState, width: number): Line {
       : [];
   const right = [...notice, ...mcpSegs(state.mcp)];
   // Dim, and only while it leaves room for a hint or two.
+  // A prerelease is installed only with --prerelease, so the note says so.
   const update =
     state.update !== null && state.config.update_check
-      ? [seg(`update ${state.update} available`, "dim"), seg("   ", "dim")]
+      ? [
+          seg(
+            `update ${state.update} available${state.update.includes("-") ? " (--prerelease)" : ""}`,
+            "dim",
+          ),
+          seg("   ", "dim"),
+        ]
       : [];
   const withUpdate = [...update, ...right];
   return footerLine(width, hints, order, segsWidth(withUpdate) + 20 <= width ? withUpdate : right);

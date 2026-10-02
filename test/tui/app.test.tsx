@@ -201,6 +201,12 @@ describe("footer update note, from the once-a-day check", () => {
     expect(line).toContain("quit");
   });
 
+  test("a newer prerelease says it takes --prerelease", async () => {
+    const c = controller();
+    c.setUpdate("0.2.0-rc.1");
+    expect(await footer(c, 105)).toContain("[dim/bg]update 0.2.0-rc.1 available (--prerelease)");
+  });
+
   test("not with the check switched off, nor where it would crowd out the hints", async () => {
     const off = controller(fixtureConfig({ update_check: false }));
     off.setUpdate("0.2.0");
