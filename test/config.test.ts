@@ -92,6 +92,13 @@ describe("validation never throws", () => {
     });
   });
 
+  test("update_check is on unless switched off with a boolean", () => {
+    expect(validateConfig({}).update_check).toBe(true);
+    expect(validateConfig({ update_check: false }).update_check).toBe(false);
+    for (const bad of ["no", 0, null])
+      expect(validateConfig({ update_check: bad }).update_check).toBe(true);
+  });
+
   test("time_zone is 'system' or a zone Intl knows; anything else is 'system'", () => {
     expect(validateConfig({}).time_zone).toBe("system");
     expect(validateConfig({ time_zone: "America/Toronto" }).time_zone).toBe("America/Toronto");
@@ -153,6 +160,7 @@ describe("configFromCcUsage", () => {
       codex_roots: [{ path: "/mnt/c/Users/Example/.codex", label: "codex-win", enabled: true }],
       disabled_roots: ["/home/example/.claude-old"],
       history_only_roots: [],
+      update_check: true,
     });
   });
 

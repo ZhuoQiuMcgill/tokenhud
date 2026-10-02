@@ -53,6 +53,9 @@ export function makeHome(options: { store?: string; base?: string; refresh?: num
     HOME: dir,
     XDG_CONFIG_HOME: join(dir, "config"),
     TOKENHUD_WSL_USERS: "",
+    // The TUI's once-a-day release check, at a closed local port: it fails at once, offline.
+    TOKENHUD_RELEASES_API: "http://127.0.0.1:9",
+    TOKENHUD_INSECURE_TEST: "1",
     TERM: "xterm-256color",
     LANG: "C.UTF-8",
   });

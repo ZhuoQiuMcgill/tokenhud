@@ -1,0 +1,366 @@
+name: Release
+
+# On a tag v*: build every binary, test them on their platforms, sign the macOS ones, publish
+# a GitHub Release with SHA256SUMS, then publish to npm when an NPM_TOKEN secret exists.
+# Tags with a suffix (v0.1.0-rc.1, v0.2.0-beta.2) make prereleases and npm's `next` tag.
+#
+# Pull requests that touch the release path run everything up to the publishing, so a broken
+# build, installer or update is caught before a tag is pushed.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/build.ts
+      - scripts/stage-npm.ts
+      - src/release.ts
+      - src/update.ts
+      - src/commands/update.ts
+      - install.sh
+      - install.ps1
+      - npm/**
+      - test/release/**
+      - package.json
+      - bun.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUN_VERSION: 1.4.2
+
+jobs:
+  build:
+    name: build all targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Check that the tag is the package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(bun -e 'process.stdout.write(require("./package.json").version)')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is not v$version, the version in package.json"
+            exit 1
+          fi
+
+      # Every platform's OpenTUI native package, so each binary can embed its own.
+      - run: bun install --frozen-lockfile --os="*" --cpu="*"
+
+      - name: Build
+        run: |
+          bun scripts/build.ts --release | tee build.log
+          { echo '### Binaries'; echo '```'; cat build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      # The musl binary runs in an Alpine container.
+      - name: Smoke test (linux-x64, linux-x64-musl)
+        run: bun scripts/build.ts --smoke linux-x64 linux-x64-musl
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binaries-linux
+          path: |
+            dist/tokenhud-linux-*
+            dist/SHA256SUMS
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binaries-darwin
+          path: |
+            dist/tokenhud-darwin-*
+            dist/SHA256SUMS
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binaries-windows
+          path: |
+            dist/tokenhud-windows-*
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  smoke:
+    name: smoke test (${{ matrix.targets }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            artifact: binaries-linux
+            targets: linux-arm64 linux-arm64-musl
+          - runner: windows-latest
+            artifact: binaries-windows
+            targets: windows-x64
+          - runner: windows-11-arm
+            artifact: binaries-windows
+            targets: windows-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+      # Artifacts don't keep the executable bit.
+      - run: chmod +x dist/tokenhud-*
+      - run: bun scripts/build.ts --smoke ${{ matrix.targets }}
+
+  # Release-time signing: CI (ci.yml) fails on a bad signature; here a binary that fails
+  # `codesign --verify` is re-signed ad hoc, verified again, and that copy is released.
+  macos:
+    name: sign and smoke test (macOS)
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-darwin
+          path: dist
+      - run: chmod +x dist/tokenhud-darwin-*
+
+      - name: Verify the code signatures, re-signing ad hoc if needed
+        run: |
+          for bin in dist/tokenhud-darwin-*; do
+            if codesign --verify --verbose=2 "$bin"; then
+              echo "$bin: signature from bun build is valid" | tee -a "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            echo "::warning::$bin failed codesign --verify; re-signing ad hoc"
+            codesign --sign - --force "$bin"
+            codesign --verify --verbose=2 "$bin"
+            echo "$bin: re-signed ad hoc" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Smoke test (darwin-arm64)
+        run: bun scripts/build.ts --smoke darwin-arm64
+      - name: Smoke test (darwin-x64, under Rosetta)
+        run: |
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            bun scripts/build.ts --smoke darwin-x64
+          else
+            echo "darwin-x64 not smoke-tested: this runner has no Rosetta" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Checksums of these copies, for the install test; the release recomputes all of them.
+      - run: cd dist && shasum -a 256 tokenhud-darwin-* > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binaries-darwin-signed
+          path: |
+            dist/tokenhud-darwin-*
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  # install.sh / install.ps1 and `tokenhud update`, against these binaries served as a fake
+  # GitHub release on localhost (test/release/e2e.test.ts). The update starts from a build of
+  # this commit that claims an older version.
+  e2e:
+    name: install and update (${{ matrix.runner }})
+    needs: [build, macos]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            artifact: binaries-linux
+          - runner: macos-latest
+            artifact: binaries-darwin-signed
+          - runner: windows-latest
+            artifact: binaries-windows
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - name: Build an older version to update from
+        run: |
+          bun -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = "0.0.1"; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n")'
+          bun scripts/build.ts
+          mkdir old
+          mv dist/tokenhud* old/
+          git checkout -- package.json
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+      - run: chmod +x dist/tokenhud-*
+
+      - name: Installers and update
+        env:
+          TOKENHUD_E2E_DIST: dist
+          TOKENHUD_E2E_OLD: ${{ runner.os == 'Windows' && 'old/tokenhud.exe' || 'old/tokenhud' }}
+        run: bun test test/release/e2e.test.ts
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, smoke, macos, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-linux
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-windows
+          path: dist
+      # The Linux and Windows binaries are released as the build job made them: check them
+      # against its SHA256SUMS before the darwin artifact replaces that file.
+      - name: Check the binaries against the build's SHA256SUMS
+        run: (cd dist && grep -v darwin SHA256SUMS | sha256sum --check --strict)
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-darwin-signed
+          path: dist
+
+      # The macOS job may have re-signed its binaries, which changes their checksums.
+      - name: SHA256SUMS
+        run: |
+          bun scripts/build.ts --sums
+          { echo '### SHA256SUMS'; echo '```'; cat dist/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=()
+          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+          cat > notes.md <<EOF
+          Install on Linux or macOS:
+
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh | TOKENHUD_VERSION=$TAG sh
+          \`\`\`
+
+          On Windows (PowerShell):
+
+          \`\`\`powershell
+          \$env:TOKENHUD_VERSION = '$TAG'; irm https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.ps1 | iex
+          \`\`\`
+
+          Each binary's SHA-256 is in SHA256SUMS. What changed: [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/CHANGELOG.md).
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A re-run: replace the assets of the release the first run made.
+            gh release upload "$TAG" dist/tokenhud-* dist/SHA256SUMS --clobber
+          else
+            gh release create "$TAG" dist/tokenhud-* dist/SHA256SUMS \
+              --verify-tag --title "tokenhud ${TAG#v}" --notes-file notes.md "${prerelease[@]}"
+          fi
+
+  npm:
+    name: npm publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - name: Look for NPM_TOKEN
+        id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "npm publish skipped (no NPM_TOKEN)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.token.outputs.publish == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.token.outputs.publish == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - if: steps.token.outputs.publish == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - if: steps.token.outputs.publish == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-linux
+          path: dist
+      - if: steps.token.outputs.publish == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-windows
+          path: dist
+      - if: steps.token.outputs.publish == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-darwin-signed
+          path: dist
+
+      - name: Publish the platform packages, then tokenhud
+        if: steps.token.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          bun scripts/stage-npm.ts
+          dist_tag=latest
+          case "$TAG" in *-*) dist_tag=next ;; esac
+          version="${TAG#v}"
+          # The launcher last: its optional dependencies must already be on npm.
+          packages=()
+          for dir in dist/npm/*/; do
+            [ "$dir" = dist/npm/tokenhud/ ] || packages+=("$dir")
+          done
+          for dir in "${packages[@]}" dist/npm/tokenhud/; do
+            name=$(node -p "require('./${dir}package.json').name")
+            # A re-run skips what the first run published.
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already on npm"
+              continue
+            fi
+            npm publish "$dir" --access public --tag "$dist_tag" --provenance
+          done

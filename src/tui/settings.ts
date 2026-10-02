@@ -12,13 +12,14 @@ import {
 } from "../config.ts";
 import type { RootInfo } from "./vm/types.ts";
 
-export type SettingsRow = "refresh" | "window" | "cost" | "theme" | "tz" | "accounts";
+export type SettingsRow = "refresh" | "window" | "cost" | "theme" | "tz" | "update" | "accounts";
 export const SETTINGS_ROWS: readonly SettingsRow[] = [
   "refresh",
   "window",
   "cost",
   "theme",
   "tz",
+  "update",
   "accounts",
 ];
 
@@ -28,6 +29,7 @@ export const ROW_LABELS: Readonly<Record<SettingsRow, string>> = {
   cost: "Show cost",
   theme: "Theme",
   tz: "Time zone",
+  update: "Check for updates",
   accounts: "Accounts",
 };
 
@@ -115,6 +117,7 @@ export function choices(row: Exclude<SettingsRow, "tz" | "accounts">): readonly 
     case "window":
       return WINDOW_CHOICES.map((w) => ({ value: w, label: WINDOW_NAMES[w] ?? w }));
     case "cost":
+    case "update":
       return [
         { value: true, label: "on" },
         { value: false, label: "off" },
@@ -134,6 +137,8 @@ function current(row: Exclude<SettingsRow, "tz" | "accounts">, config: Config): 
       return config.show_cost;
     case "theme":
       return config.theme;
+    case "update":
+      return config.update_check;
   }
 }
 
@@ -151,6 +156,8 @@ function withValue(
       return { ...config, show_cost: value as boolean };
     case "theme":
       return { ...config, theme: value as Config["theme"] };
+    case "update":
+      return { ...config, update_check: value as boolean };
   }
 }
 

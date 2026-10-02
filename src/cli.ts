@@ -1,8 +1,7 @@
 import { VERSION } from "./version.ts";
 
-// The commands from docs/ARCHITECTURE.md §3, in its order. Those not implemented yet are
-// listed in the help as "(not yet available)" and exit 2 when run.
-const PLANNED: ReadonlyArray<readonly [usage: string, summary: string]> = [
+// The commands from docs/ARCHITECTURE.md §3, in its order.
+const COMMAND_HELP: ReadonlyArray<readonly [usage: string, summary: string]> = [
   ["tokenhud", "interactive TUI (default)"],
   ["tokenhud --once", "one static frame to stdout"],
   ["tokenhud json <query>", "output for scripts and agents"],
@@ -28,17 +27,7 @@ const COMMANDS: ReadonlyMap<string, () => Promise<Command>> = new Map<
   ["mcp", async () => (await import("./commands/mcp.ts")).runMcp],
   ["import-cc-usage", async () => (await import("./commands/import-cc-usage.ts")).runImportCcUsage],
   ["doctor", async () => (await import("./commands/doctor.ts")).runDoctor],
-]);
-
-/** The TUI and --once, which are not subcommands. */
-const BARE: ReadonlySet<string> = new Set(["tokenhud", "tokenhud --once"]);
-
-const SUBCOMMANDS: ReadonlySet<string> = new Set([
-  "json",
-  "mcp",
-  "import-cc-usage",
-  "doctor",
-  "update",
+  ["update", async () => (await import("./commands/update.ts")).runUpdate],
 ]);
 
 const OPTIONS: ReadonlyArray<readonly [usage: string, summary: string]> = [
@@ -51,13 +40,10 @@ const EXIT_OK = 0;
 const EXIT_USAGE = 2;
 
 function helpText(): string {
-  const usageWidth = Math.max(...[...PLANNED, ...OPTIONS].map(([usage]) => usage.length)) + 2;
-  const summaryWidth = Math.max(...PLANNED.map(([, summary]) => summary.length)) + 2;
-  const commands = PLANNED.map(([usage, summary]) => {
-    const available = BARE.has(usage) || COMMANDS.has(usage.split(" ")[1] ?? "");
-    const line = `  ${usage.padEnd(usageWidth)}${available ? summary : summary.padEnd(summaryWidth)}`;
-    return available ? line : `${line}(not yet available)`;
-  });
+  const usageWidth = Math.max(...[...COMMAND_HELP, ...OPTIONS].map(([usage]) => usage.length)) + 2;
+  const commands = COMMAND_HELP.map(
+    ([usage, summary]) => `  ${usage.padEnd(usageWidth)}${summary}`,
+  );
   const options = OPTIONS.map(([usage, summary]) => `  ${usage.padEnd(usageWidth)}${summary}`);
   return [
     `tokenhud ${VERSION}`,
@@ -81,19 +67,15 @@ const WIDTH_MIN = 40;
 const WIDTH_MAX = 1000;
 
 // Arguments are read left to right and the first decisive one wins: `--help` and
-// `--version` answer at once, and an unknown option or command fails at once. An
-// implemented command takes every argument after its name, so `tokenhud doctor --help`
-// is the doctor's help, while `tokenhud update --help` is still the general one.
+// `--version` answer at once, and an unknown option or command fails at once. A command
+// takes every argument after its name, so `tokenhud doctor --help` is the doctor's help.
 async function main(args: readonly string[]): Promise<number> {
-  let subcommand: string | undefined;
   let once = false;
   let width: number | null = null;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string;
-    if (subcommand === undefined) {
-      const command = COMMANDS.get(arg);
-      if (command !== undefined) return (await command())(args.slice(i + 1));
-    }
+    const command = COMMANDS.get(arg);
+    if (command !== undefined) return (await command())(args.slice(i + 1));
     if (arg === "--help" || arg === "-h") {
       process.stdout.write(`${helpText()}\n`);
       return EXIT_OK;
@@ -113,15 +95,9 @@ async function main(args: readonly string[]): Promise<number> {
       width = n;
     } else if (arg.startsWith("-")) {
       return usageError(`unknown option '${arg}'`);
-    } else if (subcommand === undefined) {
-      // Only the first positional names a command; later ones are its arguments.
-      if (!SUBCOMMANDS.has(arg)) return usageError(`unknown command '${arg}'`);
-      subcommand = arg;
+    } else {
+      return usageError(`unknown command '${arg}'`);
     }
-  }
-  if (subcommand !== undefined) {
-    process.stderr.write(`tokenhud: '${subcommand}' is not available yet\n`);
-    return EXIT_USAGE;
   }
   if (width !== null && !once) return usageError("--width applies to --once");
   if (once) {
@@ -132,6 +108,14 @@ async function main(args: readonly string[]): Promise<number> {
   // The TUI's Workers and terminal handles are closed by now; exit without waiting on
   // anything a library left behind.
   process.exit(await runTui());
+}
+
+// `tokenhud update` on Windows parks the replaced .exe beside the new one, since a running
+// .exe can't be deleted; the next start clears it away. Only a compiled binary: from source,
+// the exe is Bun's.
+if (process.platform === "win32") {
+  const { isCompiled, removeStaleOld } = await import("./update.ts");
+  if (isCompiled()) removeStaleOld(process.execPath);
 }
 
 const argv = process.argv.slice(2);

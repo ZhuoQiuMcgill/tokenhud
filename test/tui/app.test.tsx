@@ -187,6 +187,36 @@ describe("footer MCP status, from the heartbeat files", () => {
   });
 });
 
+describe("footer update note, from the once-a-day check", () => {
+  async function footer(c: Controller, width: number): Promise<string> {
+    const setup = await render(<Frame controller={c} width={width} height={24} />, width, 24);
+    return roles(setup.captureSpans(), theme("dark")).split("\n")[23] as string;
+  }
+
+  test("a newer release shows dimly beside the hints", async () => {
+    const c = controller();
+    c.setUpdate("0.2.0");
+    const line = await footer(c, 105);
+    expect(line).toContain("[dim/bg]update 0.2.0 available");
+    expect(line).toContain("quit");
+  });
+
+  test("a newer prerelease says it takes --prerelease", async () => {
+    const c = controller();
+    c.setUpdate("0.2.0-rc.1");
+    expect(await footer(c, 105)).toContain("[dim/bg]update 0.2.0-rc.1 available (--prerelease)");
+  });
+
+  test("not with the check switched off, nor where it would crowd out the hints", async () => {
+    const off = controller(fixtureConfig({ update_check: false }));
+    off.setUpdate("0.2.0");
+    expect(await footer(off, 105)).not.toContain("update");
+    const narrow = controller();
+    narrow.setUpdate("0.2.0");
+    expect(await footer(narrow, 40)).not.toContain("update");
+  });
+});
+
 describe("states", () => {
   test("another instance holds the lock: read-only, stale, and the notice", async () => {
     const c = controller(fixtureConfig(), "reader");

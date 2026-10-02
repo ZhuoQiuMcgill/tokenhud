@@ -1131,11 +1131,11 @@ exports[`states settings: the list, then a picker 1`] = `
      │   Show cost               on                                                                 │    
      │   Theme                   dark                                                               │    
      │   Time zone               America/Toronto                                                    │    
+     │   Check for updates       on                                                                 │    
      │   Accounts                1 of 1 enabled                                                     │    
      │                                                                                              │    
      │ ↑/↓ move · enter change · esc back to the view                                               │    
      ╰──────────────────────────────────────────────────────────────────────────────────────────────╯    
-                                                                                                         
                                                                                                          
                                                                                                          
                                                                                                          
