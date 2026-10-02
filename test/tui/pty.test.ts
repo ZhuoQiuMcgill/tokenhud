@@ -24,6 +24,8 @@ function restored(run: PtyRun): void {
 }
 
 const exitCode = (run: PtyRun) => Number(/EXIT=(\d+)/.exec(run.output())?.[1]);
+/** Starts for the q-at-the-first-frame check; before T22's fix, 93 in 100 lost the q. */
+const QUIT_RUNS = 20;
 
 describe.skipIf(!ptyAvailable())("under a real pty", () => {
   test("start, switch views 1–4, settings and help open and close, mouse input, quit: terminal restored", async () => {
@@ -63,6 +65,33 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
     } finally {
       run.kill();
       home.remove();
+    }
+  }, 60_000);
+
+  // T22: OpenTUI reads keys from the moment it sets raw mode and drops any that nothing
+  // listens for, and the TUI listened only once React's effects ran, after the first frame
+  // was drawn: a q sent as soon as the first frame was read was lost in 93 of 100 runs, and
+  // the TUI never quit. Here q goes at that moment, many times.
+  test("q at the first frame quits within 1 s, every time", async () => {
+    for (let i = 0; i < QUIT_RUNS; i++) {
+      const home = makeHome();
+      const run = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+      try {
+        await run.whenSeen(
+          () => run.vt.altScreen && run.vt.text().includes(" tokenhud "),
+          "a frame",
+        );
+        const sent = performance.now();
+        run.send("q");
+        await run.whenSeen(() => /EXIT=\d+/.test(run.output()), `run ${i + 1} to quit`, 5000);
+        expect(performance.now() - sent).toBeLessThan(1000);
+        expect(exitCode(run)).toBe(0);
+        await run.exited;
+        restored(run);
+      } finally {
+        run.kill();
+        home.remove();
+      }
     }
   }, 60_000);
 

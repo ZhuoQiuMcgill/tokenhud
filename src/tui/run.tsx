@@ -342,6 +342,17 @@ export async function runApp(boot: Boot): Promise<number> {
   };
   boot.attach(fromVm);
   for (const message of boot.early) fromVm(message);
+  // Keys go to the controller from before the first render. OpenTUI reads stdin from the
+  // moment it sets raw mode and drops a key nothing listens for; React's useKeyboard
+  // subscribes in an effect that runs after the first frame is drawn, so a q pressed then
+  // was lost (T22). A key handler that throws is a crash like a render error.
+  renderer.keyInput.on("keypress", (key) => {
+    try {
+      controller.key({ name: key.name, sequence: key.sequence, ctrl: key.ctrl, shift: key.shift });
+    } catch (error) {
+      fatal(error);
+    }
+  });
   createRoot(renderer).render(<App controller={controller} onFatal={fatal} onCommit={onCommit} />);
   return exited;
 }

@@ -73,6 +73,11 @@ export interface PtyRun {
   send(keys: string): void;
   /** Resolves once `pred` holds for the screen; rejects with the screen after `timeoutMs`. */
   waitFor(pred: (screen: string) => boolean, what: string, timeoutMs?: number): Promise<void>;
+  /**
+   * Like `waitFor`, but `pred` is checked as each chunk of output is read, not every 50 ms:
+   * a key sent once it resolves lands right after that chunk (T22).
+   */
+  whenSeen(pred: () => boolean, what: string, timeoutMs?: number): Promise<void>;
   /** Raw bytes the program wrote, decoded. */
   output(): string;
   stderr(): Promise<string>;
@@ -98,11 +103,13 @@ export function runInPty(
     { cwd: REPO, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
   const decoder = new TextDecoder();
+  const watchers = new Set<() => void>();
   const reading = (async () => {
     for await (const chunk of proc.stdout) {
       const text = decoder.decode(chunk, { stream: true });
       raw += text;
       vt.write(text);
+      for (const watch of watchers) watch();
     }
   })();
   return {
@@ -118,6 +125,22 @@ export function runInPty(
           throw new Error(`timed out waiting for ${what}; screen:\n${vt.text()}`);
         await Bun.sleep(50);
       }
+    },
+    whenSeen(pred, what, timeoutMs = 15_000) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          watchers.delete(watch);
+          reject(new Error(`timed out waiting for ${what}; screen:\n${vt.text()}`));
+        }, timeoutMs);
+        const watch = () => {
+          if (!pred()) return;
+          watchers.delete(watch);
+          clearTimeout(timer);
+          resolve();
+        };
+        watchers.add(watch);
+        watch();
+      });
     },
     output: () => raw,
     stderr: () => new Response(proc.stderr).text(),
