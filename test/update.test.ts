@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -1066,8 +1067,9 @@ describe("tokenhud update on a bun or npm install", () => {
     expect(bun.ran()).toEqual([
       "add -g --no-cache tokenhud@0.1.0",
       `BUN_INSTALL=${install.root}`,
-      // Never the user's working directory, whose bunfig.toml and .env bun would read.
-      `cwd=${join(install.root, "install", "global")}`,
+      // Never the user's working directory, whose bunfig.toml and .env bun would read. (The
+      // shell's $PWD has links resolved: macOS's /var is /private/var.)
+      `cwd=${windows ? join(install.root, "install", "global") : realpathSync(join(install.root, "install", "global"))}`,
       // On Windows it is moved out of the package meanwhile (tested below).
       windows ? "exe absent" : "exe present",
     ]);
