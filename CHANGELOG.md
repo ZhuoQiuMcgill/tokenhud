@@ -9,7 +9,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 ## [Unreleased]
 
 The first release, v0.1.0: tokenhud succeeds cc-usage 2.6.1 and imports its history. The
-release candidate 0.1.0-rc.1 has all of it.
+release candidate 0.1.0-rc.1 has the first part of it; 0.1.0-rc.2, the first one on npm
+(`bun add -g tokenhud@next`), has all of it.
 
 ### Added
 

@@ -1,7 +1,7 @@
 {
   "name": "tokenhud",
   "displayName": "tokenhud",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "Lets Claude Code agents check their own account's usage limits (5-hour and weekly), decide whether to pause, and wait safely for a reset",
   "author": { "name": "Zhuo Qiu" },
   "homepage": "https://github.com/ZhuoQiuMcgill/tokenhud",
