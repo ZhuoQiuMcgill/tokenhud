@@ -218,6 +218,7 @@ describe("groupings", () => {
       cacheRead: 0.5,
       cacheWrite: 6.25,
       longContext: null,
+      estimated: false,
     });
     expect(models[1]?.rates?.longContext).toEqual({
       threshold: 272_000,
@@ -561,6 +562,61 @@ describe("critique regressions", () => {
         })
         .buckets.map((b) => b.cost),
     ).toEqual([0, 5, 5, 0, 0, 0]);
+    db.close();
+  });
+});
+
+describe("estimated prices", () => {
+  // codex-auto-review is priced through the bundled estimated alias: unpriced before
+  // 2026-03-05T08:00Z, gpt-5.4 ($2.50/M input, fast $5) until 2026-07-30T07:00Z, then
+  // gpt-5.6-luna ($0.20/M input, fast $0.40). Rows stay under the 272k long-context threshold.
+  const prices = () => new PriceTable(bundledPricing().models, bundledPricing().aliases);
+  const review = { ...codex, model: "codex-auto-review" };
+  const rows = () => [
+    row({ ...review, inp: 200_000 }), // Luna: $0.04
+    row({ ...review, inp: 200_000, tier: 1 }), // Luna fast: $0.08
+    row({ ...review, inp: 200_000, ts: at("2026-06-01T12:00:00Z") }), // gpt-5.4: $0.50
+    row({ ...review, inp: 1_000, ts: at("2026-02-01T12:00:00Z") }), // before any estimate
+    row({ inp: 1_000_000 }), // claude-opus-4-8: $5, not estimated
+  ];
+  const now = () => at("2026-09-30T15:00:00Z");
+
+  test("usage priced from an estimated card is reported as estimated, whole hours and raw rows alike", () => {
+    const { q, db } = engine(rows(), { now }, prices());
+    const totals = q.totals();
+    expect(totals.usage.cost).toBeCloseTo(5 + 0.04 + 0.08 + 0.5, 12);
+    expect(totals.usage.estimatedCost).toBeCloseTo(0.04 + 0.08 + 0.5, 12);
+    expect(totals.usage.coverage.estimatedTokens).toBe(600_000);
+    expect(totals.usage.coverage.pricedTokens).toBe(1_600_000);
+    expect(totals.usage.coverage.unpricedTokens).toBe(1_000);
+    // A range that cuts an hour is read from raw rows: the same answer for its rows.
+    const cut = q.totals({
+      range: { from: at("2026-09-30T14:05:00Z"), to: at("2026-09-30T14:20:00Z") },
+    });
+    expect(cut.usage.cost).toBeCloseTo(5.12, 12);
+    expect(cut.usage.estimatedCost).toBeCloseTo(0.12, 12);
+    expect(cut.usage.coverage.estimatedTokens).toBe(400_000);
+    db.close();
+  });
+
+  test("by model, an estimated model's cost is all estimated and its rates say so", () => {
+    const { q, db } = engine(rows(), { now }, prices());
+    const models = q.byModel();
+    const standard = models.find((m) => m.model === "codex-auto-review" && m.tier === "standard");
+    const fast = models.find((m) => m.model === "codex-auto-review" && m.tier === "fast");
+    const opus = models.find((m) => m.model === "claude-opus-4-8");
+    expect(standard?.usage.cost).toBeCloseTo(0.54, 12);
+    expect(standard?.usage.estimatedCost).toBeCloseTo(0.54, 12);
+    expect(standard?.rates).toMatchObject({ input: 0.2, output: 1.2, estimated: true });
+    expect(fast?.usage.estimatedCost).toBeCloseTo(0.08, 12);
+    expect(fast?.rates).toMatchObject({ input: 0.4, estimated: true });
+    expect(opus?.usage.estimatedCost).toBe(0);
+    expect(opus?.rates?.estimated).toBe(false);
+    // By day: the estimate follows its rows.
+    const days = q.byDay({
+      range: { from: at("2026-09-30T00:00:00Z"), to: at("2026-10-01T00:00:00Z") },
+    });
+    expect(days.map((d) => d.usage.estimatedCost)).toEqual([expect.closeTo(0.12, 12)]);
     db.close();
   });
 });

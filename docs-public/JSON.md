@@ -19,8 +19,8 @@ Every document carries `"schema": 1`. While it does:
   Ranges are half-open: `from` inclusive, `to` exclusive.
 - Money is USD (`cost_usd`), rounded to 1e-6. Token counts are integers.
 - Unpriced tokens are never $0: they are counted in `coverage` and listed in `unpriced`.
-- The store is read as it is (read-only connection, no ingest). Without a store yet, every
-  query answers zeros.
+- The store is read as it is (read-only connection, no ingest), unless `--refresh` asks for
+  one ingest pass first. Without a store yet, every query answers zeros.
 - Exit codes: 0 ok (document on stdout); 2 bad arguments; 1 store error. On 1 and 2,
   stderr holds `{"schema":1,"error":{"code":"bad_argument"|"store_error","message":"…"}}`
   and stdout is empty.
@@ -28,9 +28,9 @@ Every document carries `"schema": 1`. While it does:
 ## Arguments
 
 ```
-tokenhud json usage    [--period P] [--group-by G] [--account A]... [--provider X]... [--tz ZONE]
-tokenhud json models   [--period P] [--account A]... [--provider X]... [--tz ZONE]
-tokenhud json accounts [--period P] [--tz ZONE]
+tokenhud json usage    [--period P] [--group-by G] [--account A]... [--provider X]... [--tz ZONE] [--refresh]
+tokenhud json models   [--period P] [--account A]... [--provider X]... [--tz ZONE] [--refresh]
+tokenhud json accounts [--period P] [--tz ZONE] [--refresh]
 ```
 
 | Option | Values |
@@ -40,7 +40,8 @@ tokenhud json accounts [--period P] [--tz ZONE]
 | `--group-by` | `model`, `account`, `day`, `week`, `month` (`usage` only) |
 | `--account` | A label (case-insensitive) or an id; repeatable |
 | `--provider` | `claude` or `codex`; repeatable |
-| `--tz` | An IANA zone; default the system zone (`TZ` is honoured) |
+| `--tz` | An IANA zone; default the config's `time_zone` (`config.json`), else the system zone (`TZ` is honoured) |
+| `--refresh` | First run one incremental ingest pass (what the transcripts added since the last one), under the single-writer ingest lock. Skipped, with a warning, while another tokenhud process holds the lock and keeps the store current; a pass that could not store anything is a warning too |
 
 ## Shared pieces
 
@@ -50,7 +51,7 @@ tokenhud json accounts [--period P] [--tz ZONE]
   "tokens": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "total": 0 },
   "records": 0,              // usage rows (API responses)
   "cost_usd": 0,             // priced tokens only, estimated included
-  "estimated_cost_usd": 0,   // part of cost_usd from an estimated price (none yet)
+  "estimated_cost_usd": 0,   // part of cost_usd from an estimated price (codex-auto-review)
   "coverage": {
     "priced_tokens": 0, "unpriced_tokens": 0, "unpriced_tier_tokens": 0,
     "estimated_tokens": 0,   // subset of priced_tokens
@@ -90,8 +91,10 @@ Group shapes (each also carries every `usage` field):
 | `day`, `week`, `month` | `key` (`YYYY-MM-DD`; a week is keyed by its Monday; `YYYY-MM`), `from`, `to`, `top_model` | chronological; empty groups included; the first and last are clipped to the period |
 
 `rates` is the tier's card in effect now, USD per 1M tokens, or null when unpriced:
-`{ "input", "output", "cache_read", "cache_write", "long_context": { "threshold", "input_multiplier", "output_multiplier" } | null }`.
-`cache_write` is the card's own rate, else the 5-minute rate (1.25x input).
+`{ "input", "output", "cache_read", "cache_write", "long_context": { "threshold", "input_multiplier", "output_multiplier" } | null, "estimated" }`.
+`cache_write` is the card's own rate, else the 5-minute rate (1.25x input). `estimated` is
+true when the rates are another model's standing in for this one (an estimated alias, such
+as `codex-auto-review`); that model's cost is then all in `estimated_cost_usd`.
 
 ## `json models`
 
@@ -110,6 +113,7 @@ Group shapes (each also carries every `usage` field):
   "schema": 1, "generated_at": "…",
   "store": {
     "path", "exists", "error",            // error: why the store couldn't be read, else null
+    "damaged",                             // the next ingest moves it aside and recovers it
     "size_bytes",                          // database plus WAL
     "schema_version", "key_scheme", "created_at",
     "rows", "rows_by_provider": { "claude": 0 },
@@ -119,7 +123,13 @@ Group shapes (each also carries every `usage` field):
     "imports": [{ "at", "source", "lineage", "rows", "accounts" }],
     "migration_report",                    // a record of key-scheme migrations, or null
     "rollups": { "triggers_intact", "counts_agree" } | null,
-    "long_context_index"
+    "long_context_index",
+    "backup": { "path", "at", "age_hours", "previous_at" },   // at: null before the first
+    "recovery": {
+      "pending": [{ "file", "why" }],      // files still to merge; why: damaged, missing, held
+      "merged_lineages",                   // other stores whose history this one absorbed
+      "last_report": { "at", "summary", "still_pending": [] } | null
+    }
   },
   "pricing": {
     "bundled": { "anthropic": { "url", "checked" }, "openai": { … } },
@@ -134,9 +144,21 @@ Group shapes (each also carries every `usage` field):
     "last_import": { … } | null,
     "rows_only_in_cc_usage": 0 | null,     // null: see note
     "note": null | "…"
-  }
+  },
+  "sources": {                             // every discovered root; each is one account
+    "cache": { "path", "exists" },
+    "roots": [{
+      "label", "provider", "found_by",     // found_by: auto, env, config, home, wsl
+      "enabled", "history_only",
+      "mode",                              // watched, polled (a Windows drive under WSL), off
+      "transcripts",                       // tracked by the cache; null without one
+      "last_ingest"                        // when a pass last covered the root, or null
+    }]
+  },
+  "claude_code": { … }                     // the tokenhud plugin or MCP server, per account
 }
 ```
 
-Doctor prints config paths only (the store, the overrides file, cc-usage's directory);
-never transcript, prompt or credential paths.
+Doctor prints config paths only (the store and its backup, the overrides file, the cursor
+cache, cc-usage's directory); never transcript, prompt or credential paths. Roots go by
+their labels.
