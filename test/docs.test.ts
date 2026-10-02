@@ -99,6 +99,7 @@ describe("the docs checker", () => {
       "Models",
       "Accounts",
       "Account menu",
+      "Help",
       "Settings",
     ]);
     expect(sections.get("")).toEqual([

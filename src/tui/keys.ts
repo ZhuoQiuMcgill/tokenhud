@@ -26,8 +26,8 @@ export interface KeyHelp {
   readonly keys: readonly string[];
   /** The key as shown: "a/d", "enter", "t". */
   readonly show: string;
-  /** Another key for the same thing, in the help and README but not the footer: "←/→". */
-  readonly alias?: string;
+  /** Other keys for the same thing, in the help and README but not the footer: "←/→". */
+  readonly aliases?: readonly string[];
   /** The footer's word for it: "period". */
   readonly label: string;
   /** The help overlay's and README's sentence for it. */
@@ -40,6 +40,11 @@ export interface KeyHelp {
 export interface KeyEntry<S, C> extends KeyHelp {
   /** In the footer only while this holds: `esc` while there is something to go back from. */
   readonly when?: (state: S, ctx: C) => boolean;
+  /**
+   * The section it acts on, when that is all it acts on: while the layout leaves the section
+   * out, the key does nothing and the footer and help leave it out.
+   */
+  readonly section?: string;
   /** The new state, or undefined when the key changes nothing here. */
   readonly act: (state: S, ctx: C, key: string) => S | undefined;
 }
@@ -59,9 +64,33 @@ export function entryFor<H extends KeyHelp>(map: readonly H[], key: string): H |
   );
 }
 
-/** What `key` does to `state` through `map`; undefined for a key the map doesn't list. */
-export function dispatch<S, C>(map: Keymap<S, C>, key: string, state: S, ctx: C): S | undefined {
-  return entryFor(map, key)?.act(state, ctx, key);
+/**
+ * What `key` does to `state` through `map`; undefined for a key the map doesn't list, or
+ * whose section isn't `drawn` (when the layout is known).
+ */
+export function dispatch<S, C>(
+  map: Keymap<S, C>,
+  key: string,
+  state: S,
+  ctx: C,
+  drawn?: ReadonlySet<string>,
+): S | undefined {
+  const entry = entryFor(map, key);
+  if (entry === undefined || !onScreen(entry, drawn)) return undefined;
+  return entry.act(state, ctx, key);
+}
+
+/** Whether an entry's section is drawn (always, for an entry acting on no one section). */
+export function onScreen(
+  entry: { readonly section?: string },
+  drawn?: ReadonlySet<string>,
+): boolean {
+  return entry.section === undefined || drawn === undefined || drawn.has(entry.section);
+}
+
+/** The keys as the help and README write them: `a/d  ←/→`. */
+export function keyText(entry: KeyHelp): string {
+  return [entry.show, ...(entry.aliases ?? [])].join("  ");
 }
 
 /** Entries as the footer shows them, in their order. */
@@ -116,14 +145,14 @@ export const MOVE_KEYS = {
   tabs: {
     keys: ["left", "right"],
     show: "a/d",
-    alias: "←/→",
+    aliases: ["←/→"],
     label: "tab",
     does: "Switch the tab: what the view shows",
   },
   select: {
     keys: ["up", "down"],
     show: "w/s",
-    alias: "↑/↓",
+    aliases: ["↑/↓"],
     label: "select",
     does: "Move the selection: which row or card",
   },
@@ -139,7 +168,7 @@ export const MOVE_KEYS = {
 /** A view's entry for one of the shared movements, with its own words and action. */
 export function moveKey<S, C>(
   kind: keyof typeof MOVE_KEYS,
-  own: Omit<KeyEntry<S, C>, "keys" | "show" | "alias">,
+  own: Omit<KeyEntry<S, C>, "keys" | "show" | "aliases">,
 ): KeyEntry<S, C> {
   const { keys, show } = MOVE_KEYS[kind];
   return { keys, show, ...own };
@@ -156,7 +185,7 @@ export const GLOBAL_KEYS = {
   next: {
     keys: ["tab", "shift-tab"],
     show: "tab",
-    alias: "shift-tab",
+    aliases: ["shift-tab"],
     label: "next view",
     does: "Next view; shift-tab goes to the previous one",
   },
@@ -168,5 +197,16 @@ export const GLOBAL_KEYS = {
   },
   settings: { keys: ["x"], show: "x", label: "settings", does: "Open settings" },
   help: { keys: ["?"], show: "?", label: "help", does: "Show the keys, this view's included" },
-  quit: { keys: ["q"], show: "q", alias: "Ctrl-C", label: "quit", does: "Quit" },
+  quit: { keys: ["q"], show: "q", aliases: ["Ctrl-C"], label: "quit", does: "Quit" },
+} as const satisfies Record<string, KeyHelp>;
+
+/** The help overlay's keys: any of them closes it. */
+export const HELP_KEYS = {
+  close: {
+    keys: ["escape", "?", "return", "enter", "q"],
+    show: "esc",
+    aliases: ["?", "enter", "q"],
+    label: "close",
+    does: "Close the help",
+  },
 } as const satisfies Record<string, KeyHelp>;

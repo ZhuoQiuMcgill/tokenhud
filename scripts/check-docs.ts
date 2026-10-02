@@ -6,14 +6,15 @@
 // - every key the README names (its "Keys" tables and inline code in its prose) is one the
 //   TUI binds; and the "Keys" tables list exactly the keys the keymaps show (src/tui/keys.ts),
 //   each where it belongs: movement and the global keys in the first tables, each view's
-//   under `### <view title>`, the action menu's and the settings screen's under their own.
+//   under `### <view title>`, the action menu's, the help's and the settings screen's under
+//   their own.
 //
 //   bun scripts/check-docs.ts      # prints the problems, exit 1 if any
 //
 // test/docs.test.ts runs it in `bun run check`.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { GLOBAL_KEYS, type KeyHelp, MOVE_KEYS, TEXT } from "../src/tui/keys.ts";
+import { GLOBAL_KEYS, HELP_KEYS, type KeyHelp, MOVE_KEYS, TEXT } from "../src/tui/keys.ts";
 import { MENU_KEYMAP } from "../src/tui/menu.ts";
 import { SETTINGS_KEYS } from "../src/tui/settings.ts";
 import { VIEWS } from "../src/tui/views/index.ts";
@@ -206,10 +207,10 @@ const KEY_NAMES: Readonly<Record<string, string>> = {
   right: "→",
 };
 
-/** The keys an entry shows, in the help and README: its key and its alias; none for typing. */
+/** The keys an entry shows, in the help and README: its key and its aliases; none for typing. */
 function shownKeys(entry: KeyHelp): string[] {
   if (entry.keys.includes(TEXT)) return [];
-  return entry.alias === undefined ? [entry.show] : [entry.show, entry.alias];
+  return [entry.show, ...(entry.aliases ?? [])];
 }
 
 /** Every keymap, by the README "## Keys" subsection it belongs under ("" for the first). */
@@ -219,6 +220,7 @@ function keymaps(): Map<string, readonly KeyHelp[]> {
   ]);
   for (const view of Object.values(VIEWS)) maps.set(view.title, view.keymap);
   maps.set("Account menu", MENU_KEYMAP);
+  maps.set("Help", Object.values(HELP_KEYS));
   maps.set("Settings", Object.values(SETTINGS_KEYS).flat());
   return maps;
 }
@@ -269,7 +271,8 @@ export function documentedKeys(
 /**
  * Where each key the TUI shows belongs in the README's "## Keys" section: movement and the
  * global keys in its first tables (""), each view's under `### <view title>`, the action
- * menu's under `### Account menu`, the settings screen's under `### Settings`.
+ * menu's under `### Account menu`, the help's under `### Help`, the settings screen's under
+ * `### Settings`.
  */
 export function keySections(): Map<string, string[]> {
   const sections = new Map<string, string[]>();

@@ -97,7 +97,6 @@ export async function renderOverview(input: OnceInput): Promise<string> {
     showCost: config.show_cost,
     tz,
     scope: scoped?.id ?? null,
-    still: true,
   };
   const sections = overview.sections(vm, overview.initial, ctx);
   const height = 3 + sections.reduce((n, s) => n + s.height, 0) + sections.length - 1;

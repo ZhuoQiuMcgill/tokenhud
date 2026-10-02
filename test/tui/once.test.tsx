@@ -61,6 +61,8 @@ describe.each([105, 120])("at width %i", (width) => {
     for (const line of text.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(width);
     expect(text).not.toContain(ESC);
     expect(text.split("\n")[0]).toContain("as of 11:40");
+    // The live screen's strip, its active tab marked in plain text too.
+    expect(text).toContain("◀ a  5h  [24h]  7d  d ▶");
     expect(text).toMatchSnapshot();
   });
 

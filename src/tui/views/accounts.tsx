@@ -11,7 +11,7 @@ import { sparkChar } from "../components/spark.ts";
 import { chartCell } from "../components/vchart.ts";
 import { Lines, Table } from "../elements.tsx";
 import { dayLabel, fit, percent, textWidth, tokens, truncate } from "../format.ts";
-import { footerHints, type Keymap, moveKey } from "../keys.ts";
+import { footerHints, type Keymap, MOVE_KEYS, moveKey } from "../keys.ts";
 import { fitSections, type SectionSpec } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
 import type { AccountRow, AccountsVM, ModelSpend, WeekSlot } from "../vm/accounts.ts";
@@ -133,6 +133,8 @@ function staleAge(a: AccountRow, asOf: number): string | null {
 }
 
 const pct = (u: number) => `${Math.round(u * 100)}%`;
+/** How a disabled root is turned back on: its action menu's Enable. */
+const ENABLE = `${MOVE_KEYS.open.show}, then Enable`;
 
 function statusDot(a: AccountRow, asOf: number): { text: string; role: Role } {
   if (inactive(a)) return { text: "○", role: "dim" };
@@ -385,9 +387,9 @@ function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
       noteLine(
         "limits",
         [
-          "not fetched: this root is disabled (enter, then Enable)",
-          "not fetched: root disabled (enter, then Enable)",
-          "root disabled (enter, then Enable)",
+          `not fetched: this root is disabled (${ENABLE})`,
+          `not fetched: root disabled (${ENABLE})`,
+          `root disabled (${ENABLE})`,
           "root disabled",
         ],
         width,
@@ -654,7 +656,14 @@ function addRootLines(): Line[] {
   return [
     { left: [seg(" add a root", "head", true)] },
     { left: [] },
-    { left: [seg(" enter opens the settings account editor: every root found here,", "dim")] },
+    {
+      left: [
+        seg(
+          ` ${MOVE_KEYS.open.show} opens the settings account editor: every root found here,`,
+          "dim",
+        ),
+      ],
+    },
     { left: [seg(" to enable, rename or mark history-only", "dim")] },
   ];
 }

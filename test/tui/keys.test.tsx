@@ -11,7 +11,7 @@ import type { AccountInfo, RootInfo, ViewId, ViewModels } from "../../src/tui/vm
 import { guard } from "../guard.ts";
 import { fixtureConfig } from "./fixture.ts";
 import { makeOverviewFixture, type OverviewFixture } from "./overview-fixture.ts";
-import { chars, cleanupRenderers, render } from "./render.ts";
+import { chars, cleanupRenderers, render, settle } from "./render.ts";
 
 guard();
 
@@ -201,7 +201,7 @@ describe("a view acts only on the keys its keymap lists (AC 2)", () => {
 });
 
 describe("the footer says how to move (AC 6)", () => {
-  /** Each view's own keys the footer must show; a/d only where the view has tabs. */
+  /** Each view's own keys the footer must show; a/d only where the view has tabs on screen. */
   const MUST: Readonly<Record<ViewId, readonly string[]>> = {
     overview: ["a/d window", "w/s card", "enter open", "? help"],
     history: ["a/d period", "w/s row", "enter open", "? help"],
@@ -222,9 +222,15 @@ describe("the footer says how to move (AC 6)", () => {
         width,
         height,
       );
-      const lines = chars(setup).split("\n").slice(0, height);
+      const frame = chars(setup);
+      const lines = frame.split("\n").slice(0, height);
       const footer = height >= 30 ? lines.slice(-2) : lines.slice(-1);
-      const missing = MUST[id as ViewId].filter((h) => !footer.join("\n").includes(h));
+      // At 80×24 the Overview's five cards leave no room for its chart (critique M1): its
+      // a/d and t go with it.
+      const chartless = id === "overview" && !frame.includes("ACTIVITY");
+      expect(chartless).toBe(id === "overview" && height === 24);
+      const must = MUST[id as ViewId].filter((h) => !(chartless && h.startsWith("a/d")));
+      const missing = must.filter((h) => !footer.join("\n").includes(h));
       expect({ width, id, missing }).toEqual({ width, id, missing: [] });
       if (height >= 30) {
         // Two lines: the view's keys, then the global ones.
@@ -242,5 +248,61 @@ describe("the footer says how to move (AC 6)", () => {
     const plain = controller([]);
     const other = await render(<Frame controller={plain.c} width={105} height={50} />, 105, 50);
     expect(chars(other).split("\n")[48]).not.toContain("esc");
+  });
+
+  test("no room for the Overview's chart: a/d and t do nothing, and no footer or help says them", async () => {
+    const { c } = controller([]);
+    const setup = await render(<Frame controller={c} width={80} height={24} />, 80, 24);
+    const footer = chars(setup).split("\n")[23] as string;
+    expect(footer).not.toContain("a/d");
+    expect(footer).not.toContain("cost/tokens");
+    expect(footer).toContain("w/s card");
+    const before = c.getState().viewState.overview;
+    await settle(setup, () => {
+      for (const k of ["d", "right", "a", "t"]) c.key(typed(k));
+    });
+    expect(c.getState().viewState.overview).toBe(before);
+    await settle(setup, () => c.key(typed("?")));
+    const help = chars(setup);
+    expect(help).toContain("OVERVIEW");
+    expect(help).not.toContain("activity window");
+    expect(help).not.toContain("Show cost or tokens");
+    // With room for the chart, the same keys work and show.
+    const roomy = controller([]);
+    const big = await render(<Frame controller={roomy.c} width={105} height={50} />, 105, 50);
+    expect(chars(big).split("\n")[48]).toContain("a/d window");
+    await settle(big, () => {
+      roomy.c.key(typed("d"));
+      roomy.c.key(typed("t"));
+    });
+    expect(roomy.c.getState().viewState.overview).toMatchObject({ window: "7d", tokens: true });
+  });
+
+  test("while History's filter has the keys, the footer shows only the filter's", async () => {
+    for (const [width, height] of [
+      [105, 50],
+      [80, 24],
+    ] as const) {
+      const { c } = controller(["2", "f", "o"]);
+      c.vmMessage({ type: "mcp", activity: { servers: 1, agents: 2, recent: [], latest: [] } });
+      const setup = await render(
+        <Frame controller={c} width={width} height={height} />,
+        width,
+        height,
+      );
+      const lines = chars(setup).split("\n");
+      const footer = (height >= 30 ? lines.slice(height - 2, height) : [lines[height - 1]]).join(
+        "\n",
+      );
+      expect(footer).toContain("enter apply   esc clear");
+      expect(footer).toContain("MCP ● 2 agents");
+      for (const global of ["? help", "1-4", "c account", "x settings", "q quit"]) {
+        expect({ width, global, shown: footer.includes(global) }).toEqual({
+          width,
+          global,
+          shown: false,
+        });
+      }
+    }
   });
 });

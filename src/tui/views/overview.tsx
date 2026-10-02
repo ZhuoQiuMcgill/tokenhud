@@ -23,7 +23,7 @@ import {
   truncate,
 } from "../format.ts";
 import { sectionLine, type Tab, tabsHeader } from "../frame.ts";
-import { type Keymap, moveKey } from "../keys.ts";
+import { GLOBAL_KEYS, type Keymap, moveKey } from "../keys.ts";
 import { cardsPerRow, splitWidth } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
 import type {
@@ -74,6 +74,8 @@ const SPEND_LABELS: Readonly<Record<SpendColumn, string>> = {
   all: "all-time",
 };
 const WINDOW_TABS: readonly Tab[] = ACTIVITY_WINDOWS.map((w) => ({ label: w }));
+/** The activity chart's section (and, wide, the top models beside it). */
+const ACTIVITY = "activity";
 const ticks = (texts: readonly string[]): XLabel[] =>
   texts.map((text, i) => ({ at: i / (texts.length - 1), text }));
 const X_LABELS: Readonly<Record<ActivityWindow, readonly XLabel[]>> = {
@@ -448,7 +450,7 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
       cards === null
         ? "reading limits…"
         : ctx.scope === null
-          ? "no enabled accounts: add one in settings (x)"
+          ? `no enabled accounts: add one in settings (${GLOBAL_KEYS.settings.show})`
           : "no limits for this account";
     const lines = [title, { left: [seg(`  ${text}`, "dim")] }];
     return {
@@ -702,20 +704,6 @@ function topColumns(costs: boolean, labels: readonly string[], rows: readonly To
   return columns;
 }
 
-/** The activity title of a still frame: the window named, and the peak flush right if it fits. */
-function stillHeader(
-  full: string,
-  short: string,
-  note: string | undefined,
-  beside: boolean,
-  width: number,
-): Line {
-  const fits = (title: string, withNote?: string) =>
-    textWidth(` ${title}`) + (withNote === undefined ? 0 : textWidth(withNote) + 2) <= width;
-  const titleNote = !beside && note !== undefined && fits(full, note) ? note : undefined;
-  return sectionLine(fits(full, titleNote) ? full : short, titleNote);
-}
-
 function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext): Section[] {
   const costs = ctx.showCost && !state.tokens;
   const series: ActivitySeries = vm.activity[state.window];
@@ -745,29 +733,19 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
   const note =
     peakValue > 0 ? `peak ${costs ? money(peakValue) : tokens(peakValue)} at ${at}` : undefined;
   // The title, then the window's tab strip flush right; narrow, the title gives way first.
-  // A still frame (`--once`) has no keys to switch tabs: its title names the window instead.
   const metric = `ACTIVITY · ${costs ? "cost" : "tokens"} per ${per(bucketMs / 60_000)}`;
-  const header =
-    ctx.still === true
-      ? stillHeader(
-          `${metric} · ${state.window}`,
-          `ACTIVITY · ${state.window}`,
-          note,
-          beside,
-          chartWidth,
-        )
-      : tabsHeader(
-          [
-            ...(beside || note === undefined
-              ? []
-              : [[seg(` ${metric}`, "head", true), seg(` · ${note}`, "dim")]]),
-            [seg(` ${metric}`, "head", true)],
-            [seg(" ACTIVITY", "head", true)],
-          ],
-          WINDOW_TABS,
-          ACTIVITY_WINDOWS.indexOf(state.window),
-          chartWidth,
-        );
+  const header = tabsHeader(
+    [
+      ...(beside || note === undefined
+        ? []
+        : [[seg(` ${metric}`, "head", true), seg(` · ${note}`, "dim")]]),
+      [seg(` ${metric}`, "head", true)],
+      [seg(" ACTIVITY", "head", true)],
+    ],
+    WINDOW_TABS,
+    ACTIVITY_WINDOWS.indexOf(state.window),
+    chartWidth,
+  );
   const topRows = Math.max(1, models.length);
   const chart = (height: number) => (
     <box flexDirection="column" width={chartWidth} height={height} flexShrink={0}>
@@ -818,7 +796,7 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
     );
   };
   const activity: Section = {
-    id: "activity",
+    id: ACTIVITY,
     priority: 3,
     height: 2 + CHART_ROWS,
     minHeight: beside ? Math.max(5, 1 + topRows) : 5,
@@ -956,6 +934,8 @@ const keymap: Keymap<OverviewState, OverviewVM | undefined> = [
   moveKey("tabs", {
     label: "window",
     does: `Switch the activity window: ${ACTIVITY_WINDOWS.join(" · ")}`,
+    // The chart's: with no room for it, there's nothing on screen to switch.
+    section: ACTIVITY,
     act: (state, _vm, key) => ({
       ...state,
       window: cycle(ACTIVITY_WINDOWS, state.window, key === "right" ? 1 : -1),
@@ -992,6 +972,7 @@ const keymap: Keymap<OverviewState, OverviewVM | undefined> = [
     show: "t",
     label: "cost/tokens",
     does: "Show cost or tokens in the activity chart and the top models",
+    section: ACTIVITY,
     act: (state) => ({ ...state, tokens: !state.tokens }),
   },
 ];

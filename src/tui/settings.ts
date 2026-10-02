@@ -354,7 +354,7 @@ export function unlinkRoot(config: Config, root: RootInfo): Config {
 const PAGE: KeyHelp = {
   keys: ["pageup", "pagedown", "home", "end"],
   show: "pgup/pgdn",
-  alias: "home/end",
+  aliases: ["home/end"],
   label: "page",
   does: "Move ten rows, or to the first or last",
   quiet: true,
@@ -378,7 +378,7 @@ const MAIN = {
   close: {
     keys: ["escape", "x", "q"],
     show: "esc",
-    alias: "x",
+    aliases: ["x", "q"],
     label: "close",
     does: "Back to the view",
   },
@@ -388,7 +388,13 @@ const MAIN = {
 const PICK = {
   move: { ...MOVE_KEYS.select, label: "move", does: "Move" },
   pick: { ...MOVE_KEYS.open, label: "select", does: "Pick the value" },
-  back: { keys: ["escape", "q"], show: "esc", label: "back", does: "Back to the list" },
+  back: {
+    keys: ["escape", "q"],
+    show: "esc",
+    aliases: ["q"],
+    label: "back",
+    does: "Back to the list",
+  },
   page: PAGE,
 } as const satisfies Record<string, KeyHelp>;
 
@@ -404,7 +410,13 @@ const ZONE = {
 const ACCOUNTS = {
   move: { ...MOVE_KEYS.select, label: "move", does: "Select a root" },
   open: { ...MOVE_KEYS.open, label: "actions", does: "Open the root's action menu" },
-  back: { keys: ["escape", "q"], show: "esc", label: "back", does: "Back to the list" },
+  back: {
+    keys: ["escape", "q"],
+    show: "esc",
+    aliases: ["q"],
+    label: "back",
+    does: "Back to the list",
+  },
   page: PAGE,
 } as const satisfies Record<string, KeyHelp>;
 

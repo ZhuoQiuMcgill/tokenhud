@@ -5,7 +5,7 @@
 
 import { type Config, WINDOW_CHOICES } from "../config.ts";
 import type { McpActivity } from "../mcp/heartbeat.ts";
-import { entryFor, GLOBAL_KEYS, type Key, keyName, typedName } from "./keys.ts";
+import { entryFor, GLOBAL_KEYS, HELP_KEYS, type Key, keyName, typedName } from "./keys.ts";
 import {
   type MenuAction,
   type MenuState,
@@ -151,6 +151,8 @@ export class Controller {
   #accountsEdited = false;
   /** Settings opened on a rename or a link from a view: finishing it goes back to the view. */
   #editFromView = false;
+  /** The sections the last frame drew of a view (`drawn`); unknown before one is drawn. */
+  #drawn: { readonly view: ViewId; readonly ids: ReadonlySet<string> } | null = null;
   /** performance.now() of the last view-switch key, until its frame is drawn. */
   switchStartedAt: number | null = null;
   readonly zones: readonly string[];
@@ -245,9 +247,7 @@ export class Controller {
     } else if (s.overlay === "settings") {
       this.#settingsKey(name);
     } else if (s.overlay === "help") {
-      if (name === "escape" || name === "?" || name === "q" || name === "return") {
-        this.#set({ overlay: "none" });
-      }
+      if (entryFor(Object.values(HELP_KEYS), name) !== undefined) this.#set({ overlay: "none" });
     } else if (this.#capturing()) {
       this.#viewKey(name);
     } else {
@@ -286,6 +286,14 @@ export class Controller {
     }
   }
 
+  /**
+   * The renderer's report of the sections a frame drew of `view`: a key whose section is
+   * left out does nothing (`KeyEntry.section`). Not state: it changes nothing on screen.
+   */
+  drawn(view: ViewId, ids: ReadonlySet<string>): void {
+    this.#drawn = { view, ids };
+  }
+
   #switchTo(view: ViewId): void {
     if (view === this.#state.view) return;
     this.switchStartedAt = performance.now();
@@ -298,7 +306,8 @@ export class Controller {
    */
   #viewKey(name: string): void {
     const s = this.#state;
-    const answer = viewKey(VIEWS[s.view], name, s.viewState[s.view], s.views[s.view]);
+    const drawn = this.#drawn?.view === s.view ? this.#drawn.ids : undefined;
+    const answer = viewKey(VIEWS[s.view], name, s.viewState[s.view], s.views[s.view], drawn);
     if (answer === undefined) return;
     const { state, command } = viewAnswer(answer);
     this.#set({ viewState: { ...s.viewState, [s.view]: state } });

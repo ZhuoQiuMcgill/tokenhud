@@ -7,7 +7,7 @@ import type { Column } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
 import { clip, percent, textWidth, tokens } from "../format.ts";
 import { type Tab, tabsHeader } from "../frame.ts";
-import { type Keymap, moveKey } from "../keys.ts";
+import { type Keymap, MOVE_KEYS, moveKey } from "../keys.ts";
 import { splitWidth } from "../layout.ts";
 import type { Role } from "../theme.ts";
 import type { ModelRow, ModelSort, ModelsVM, PriceChange } from "../vm/models.ts";
@@ -369,7 +369,12 @@ function tableSection(
   const title = titleLine(vm, state, ctx);
   if (n === 0) {
     const empty: Line = {
-      left: [seg(`  no usage in ${WINDOW_LABELS[vm.window]} · a/d changes the window`, "dim")],
+      left: [
+        seg(
+          `  no usage in ${WINDOW_LABELS[vm.window]} · ${MOVE_KEYS.tabs.show} changes the window`,
+          "dim",
+        ),
+      ],
     };
     return {
       id: "models",

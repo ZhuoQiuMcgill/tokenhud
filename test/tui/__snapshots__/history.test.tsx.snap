@@ -4,7 +4,7 @@ exports[`limit events on the card 120×24: the card never pushes the heat map of
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ◀ a  this week   this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Dec 3 · today ───────────────────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $2.42   1.1× your 30-day avg                     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.6M  in 95K · out 43K · cache 1.5M              │
@@ -32,7 +32,7 @@ exports[`limit events on the card 105×24: the card never pushes the heat map of
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- ◀ a  this week   this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Dec 3 · today ────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $2.42   1.1× your 30-day avg      │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.6M                              │
@@ -60,7 +60,7 @@ exports[`limit events on the card 80×24: the card never pushes the heat map off
 " tokenhud   1   2 History   3   4                  all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶              f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶              f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more                       
      Jun   Jul     Aug       Sep     Oct     Nov       Dec                      
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
@@ -88,7 +88,7 @@ exports[`105×50 History 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- ◀ a  this week   this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Dec 3 · today ────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $2.42   1.1× your 30-day avg      │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.6M                              │
@@ -142,7 +142,7 @@ exports[`105×50 History, the weeks tab, last week selected 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- ◀ a  this week   this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
+ ◀ a  this week   this month   days  [weeks]  months  d ▶             * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Nov 26 ───────────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $1.34*   0.6× your 30-day avg     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.4M                              │
@@ -196,7 +196,7 @@ exports[`120×45 History 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ◀ a  this week   this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Dec 3 · today ───────────────────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $2.42   1.1× your 30-day avg                     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.6M  in 95K · out 43K · cache 1.5M              │
@@ -245,7 +245,7 @@ exports[`120×45 History, the weeks tab, last week selected 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ◀ a  this week   this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
+ ◀ a  this week   this month   days  [weeks]  months  d ▶                            * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Nov 26 ──────────────────────────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $1.34*   0.6× your 30-day avg                    │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.4M  in 75K · out 30K · cache 1.3M              │
@@ -294,7 +294,7 @@ exports[`80×24 History 1`] = `
 " tokenhud   1   2 History   3   4                  all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶              f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶              f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more                       
      Jun   Jul     Aug       Sep     Oct     Nov       Dec                      
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
@@ -322,7 +322,7 @@ exports[`80×24 History, the weeks tab, last week selected 1`] = `
 " tokenhud   1   2 History   3   4                  all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶              f filter 
+ ◀ a  this week   this month   days  [weeks]  months  d ▶              f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more                       
      Jun   Jul     Aug       Sep     Oct     Nov       Dec                      
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
@@ -350,7 +350,7 @@ exports[`160×50 History 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶                                                                    * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶                                                                    * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Dec 3 · today ──────────────────────────────────────────────────────────╮                     
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $2.42   1.1× your 30-day avg                                        │                     
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.6M  in 95K · out 43K · cache 1.5M                                 │                     
@@ -404,7 +404,7 @@ exports[`160×50 History, the weeks tab, last week selected 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶                                                                    * not all tokens priced · f filter 
+ ◀ a  this week   this month   days  [weeks]  months  d ▶                                                                    * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Thu Nov 26 ─────────────────────────────────────────────────────────────────╮                     
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ cost     $1.34*   0.6× your 30-day avg                                       │                     
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   1.4M  in 75K · out 30K · cache 1.3M                                 │                     
@@ -458,7 +458,7 @@ exports[`with costs hidden, tokens take their place: heat map, ratios, card and 
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ◀ a  this week   this month   days   weeks   months  d ▶                                                      f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶                                                      f filter 
  LAST 26 WEEKS · daily tokens         less ■ ■ ■ ■ ■ more  ╭─ Thu Dec 3 · today ───────────────────────────────────────╮
      Jun   Jul     Aug       Sep     Oct     Nov       Dec │ tokens   1.6M   0.7× your 30-day avg                      │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │          in 95K · out 43K · cache 1.5M                    │
@@ -507,7 +507,7 @@ exports[`colours at 120×45, by role: the strip, the highlighted week, the selec
 "[head/bg/b] tokenhud [-/bg] [dim/bg] 1 [mute/bg]Overview [-/bg] [head/tab/b] 2 History [-/bg] [dim/bg] 3 [mute/bg]Models [-/bg] [dim/bg] 4 [mute/bg]Accounts [-/bg] [-/bg]                         [dim/bg]scope [fg/bg]all accounts ▾[live/bg]   ● [dim/bg]live · 5s 
 [border/bg]────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 [-/bg]                                                                                                                        
-[-/bg] [dim/bg]◀ a [mute/bg] this week [-/bg] [mute/bg] this month [-/bg] [mute/bg] days [-/bg] [head/tab/b] weeks [-/bg] [mute/bg] months [dim/bg] d ▶[-/bg]                            [dim/bg]* not all tokens priced · [head/bg/b]f [dim/bg]filter 
+[-/bg] [dim/bg]◀ a [mute/bg] this week [-/bg] [mute/bg] this month [-/bg] [mute/bg] days [-/bg] [head/tab/b][weeks][-/bg] [mute/bg] months [dim/bg] d ▶[-/bg]                            [dim/bg]* not all tokens priced · [head/bg/b]f [dim/bg]filter 
 [head/bg/b] LAST 26 WEEKS · daily cost[-/bg]           [dim/bg]less [heat0/bg]■ [heat1/bg]■ [heat2/bg]■ [heat3/bg]■ [tokens|heat4/bg]■ [dim/bg]more [-/bg] [border/bg]╭─ [head/bg/b]Thu Nov 26[border/bg] ──────────────────────────────────────────────╮
 [-/bg]     [dim/bg]Jun[-/bg]   [dim/bg]Jul[-/bg]     [dim/bg]Aug[-/bg]       [dim/bg]Sep[-/bg]     [dim/bg]Oct[-/bg]     [dim/bg]Nov[-/bg]       [dim/bg]Dec[-/bg] [border/bg]│[-/bg] [mute/bg]cost     [cost|mid/bg/b]$1.34*[dim/bg]   0.6× your 30-day avg[-/bg]                    [border/bg]│
 [dim/bg] Mon[-/bg] [heat1/bg]■[-/bg] [heat2/bg]■[-/bg] [heat2/bg]■[-/bg] [heat1/bg]■[-/bg] [heat2/bg]■[-/bg] [heat2/bg]■[-/bg] [heat2/bg]■[-/bg] [heat3/bg]■[-/bg] [heat3/bg]■[-/bg] [heat3/bg]■[-/bg] [heat2/bg]■[-/bg] [heat1/bg]■[-/bg] [heat1/bg]■[-/bg] [heat1/bg]■[-/bg] [heat2/bg]■[-/bg] [heat2/bg]■[-/bg] [heat2/bg]■[-/bg] [heat3/bg]■[-/bg] [heat3/bg]■[-/bg] [heat3/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [tokens|heat4/bg]■[-/bg] [heat2/bg]■[-/bg] [heat0/bg]■[-/bg] [head/bg/b]■[-/bg] [heat1/bg]■[-/bg]   [border/bg]│[-/bg] [mute/bg]tokens   [tokens|heat4/bg]1.4M[dim/bg]  in 75K · out 30K · cache 1.3M[-/bg]              [border/bg]│

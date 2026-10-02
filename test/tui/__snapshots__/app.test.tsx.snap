@@ -26,7 +26,7 @@ exports[`105×50 view 1 (overview) 1`] = `
   cost         $8.47*      $14.64*     $164.52*     $342.29*                                             
   tokens         7.5M        13.1M       147.6M       315.5M                                             
                                                                                                          
- ACTIVITY · cost per 15 min · peak $1.47 at Mon 21:30                            ◀ a  5h   24h   7d  d ▶ 
+ ACTIVITY · cost per 15 min · peak $1.47 at Mon 21:30                            ◀ a  5h  [24h]  7d  d ▶ 
  $1.47                                        █                                             ▃ ▃ ▃ ▃      
                                               █                                             █ █ █ █      
                                               █                             ▂               █ █ █ █      
@@ -58,7 +58,7 @@ exports[`105×50 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- ◀ a  this week   this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶             * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ───────────────────────╮
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg     │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M                              │
@@ -112,7 +112,7 @@ exports[`105×50 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- MODELS · by cost                         ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
+ MODELS · by cost                         ◀ a  today   this week   this month  [all]  1h   5h   24h  d ▶ 
  model                  provider  input    $/M  output    $/M   cache   $/M      cost  share             
  gpt-5.5                codex      2.5M   5.00    1.6M  30.00   63.9M  0.50   $117.29  ━━━━━━━━━━  34.3% 
  gpt-5.6-sol            codex      2.8M   4.00    1.8M  20.00   72.0M  0.40   $108.18  ━━━━━━━━━━  31.6% 
@@ -237,7 +237,7 @@ exports[`120×45 view 1 (overview) 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                  
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                  
                                                                                                                         
- ACTIVITY · cost per 20 min                             ◀ a  5h   24h   7d  d ▶    TOP MODELS · 24h                     
+ ACTIVITY · cost per 20 min                             ◀ a  5h  [24h]  7d  d ▶    TOP MODELS · 24h                     
  $1.53                              █                                  ▁▁ ▁▁       Opus 4.8            $7.66  76% ━━━━━━
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
@@ -269,7 +269,7 @@ exports[`120×45 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- ◀ a  this week   this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶                            * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ──────────────────────────────────────╮
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                    │
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M            │
@@ -318,7 +318,7 @@ exports[`120×45 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- MODELS · by cost                                        ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
+ MODELS · by cost                                        ◀ a  today   this week   this month  [all]  1h   5h   24h  d ▶ 
  model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                   
  gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.29   ━━━━━━━━━━   34.3%      
  gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   31.6%      
@@ -436,7 +436,7 @@ exports[`80×24 view 1 (overview) 1`] = `
   tokens         7.5M        13.1M       147.6M       315.5M                    
                                                                                 
 ────────────────────────────────────────────────────────────────────────────────
- a/d window   w/s card   enter open   t cost/tokens   ? help     MCP ● 2 agents 
+ w/s card   enter open   1-4/tab views   c account   ? help      MCP ● 2 agents 
 "
 `;
 
@@ -444,7 +444,7 @@ exports[`80×24 view 2 (history) 1`] = `
 " tokenhud   1   2 History   3   4                  all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶              f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶              f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more                       
      Apr   May       Jun     Jul     Aug       Sep     Oct                      
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                        
@@ -472,7 +472,7 @@ exports[`80×24 view 3 (models) 1`] = `
 " tokenhud   1   2   3 Models   4                   all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────
                                                                                 
- MODELS · by cost          ◀ a  today   week   month   all   1h   5h   24h  d ▶ 
+ MODELS · by cost          ◀ a  today   week   month  [all]  1h   5h   24h  d ▶ 
  model             provider  input  output   cache      cost  share             
  gpt-5.5           codex      2.5M    1.6M   63.9M   $117.29  ━━━━━━━━━━  34.3% 
  gpt-5.6-sol       codex      2.8M    1.8M   72.0M   $108.18  ━━━━━━━━━━  31.6% 
@@ -545,7 +545,7 @@ exports[`160×50 view 1 (overview) 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                                                          
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                                                          
                                                                                                                                                                 
- ACTIVITY · cost per 15 min                                                    ◀ a  5h   24h   7d  d ▶    TOP MODELS · 24h                                      
+ ACTIVITY · cost per 15 min                                                    ◀ a  5h  [24h]  7d  d ▶    TOP MODELS · 24h                                      
  $1.47                                        █                                             ▃ ▃ ▃ ▃       Opus 4.8                    $7.66  76% ━━━━━━         
                                               █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
                                               █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
@@ -582,7 +582,7 @@ exports[`160×50 view 2 (history) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- ◀ a  this week   this month   days   weeks   months  d ▶                                                                    * not all tokens priced · f filter 
+ ◀ a [this week]  this month   days   weeks   months  d ▶                                                                    * not all tokens priced · f filter 
  LAST 26 WEEKS · daily cost           less ■ ■ ■ ■ ■ more  ╭─ Tue Sep 29 · today ─────────────────────────────────────────────────────────╮                     
      Apr   May       Jun     Jul     Aug       Sep     Oct │ cost     $8.47*   1.6× your 30-day avg                                       │                     
  Mon ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■   │ tokens   7.5M  in 180K · out 194K · cache 7.1M                               │                     
@@ -636,7 +636,7 @@ exports[`160×50 view 3 (models) 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                                                                   scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                                                                 
- MODELS · by cost                                                                                ◀ a  today   this week   this month   all   1h   5h   24h  d ▶ 
+ MODELS · by cost                                                                                ◀ a  today   this week   this month  [all]  1h   5h   24h  d ▶ 
  model                   provider   input     $/M   output     $/M    cache    $/M       cost   share                                                           
  gpt-5.5                 codex       2.5M    5.00     1.6M   30.00    63.9M   0.50    $117.29   ━━━━━━━━━━   34.3%                                              
  gpt-5.6-sol             codex       2.8M    4.00     1.8M   20.00    72.0M   0.40    $108.18   ━━━━━━━━━━   31.6%                                              
@@ -760,7 +760,7 @@ exports[`narrow 50×20 view 1 (overview): every number whole 1`] = `
                                                   
                                                   
 ──────────────────────────────────────────────────
- a/d window   w/s card   ? help    MCP ● 2 agents 
+ w/s card   enter open   ? help    MCP ● 2 agents 
 "
 `;
 
@@ -768,7 +768,7 @@ exports[`narrow 50×20 view 2 (history): every number whole 1`] = `
 " tokenhud   1   2 History   3   4          ● live 
 ──────────────────────────────────────────────────
                                                   
- ◀ a  this wk   this mo   days   wks  … d ▶       
+ ◀ a [this wk]  this mo   days   wks  … d ▶       
  date              cost vs 30-day avg             
  Tue Sep 29      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×  
  Mon Sep 28      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×  
@@ -792,7 +792,7 @@ exports[`narrow 50×20 view 3 (models): every number whole 1`] = `
 " tokenhud   1   2   3 Models   4           ● live 
 ──────────────────────────────────────────────────
                                                   
- MODELS       ◀ a …  month   all   1h   5h  … d ▶ 
+ MODELS       ◀ a …  month  [all]  1h   5h  … d ▶ 
  model             input  output      cost        
  gpt-5.5            2.5M    1.6M   $117.29  34.3% 
  gpt-5.6-sol        2.8M    1.8M   $108.18  31.6% 
@@ -856,7 +856,7 @@ exports[`narrow 60×20 view 1 (overview): every number whole 1`] = `
                                                             
                                                             
 ────────────────────────────────────────────────────────────
- a/d window   w/s card   ? help              MCP ● 2 agents 
+ w/s card   enter open   ? help              MCP ● 2 agents 
 "
 `;
 
@@ -864,7 +864,7 @@ exports[`narrow 60×20 view 2 (history): every number whole 1`] = `
 " tokenhud   1   2 History   3   4   all accounts ▾   ● live 
 ────────────────────────────────────────────────────────────
                                                             
- ◀ a  this wk   this mo   days   wks   mos  d ▶    f filter 
+ ◀ a [this wk]  this mo   days   wks   mos  d ▶    f filter 
  date         input        cost vs 30-day avg               
  Tue Sep 29    180K      $8.47* ━━━━━━━━━━━━━━━━━━  1.6×    
  Mon Sep 28    219K      $6.17* ━━━━━━━━━━━━━━━━━━  1.1×    
@@ -888,7 +888,7 @@ exports[`narrow 60×20 view 3 (models): every number whole 1`] = `
 " tokenhud   1   2   3 Models   4    all accounts ▾   ● live 
 ────────────────────────────────────────────────────────────
                                                             
- MODELS      ◀ a …  week   month   all   1h   5h   24h  d ▶ 
+ MODELS      ◀ a …  week   month  [all]  1h   5h   24h  d ▶ 
  model               input  output   cache      cost        
  gpt-5.5              2.5M    1.6M   63.9M   $117.29  34.3% 
  gpt-5.6-sol          2.8M    1.8M   72.0M   $108.18  31.6% 
@@ -953,7 +953,7 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [mute/bg]  cost  [cost|mid/bg/b]        $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*[-/bg]                                  
 [mute/bg]  tokens[tokens|heat4/bg]         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M[-/bg]                                  
 [-/bg]                                                                                                                        
-[head/bg/b] ACTIVITY · cost per 20 min[-/bg]                             [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b] 24h [-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] [-/bg]  [head/bg/b] TOP MODELS · 24h[-/bg]                     
+[head/bg/b] ACTIVITY · cost per 20 min[-/bg]                             [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b][24h][-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] [-/bg]  [head/bg/b] TOP MODELS · 24h[-/bg]                     
 [-/bg] [dim/bg]$1.53[-/bg] [cost|mid/bg]                             █                                  ▁▁ ▁▁   [-/bg]    [fg/bg]Opus 4.8       [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[empty/bg]━
 [-/bg]       [cost|mid/bg]                             █                                  ██ ██   [-/bg]    [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
 [-/bg]       [cost|mid/bg]                             █                               ▃  ██ ██   [-/bg]    [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
@@ -1006,7 +1006,7 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [mute/bg]  cost  [cost|mid/bg/b]       $8.47*      $14.64*     $164.52*     $342.29*[-/bg]                                             
 [mute/bg]  tokens[tokens/bg]         7.5M        13.1M       147.6M       315.5M[-/bg]                                             
 [-/bg]                                                                                                         
-[head/bg/b] ACTIVITY · cost per 15 min[dim/bg] · peak $1.47 at Mon 21:30[-/bg]                            [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b] 24h [-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] 
+[head/bg/b] ACTIVITY · cost per 15 min[dim/bg] · peak $1.47 at Mon 21:30[-/bg]                            [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b][24h][-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] 
 [-/bg] [dim/bg]$1.47[-/bg] [cost|mid/bg]                                       █                                             ▃ ▃ ▃ ▃    [-/bg]  
 [-/bg]       [cost|mid/bg]                                       █                                             █ █ █ █    [-/bg]  
 [-/bg]       [cost|mid/bg]                                       █                             ▂               █ █ █ █    [-/bg]  

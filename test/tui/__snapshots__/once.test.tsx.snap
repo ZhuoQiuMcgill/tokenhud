@@ -26,7 +26,7 @@ exports[`at width 105 plain text matches the snapshot 1`] = `
   cost         $8.47*      $14.64*     $164.52*     $342.29*
   tokens         7.5M        13.1M       147.6M       315.5M
 
- ACTIVITY · cost per 15 min · 24h                                                peak $1.47 at Mon 21:30
+ ACTIVITY · cost per 15 min · peak $1.47 at Mon 21:30                            ◀ a  5h  [24h]  7d  d ▶
  $1.47                                        █                                             ▃ ▃ ▃ ▃
                                               █                                             █ █ █ █
                                               █                             ▂               █ █ █ █
@@ -76,7 +76,7 @@ exports[`at width 105 ANSI colours match the snapshot and carry the same charact
 \x1B[0m\x1B[38;2;139;150;164m  cost  \x1B[0m\x1B[1m\x1B[38;2;232;163;61m       $8.47*      $14.64*     $164.52*     $342.29*\x1B[0m
 \x1B[0m\x1B[38;2;139;150;164m  tokens\x1B[0m\x1B[38;2;108;182;255m         7.5M        13.1M       147.6M       315.5M\x1B[0m
 
-\x1B[0m\x1B[1m\x1B[38;2;238;242;246m ACTIVITY · cost per 15 min · 24h                                                \x1B[0m\x1B[38;2;95;106;119mpeak $1.47 at Mon 21:30\x1B[0m
+\x1B[0m\x1B[1m\x1B[38;2;238;242;246m ACTIVITY · cost per 15 min\x1B[0m\x1B[38;2;95;106;119m · peak $1.47 at Mon 21:30                            \x1B[0m\x1B[38;2;95;106;119m◀ a \x1B[0m\x1B[38;2;139;150;164m 5h  \x1B[0m\x1B[1m\x1B[38;2;238;242;246m\x1B[48;2;39;52;71m[24h] \x1B[0m\x1B[38;2;139;150;164m 7d \x1B[0m\x1B[38;2;95;106;119m d ▶\x1B[0m
  \x1B[0m\x1B[38;2;95;106;119m$1.47 \x1B[0m\x1B[38;2;232;163;61m                                       █                                             ▃ ▃ ▃ ▃\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                                       █                                             █ █ █ █\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                                       █                             ▂               █ █ █ █\x1B[0m
@@ -121,7 +121,7 @@ exports[`at width 120 plain text matches the snapshot 1`] = `
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M
 
- ACTIVITY · cost per 20 min · 24h                                                  TOP MODELS · 24h
+ ACTIVITY · cost per 20 min                             ◀ a  5h  [24h]  7d  d ▶    TOP MODELS · 24h
  $1.53                              █                                  ▁▁ ▁▁       Opus 4.8            $7.66  76% ━━━━━
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━
@@ -160,7 +160,7 @@ exports[`at width 120 ANSI colours match the snapshot and carry the same charact
 \x1B[0m\x1B[38;2;139;150;164m  cost  \x1B[0m\x1B[1m\x1B[38;2;232;163;61m        $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*\x1B[0m
 \x1B[0m\x1B[38;2;139;150;164m  tokens\x1B[0m\x1B[38;2;108;182;255m         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M\x1B[0m
 
-\x1B[0m\x1B[1m\x1B[38;2;238;242;246m ACTIVITY · cost per 20 min · 24h                                                 \x1B[0m\x1B[1m\x1B[38;2;238;242;246m TOP MODELS · 24h\x1B[0m
+\x1B[0m\x1B[1m\x1B[38;2;238;242;246m ACTIVITY · cost per 20 min                             \x1B[0m\x1B[38;2;95;106;119m◀ a \x1B[0m\x1B[38;2;139;150;164m 5h  \x1B[0m\x1B[1m\x1B[38;2;238;242;246m\x1B[48;2;39;52;71m[24h] \x1B[0m\x1B[38;2;139;150;164m 7d \x1B[0m\x1B[38;2;95;106;119m d ▶   \x1B[0m\x1B[1m\x1B[38;2;238;242;246m TOP MODELS · 24h\x1B[0m
  \x1B[0m\x1B[38;2;95;106;119m$1.53 \x1B[0m\x1B[38;2;232;163;61m                             █                                  ▁▁ ▁▁       \x1B[0m\x1B[38;2;200;208;217mOpus 4.8        \x1B[0m\x1B[38;2;232;163;61m    $7.66 \x1B[0m\x1B[38;2;139;150;164m 76% \x1B[0m\x1B[38;2;232;163;61m━━━━━\x1B[0m\x1B[38;2;44;53;66m━\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                             █                                  ██ ██       \x1B[0m\x1B[38;2;200;208;217mgpt-5.6-sol     \x1B[0m\x1B[38;2;232;163;61m    $1.42 \x1B[0m\x1B[38;2;139;150;164m 14% \x1B[0m\x1B[38;2;232;163;61m━\x1B[0m\x1B[38;2;44;53;66m━━━━━\x1B[0m
        \x1B[0m\x1B[38;2;232;163;61m                             █                               ▃  ██ ██       \x1B[0m\x1B[38;2;200;208;217mgpt-5.5         \x1B[0m\x1B[38;2;232;163;61m    $1.01 \x1B[0m\x1B[38;2;139;150;164m 10% \x1B[0m\x1B[38;2;232;163;61m━\x1B[0m\x1B[38;2;44;53;66m━━━━━\x1B[0m

@@ -187,17 +187,17 @@ describe("keys", () => {
         roles(setup.captureSpans(), theme("dark"))
           .split("\n")
           .find((l) => l.includes("ACTIVITY")) ?? ""
-      ).match(/\[head\/tab\/b\]([^[]*)/)?.[1];
+      ).match(/\[head\/tab\/b\](\[[^\]]*\])/)?.[1];
     expect(title()).toContain("cost per 15 min");
-    expect(title()).toContain("◀ a  5h   24h   7d  d ▶");
-    expect(active()).toBe(" 24h ");
+    expect(title()).toContain("◀ a  5h  [24h]  7d  d ▶");
+    expect(active()).toBe("[24h]");
     await settle(setup, () => c.key(key("d")));
     expect(title()).toContain("cost per 2 h");
-    expect(active()).toBe(" 7d ");
+    expect(active()).toBe("[7d]");
     expect(chars(setup)).toContain("-7d");
     await settle(setup, () => c.key(key("right")));
     expect(title()).toContain("cost per 4 min");
-    expect(active()).toBe(" 5h ");
+    expect(active()).toBe("[5h]");
     await settle(setup, () => c.key(key("a")));
     expect(state(c).window).toBe("7d");
     await settle(setup, () => c.key(key("t")));

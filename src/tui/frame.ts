@@ -131,9 +131,10 @@ export interface Tab {
 }
 
 /**
- * A tab strip's forms, widest first (T17): `◀ a  this week  this month  days  d ▶`, the
- * active tab highlighted, so `a`/`d` show what they switch; `crumb` follows the active
- * tab's label (`weeks › 09-28`). `whole` show every tab: with its label, then its short
+ * A tab strip's forms, widest first (T17): `◀ a [this week] this month  days  d ▶`, so
+ * `a`/`d` show what they switch. The active tab is marked in text (`[…]`) as well as in
+ * colour, so a plain or piped frame, and a reader who can't tell the colours apart, see
+ * it; `crumb` follows its label (`weeks › 09-28`). `whole` show every tab: with its label, then its short
  * label. `cut` show fewer tabs around the active one (a dim `…` where some are hidden), then
  * the active one alone without the keys: the active tab always shows.
  */
@@ -152,7 +153,7 @@ export function tabStrips(
       if (k > 0) out.push(seg(" ", "fg"));
       out.push(
         first + k === active
-          ? seg(` ${label}${after} `, "head", true, "tab")
+          ? seg(`[${label}${after}]`, "head", true, "tab")
           : seg(` ${label} `, "mute"),
       );
     });

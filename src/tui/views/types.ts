@@ -17,8 +17,6 @@ export interface ViewContext {
   readonly tz: string;
   /** The scoped account's id, or null. */
   readonly scope: number | null;
-  /** A frame no key reaches (`--once`): no tab strips, whose keys couldn't switch them. */
-  readonly still?: boolean;
 }
 
 /** A block of the view: its size (for the layout system) and how to draw it at a height. */
@@ -85,7 +83,8 @@ export function viewAnswer<S>(answer: S): { state: S; command: ViewCommand | nul
  *    keys (keys.ts `GLOBAL_KEYS`): 1–4 and tab/shift-tab switch views, `c` the account
  *    scope, `x` settings, `?` help, `q` quit.
  * 4. Every other key goes to the view's `keymap`, and only there: a key it doesn't list
- *    does nothing, and a view may not list `RESERVED` keys. A view acts through the state
+ *    does nothing, nor does one whose `section` the layout left out (the shell hears what
+ *    was drawn, `Controller.drawn`), and a view may not list `RESERVED` keys. A view acts through the state
  *    its entry returns; for what the shell owns (the scope, config, the settings screen,
  *    another view, the action menu), that state carries a command (`withCommand`). Views
  *    have no other key hook: `select` only answers another view's `open`.
@@ -115,13 +114,15 @@ export function activeKeymap<VM, S>(view: View<VM, S>, state: S): Keymap<S, VM |
 
 /**
  * A view's answer to a key the shell passed on: its new state (which may carry a command,
- * `withCommand`), or undefined when its keymap doesn't list the key or it changes nothing.
+ * `withCommand`), or undefined when its keymap doesn't list the key, the key's section
+ * isn't among the `drawn` ones (when the layout is known), or it changes nothing.
  */
 export function viewKey<VM, S>(
   view: View<VM, S>,
   key: string,
   state: S,
   vm: VM | undefined,
+  drawn?: ReadonlySet<string>,
 ): S | undefined {
-  return dispatch(activeKeymap(view, state), key, state, vm);
+  return dispatch(activeKeymap(view, state), key, state, vm, drawn);
 }

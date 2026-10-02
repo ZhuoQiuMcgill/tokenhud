@@ -161,6 +161,12 @@ mark it history only or not.
 | `enter` | Run it |
 | `esc` | Close the menu |
 
+### Help
+
+| Key | Does |
+|---|---|
+| `esc`, `?`, `enter` or `q` | Close the help |
+
 ### Settings
 
 | Key | Does |
@@ -169,7 +175,7 @@ mark it history only or not.
 | `a/d` or `←/→` | Step the selected setting's value in place |
 | `pgup/pgdn`, `home/end` | Move ten rows, or to the first or last |
 | `enter` | Open the selected setting's list, pick a value, or open an account's action menu |
-| `esc` or `x` | Back; from the main list, back to the view |
+| `esc`, `x` or `q` | Back; from the main list, back to the view (`x` only there) |
 | `backspace` | Delete the last character of a filter or label |
 
 Settings are the refresh interval, the default spend window, whether to show cost, the

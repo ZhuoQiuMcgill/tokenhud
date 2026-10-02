@@ -13,7 +13,7 @@ import type { Column, MonthLabel } from "../components/index.ts";
 import { Lines, Table } from "../elements.tsx";
 import { clock, countdown, dayLabel, monthName, textWidth, tokens, truncate } from "../format.ts";
 import { sectionLine, type Tab, tabStrips } from "../frame.ts";
-import { type Keymap, moveKey, TEXT } from "../keys.ts";
+import { hintText, type KeyEntry, MOVE_KEYS, moveKey, TEXT } from "../keys.ts";
 import { HEAT_ROLES, type Role } from "../theme.ts";
 import type {
   HistoryDay,
@@ -521,8 +521,8 @@ function cardLines(
     const count = limitCount(day);
     const hitsOnly = limitCount(day, false);
     const shapes = [
-      `${count} · enter lists them`,
-      `${hitsOnly} · enter lists them`,
+      `${count} · ${KEYS.open.show} lists them`,
+      `${hitsOnly} · ${KEYS.open.show} lists them`,
       count,
       hitsOnly,
     ];
@@ -587,7 +587,7 @@ function summaryLine(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Line
     ratio === null ? [] : [seg(`  ${ratioText(ratio)} avg`, "dim")],
     [seg(`  ${tokens(day.tokens)} tokens`, "tokens")],
     limits === "" ? [] : [seg(`  ${limits}`, "high")],
-    limits === "" ? [] : [seg("  enter lists them", "dim")],
+    limits === "" ? [] : [seg(`  ${KEYS.open.show} lists them`, "dim")],
     [seg(`  ${ranked(day.models, ctx.showCost)[0]?.name ?? "—"}`, "fg")],
   ];
   // Least important last: the top model goes first, then tokens, the hint and the ratio.
@@ -696,7 +696,7 @@ function cardSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Sect
 function eventsSection(vm: HistoryVM, state: HistoryState, ctx: ViewContext): Section {
   const day = selectedDay(vm, state);
   const lines: Line[] = [
-    sectionLine(`LIMIT EVENTS · ${cardTitle(vm, day, state)}`, "esc back"),
+    sectionLine(`LIMIT EVENTS · ${cardTitle(vm, day, state)}`, hintText([KEYS.back])),
     ...byImportance(day.events).flatMap((e) =>
       eventLines(e, ctx.tz, ctx.width - 4).map(
         (segs): Line => ({ left: [seg("   ", "fg"), ...segs] }),
@@ -817,7 +817,7 @@ function stripLine(state: HistoryState, list: Listing, ctx: ViewContext): Line {
   if (state.typing) {
     return {
       left: [seg(" filter: ", "dim"), seg(`${state.filter}▏`, "head", true)],
-      right: [seg("a model's id · enter apply · esc clear ", "dim")],
+      right: [seg(`${FIELD.type.label} · ${hintText(Object.values(FIELD))} `, "dim")],
     };
   }
   const crumb =
@@ -833,8 +833,12 @@ function stripLine(state: HistoryState, list: Listing, ctx: ViewContext): Line {
   );
   const filter =
     state.filter === ""
-      ? [seg("f ", "head", true), seg("filter ", "dim")]
-      : [seg("filter: ", "dim"), seg(state.filter, "head", true), seg(" · esc clear ", "dim")];
+      ? [seg(`${KEYS.filter.show} `, "head", true), seg(`${KEYS.filter.label} `, "dim")]
+      : [
+          seg("filter: ", "dim"),
+          seg(state.filter, "head", true),
+          seg(` · ${KEYS.back.show} clear `, "dim"),
+        ];
   const note = ctx.showCost ? costNote(list.rows) : null;
   const rights = [...(note === null ? [] : [[seg(`${note} · `, "dim"), ...filter]]), filter];
   const fits = (strip: Seg[], right: Seg[]) =>
@@ -905,28 +909,31 @@ function tableSection(
 
 // ── keys ─────────────────────────────────────────────────────────────────────────
 
-const keymap: Keymap<HistoryState, HistoryVM | undefined> = [
-  moveKey("tabs", {
+type Entry = KeyEntry<HistoryState, HistoryVM | undefined>;
+
+/** The view's keys, by name (hints elsewhere in the view are made from them). */
+const KEYS: Readonly<Record<"tabs" | "select" | "page" | "open" | "back" | "filter", Entry>> = {
+  tabs: moveKey("tabs", {
     label: "period",
     does: `Switch the table: ${HISTORY_TABS.map((t) => TABS[t].label).join(" · ")}`,
     act: (state, vm, key) =>
       vm === undefined ? undefined : switchTab(vm, state, key === "right" ? 1 : -1),
   }),
-  moveKey("select", {
+  select: moveKey("select", {
     label: "row",
     does: "Select a row; the heat map highlights its day, week or month",
     act: (state, vm, key) => (vm === undefined ? undefined : move(key, state, vm)),
   }),
-  {
+  page: {
     keys: ["pageup", "pagedown", "home", "end"],
     show: "pgup/pgdn",
-    alias: "home/end",
+    aliases: ["home/end"],
     label: "page",
     does: "Move ten rows, or to the first or last",
     quiet: true,
     act: (state, vm, key) => (vm === undefined ? undefined : move(key, state, vm)),
   },
-  moveKey("open", {
+  open: moveKey("open", {
     label: "open",
     does: "On a week or month, list its days; on a day, list its limit events",
     act: (state, vm) => {
@@ -940,7 +947,7 @@ const keymap: Keymap<HistoryState, HistoryVM | undefined> = [
         : undefined;
     },
   }),
-  moveKey("back", {
+  back: moveKey("back", {
     label: "back",
     does: "Close the limit events, then the open week or month, then clear the filter",
     when: (state) => state.events || state.open || state.filter !== "",
@@ -950,29 +957,31 @@ const keymap: Keymap<HistoryState, HistoryVM | undefined> = [
       return state.filter === "" ? undefined : { ...state, filter: "" };
     },
   }),
-  {
+  filter: {
     keys: ["f", "/"],
     show: "f",
-    alias: "/",
+    aliases: ["/"],
     label: "filter",
-    does: "Filter every number by model: type part of a model id, enter applies it",
+    does: `Filter every number by model: type part of a model id, ${MOVE_KEYS.open.show} applies it`,
     act: (state) => ({ ...state, typing: true }),
   },
-];
+};
 
-/** The filter's field, while it is typed. */
-const field: Keymap<HistoryState, HistoryVM | undefined> = [
-  {
+/** The filter field's keys, while it is typed. */
+const FIELD: Readonly<Record<"type" | "apply" | "clear" | "erase", Entry>> = {
+  type: {
     keys: [TEXT],
     show: "type",
     label: "a model's id",
     does: "Type part of a model id",
+    // The field's line says so; the footer keeps to what ends the typing.
+    quiet: true,
     act: (state, _vm, key) =>
       [...state.filter].length >= MAX_FILTER
         ? undefined
         : { ...state, filter: state.filter + (key === "space" ? " " : key) },
   },
-  moveKey("open", {
+  apply: moveKey("open", {
     label: "apply",
     does: "Apply the filter",
     act: (state, vm) => {
@@ -980,12 +989,12 @@ const field: Keymap<HistoryState, HistoryVM | undefined> = [
       return vm === undefined ? done : snap(vm, done);
     },
   }),
-  moveKey("back", {
+  clear: moveKey("back", {
     label: "clear",
     does: "Clear the filter",
     act: (state) => ({ ...state, typing: false, filter: "" }),
   }),
-  {
+  erase: {
     keys: ["backspace"],
     show: "backspace",
     label: "delete",
@@ -993,13 +1002,13 @@ const field: Keymap<HistoryState, HistoryVM | undefined> = [
     quiet: true,
     act: (state) => ({ ...state, filter: [...state.filter].slice(0, -1).join("") }),
   },
-];
+};
 
 export const history: View<HistoryVM, HistoryState> = {
   id: "history",
   title: "History",
-  keymap,
-  field,
+  keymap: Object.values(KEYS),
+  field: Object.values(FIELD),
   initial: {
     tab: "this_week",
     open: false,

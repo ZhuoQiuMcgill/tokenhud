@@ -802,9 +802,9 @@ describe("tabs: this week, this month, days, weeks, months", () => {
     );
     expect(viewKey(history, "escape", back, vm)).toBeUndefined();
     const { frame } = await frameOf(vm, 120, 45, [...toTab("weeks"), "down", "return"]);
-    expect(line(frame, " ◀ a")).toContain(" weeks › 11-23 ");
+    expect(line(frame, " ◀ a")).toContain("[weeks › 11-23]");
     const { frame: month } = await frameOf(vm, 120, 45, [...toTab("months"), "return"]);
-    expect(line(month, " ◀ a")).toContain(" months › 2026-12 ");
+    expect(line(month, " ◀ a")).toContain("[months › 2026-12]");
     // Enter on a day lists its limit events (today has two); a day without any opens nothing.
     expect(viewKey(history, "return", START, vm)).toMatchObject({ events: true });
     expect(viewKey(history, "return", press(vm, "down"), vm)).toBeUndefined();
@@ -817,7 +817,7 @@ describe("tabs: this week, this month, days, weeks, months", () => {
         .split("\n")
         .find((l) => l.includes("◀ a")) ?? "";
     expect(strip()).toContain("[dim/bg]◀ a ");
-    expect(strip()).toContain("[head/tab/b] this week ");
+    expect(strip()).toContain("[head/tab/b][this week]");
     expect(strip()).toContain("[mute/bg] this month ");
     expect(strip()).toContain("[dim/bg] d ▶");
     const { setup: next } = await frameOf(vm, 105, 50, ["d"]);
@@ -825,7 +825,7 @@ describe("tabs: this week, this month, days, weeks, months", () => {
       roles(next.captureSpans(), dark)
         .split("\n")
         .find((l) => l.includes("◀ a")) ?? "";
-    expect(nextStrip).toContain("[head/tab/b] this month ");
+    expect(nextStrip).toContain("[head/tab/b][this month]");
   });
 
   test("narrow, the strip shortens its labels, then shows fewer tabs, never hiding the active one", async () => {
@@ -1037,7 +1037,7 @@ describe("limit events on the card", () => {
       expect(list).toContain(" Mon ■");
       expect(list).toMatchSnapshot();
       await settle(setup, () => c.key(keyOf("escape")));
-      expect(chars(setup)).toContain(" ◀ a  this week ");
+      expect(chars(setup)).toContain(" ◀ a [this week]");
     },
   );
 });
