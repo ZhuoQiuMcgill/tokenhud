@@ -67,8 +67,9 @@ if (bin === null) {
     `tokenhud: the package with the tokenhud binary for this machine, @tokenhud/${id},\n` +
       "is not installed. npm installs it as an optional dependency, so it is missing when\n" +
       "optional dependencies were skipped (--omit=optional, --no-optional, or a lockfile\n" +
-      "made on another platform). Reinstall with them included:\n" +
-      "  npm install -g tokenhud --include=optional\n" +
+      "made on another platform). Reinstall tokenhud the same way, without --omit=optional:\n" +
+      "  npm install -g tokenhud      (a global install)\n" +
+      "  npm install tokenhud         (in a project)\n" +
       "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install",
   );
   process.exit(1);

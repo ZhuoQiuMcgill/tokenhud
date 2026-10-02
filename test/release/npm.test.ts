@@ -79,7 +79,8 @@ describe.skipIf(node === null || process.platform === "win32")("the npm launcher
     expect(out.stdout).toBe("");
     expect(out.stderr).toContain(`@tokenhud/${id}`);
     expect(out.stderr).toContain("--omit=optional");
-    expect(out.stderr).toContain("npm install -g tokenhud --include=optional");
+    expect(out.stderr).toContain("npm install -g tokenhud      (a global install)");
+    expect(out.stderr).toContain("npm install tokenhud         (in a project)");
   });
 
   test("passes SIGTERM on to the binary and dies of it too", async () => {
