@@ -8,6 +8,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type RGBA, rgbToHex } from "@opentui/core";
 import type { Config } from "../../src/config.ts";
+import { countdownTo } from "../../src/limits/derive.ts";
 import type { LimitEvent, LimitWindow } from "../../src/limits/index.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
@@ -20,6 +21,7 @@ import {
   type AccountRow,
   type AccountsVM,
   homePath,
+  type LimitMeter,
   WEEKS_SHOWN,
   weeklySlots,
 } from "../../src/tui/vm/accounts.ts";
@@ -96,9 +98,28 @@ describe("the view model", () => {
       asOf: NOW - 90_000,
       error: null,
       windows: [
-        { kind: "session", label: "5-HOUR", utilization: 0.62, resetsAt: NOW + HOUR + 48 * MIN },
-        { kind: "weekly_all", label: "WEEKLY", utilization: 0.27, resetsAt: WEEKLY_RESET },
-        { kind: "weekly_scoped", label: "FABLE WEEKLY", utilization: 0, resetsAt: WEEKLY_RESET },
+        {
+          kind: "session",
+          label: "5-HOUR",
+          utilization: 0.62,
+          resetsAt: NOW + HOUR + 48 * MIN,
+          projected: null,
+        },
+        {
+          kind: "weekly_all",
+          label: "WEEKLY",
+          utilization: 0.27,
+          resetsAt: WEEKLY_RESET,
+          // T8's instant (its formula is tested in derive.test.ts), and T18's coarse time.
+          projected: { at: expect.any(Number), rough: "~Fri morning" },
+        },
+        {
+          kind: "weekly_scoped",
+          label: "FABLE WEEKLY",
+          utilization: 0,
+          resetsAt: WEEKLY_RESET,
+          projected: null,
+        },
       ],
     });
     expect(highest(byLabel("personal"), NOW)).toBe(0.62);
@@ -541,6 +562,90 @@ describe("frames", () => {
 });
 
 // The Models view's "who used it" card says requests for the same count.
+// T26: a window projected to reach 100 % before its reset says so under its meter, counting
+// down first. personal's weekly window (27 % at a pace that fills it on Fri 11:45 in Toronto,
+// 72 h 06 m after NOW): over three days, so ~4d.
+describe("a window projected to fill (T26)", () => {
+  const weekly = () =>
+    byLabel("personal").limits?.windows.find((w) => w.kind === "weekly_all") as LimitMeter;
+
+  test.each([
+    [105, 50],
+    [120, 45],
+    [80, 24],
+    [160, 50],
+  ] as const)("%i×%i: under its bar, how long and when, whole", async (width, height) => {
+    const projected = weekly().projected;
+    expect(projected?.rough).toBe("~Fri morning");
+    expect(countdownTo(projected?.at as number, NOW)).toBe("~4d");
+    const lines = (await frameAt(width, height)).split("\n");
+    const meter = lines.findIndex((l) => l.includes(" WEEKLY  "));
+    const under = lines[meter + 1] as string;
+    expect(under).toContain("→ 100% in ~4d (~Fri morning)");
+    // The arrow sits where the bar begins.
+    expect(under.indexOf("→")).toBe((lines[meter] as string).indexOf("━"));
+    // The 5-hour window lasts to its reset: nothing under it.
+    expect(lines[lines.findIndex((l) => l.includes(" 5-HOUR ")) + 1]).toContain(" WEEKLY ");
+  });
+
+  test("short of room, the time goes first", async () => {
+    // A long window label leaves the row no room for the bracket at 80 columns.
+    const rows = vm.rows.map((r) =>
+      r.label !== "personal" || r.limits === null
+        ? r
+        : {
+            ...r,
+            limits: {
+              ...r.limits,
+              windows: r.limits.windows.map((w) =>
+                w.kind === "weekly_all" ? { ...w, label: "OPUS-5-5-FAST-TIER WEEKLY" } : w,
+              ),
+            },
+          },
+    );
+    const v = { ...views, accounts: { ...vm, rows } };
+    const narrow = await frameAt(80, 24, "personal", v);
+    noCutNumbers(narrow);
+    expect(narrow).toMatch(/→ 100% in ~4d +│?$/m);
+    expect(narrow).not.toContain("Fri morning");
+    expect(await frameAt(160, 50, "personal", v)).toContain("→ 100% in ~4d (~Fri morning)");
+  });
+
+  test("short of rows, a model's own meter goes first, then the projection", async () => {
+    // 80×24 has a row less than the three meters and the projection need.
+    const at80 = await frameAt(80, 24);
+    expect(at80).toContain("→ 100% in ~4d (~Fri morning)");
+    expect(at80).not.toContain("FABLE WEEKLY");
+    // 60×20: the 5-hour and weekly meters only, and the spend still under them.
+    const at60 = await frameAt(60, 20);
+    expect(at60).toContain(" WEEKLY ");
+    expect(at60).not.toContain("→ 100%");
+    expect(at60).toContain("spend 30d");
+  });
+
+  test("while one shows, the view comes back within a minute; else at the first reset", () => {
+    // work's 5-hour window resets first, in 35 minutes.
+    expect(t13Views(fx).validUntil.accounts).toBe(NOW + MIN);
+    const file = limitsFile();
+    for (const capture of Object.values(file.providers)) {
+      for (const bucket of Object.values(capture.rate_limits)) {
+        (bucket as { used_percentage: number }).used_percentage = 0;
+      }
+    }
+    const idle = makeT13Fixture(file);
+    try {
+      const out = t13Views(idle);
+      const rows = (out.views.accounts as AccountsVM).rows;
+      expect(rows.flatMap((r) => r.limits?.windows ?? []).some((w) => w.projected !== null)).toBe(
+        false,
+      );
+      expect(out.validUntil.accounts).toBe(NOW + 35 * MIN);
+    } finally {
+      idle.remove();
+    }
+  });
+});
+
 describe("the history line", () => {
   test("counts requests, the word every view uses for usage rows", async () => {
     expect(byLabel("personal").records).toBe(1630);

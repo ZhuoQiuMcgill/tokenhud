@@ -42,6 +42,7 @@ const SESSION_PACE = {
   pace_cost_per_h: 3.5,
   pace_basis: "30m",
   projected_exhaustion_at: "safe",
+  projected_exhaustion_in_s: null,
 } as const;
 
 const session = (over: Partial<LimitWindow>) => win("session", "5-HOUR", over);
@@ -160,6 +161,7 @@ describe("should_wait", () => {
       resets_at: "2026-10-01T15:38:00.000Z",
       ...SESSION_PACE,
       projected_exhaustion_at: "2026-10-01T15:08:00.000Z",
+      projected_exhaustion_in_s: 8 * 60,
       wait_s: 38 * 60 + 30,
     });
     const later = (p: LimitWindow["projected_exhaustion_at"]) =>
@@ -199,6 +201,7 @@ describe("should_wait", () => {
       pace_cost_per_h: 16.3,
       pace_basis: "window_avg",
       projected_exhaustion_at: "2026-10-01T15:07:00.000Z",
+      projected_exhaustion_in_s: 7 * 60,
       wait_s: 3 * 86400 + 30,
     });
   });
@@ -439,7 +442,7 @@ describe("limitsView", () => {
       weekly({ utilization: 0.12, resets_at: NOW + 3 * DAY, projected_exhaustion_at: "safe" }),
     ]);
     const toronto = Zone.of("America/Toronto");
-    expect(limitsView({ root, detectedVia: "env" }, limits, toronto)).toEqual({
+    expect(limitsView({ root, detectedVia: "env" }, limits, toronto, NOW)).toEqual({
       account: {
         label: "personal",
         provider: "claude",
@@ -458,6 +461,7 @@ describe("limitsView", () => {
           pace_cost_per_h: 36.02,
           pace_basis: "30m",
           projected_exhaustion_at: "2026-10-01T13:00:00.000-04:00",
+          projected_exhaustion_in_s: 2 * 3600,
           stale_s: 30,
         },
         {
@@ -468,12 +472,59 @@ describe("limitsView", () => {
           pace_cost_per_h: 3.5,
           pace_basis: "window_avg",
           projected_exhaustion_at: "safe",
+          projected_exhaustion_in_s: null,
           stale_s: 30,
         },
       ],
       as_of: "2026-10-01T10:59:30.000-04:00",
       error: null,
     });
+  });
+});
+
+describe("projected_exhaustion_in_s (T26)", () => {
+  const root = { path: "/home/u/.claude" } as Root;
+  const inS = (p: LimitWindow["projected_exhaustion_at"], now = NOW) =>
+    limitsView(
+      { root, detectedVia: "env" },
+      account([session({ utilization: 0.5, projected_exhaustion_at: p })]),
+      UTC,
+      now,
+    ).windows[0]?.projected_exhaustion_in_s;
+
+  test("whole seconds to the instant, rounded down; 0 once it has come", () => {
+    expect(inS(NOW + 2 * HOUR)).toBe(7200);
+    expect(inS(NOW + 2 * HOUR + 999)).toBe(7200);
+    expect(inS(NOW + 59_000)).toBe(59);
+    expect(inS(NOW)).toBe(0);
+    // A later call counts from its own now.
+    expect(inS(NOW + 2 * HOUR, NOW + 30 * MIN)).toBe(5400);
+    expect(inS(NOW, NOW + 5_000)).toBe(0);
+  });
+
+  test("null without an instant: safe, or no estimate", () => {
+    expect(inS("safe")).toBeNull();
+    expect(inS(null)).toBeNull();
+  });
+
+  test("should_wait carries it with the window it reports", () => {
+    const limits = account([
+      session({
+        utilization: 0.3,
+        projected_exhaustion_at: NOW + 3 * HOUR,
+        resets_at: NOW + 4 * HOUR,
+      }),
+    ]);
+    const verdict = shouldWait(limits, {}, NOW, UTC, noSpend);
+    expect(verdict).toMatchObject({
+      wait: false,
+      window: "5-HOUR",
+      projected_exhaustion_at: "2026-10-01T18:00:00.000Z",
+      projected_exhaustion_in_s: 3 * 3600,
+    });
+    // Unavailable limits carry no window, and so no projection.
+    const none = shouldWait(account([], { as_of: null }), {}, NOW, UTC, noSpend);
+    expect("projected_exhaustion_in_s" in none).toBe(false);
   });
 });
 

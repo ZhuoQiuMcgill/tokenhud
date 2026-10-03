@@ -40,6 +40,7 @@ import type {
 } from "../vm/types.ts";
 import { ACTIVITY_WINDOWS, SPEND_PERIODS } from "../vm/types.ts";
 import { costNote, costText } from "./cells.ts";
+import { projectedForms } from "./projection.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
 export interface OverviewState {
@@ -163,18 +164,24 @@ function paceSegs(card: LimitCard, showCost: boolean, form: 0 | 1 | 2): Seg[] {
 }
 
 /**
- * The verdict, long (`hits 100% at 16:20`) or short (`100% at 16:20`), and its colour. A
- * weekly window's time is only good to a part of a day, and says so: `100% ~Sun evening`
- * (T18).
+ * How much of the verdict shows: all of it (0); a projected 100 % without its time (1);
+ * short (2). Only a projection has a form 1: the others read long until form 2.
  */
-function verdictSeg(v: Verdict, short: boolean, asOf: number, tz: string): Seg {
+type VerdictForm = 0 | 1 | 2;
+
+/**
+ * The verdict in `form`, and its colour. A projected 100 % counts down first and gives the
+ * time second (T26): `100% in <2h (16:20)`, then `100% in <2h`, then `100% <2h`. A weekly
+ * window's time is only good to a part of a day, and says so: `100% in ~3d (~Sun evening)`
+ * (T18). The others are long (`week ends ~94%`) or short (`wk ~94%`).
+ */
+function verdictSeg(v: Verdict, form: VerdictForm, asOf: number, tz: string): Seg {
+  const short = form === 2;
   switch (v.kind) {
     case "full":
       return seg(`${short ? "" : "at "}100% until ${when(v.until, asOf, tz)}`, "high", true);
-    case "hits": {
-      const at = v.rough ?? `at ${when(v.at, asOf, tz)}`;
-      return seg(`${short ? "" : "hits "}100% ${at}`, "high", true);
-    }
+    case "hits":
+      return seg(projectedForms(v.at, asOf, v.rough ?? when(v.at, asOf, tz))[form], "high", true);
     case "week":
       return seg(`${short ? "wk" : "week ends"} ~${pct(v.utilization)}`, "mid");
     case "safe":
@@ -287,15 +294,20 @@ function meterLine(name: string, m: LimitMeter | null, width: number, asOf: numb
   };
 }
 
-function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line {
-  const line = (form: 0 | 1 | 2, short: boolean): Line => ({
+/**
+ * The pace and its verdict, in the first form that fits `width`: the verdict gives way
+ * first (a projection's time, then its `in`; T26), then the pace's basis, then its word
+ * (T18). Exported for the drop-order tests.
+ */
+export function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line {
+  const line = (pace: 0 | 1 | 2, verdict: VerdictForm): Line => ({
     left: [
-      ...paceSegs(card, ctx.showCost, form),
+      ...paceSegs(card, ctx.showCost, pace),
       seg("→ ", "dim"),
-      verdictSeg(card.verdict, short, asOf, ctx.tz),
+      verdictSeg(card.verdict, verdict, asOf, ctx.tz),
     ],
   });
-  return firstFit([line(0, false), line(0, true), line(1, true), line(2, true)], width);
+  return firstFit([line(0, 0), line(0, 1), line(0, 2), line(1, 2), line(2, 2)], width);
 }
 
 function cardBody(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line[] {
@@ -459,7 +471,8 @@ function compactLines(
 
 function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): Section {
   const note = [
-    "pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates",
+    "pace (30m) = spend rate over the last 30 min · avg = this week so far · <2h = within 2 h · estimates",
+    "pace = last 30 min · avg = this week so far · <2h = within 2 h · estimates",
     "pace = last 30 min · avg = this week so far · estimates",
     "pace = last 30 min · estimates",
   ].find((n) => textWidth(" LIMITS") + 2 + textWidth(`${n} `) <= ctx.width);

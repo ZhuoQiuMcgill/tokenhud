@@ -147,6 +147,8 @@ describe("limits", () => {
           pace_cost_per_h: 10,
           pace_basis: "30m",
           projected_exhaustion_at: "2026-10-01T15:05:03.158Z",
+          // 303.158 s from 15:00:00Z, rounded down (T26).
+          projected_exhaustion_in_s: 303,
           stale_s: 30,
         },
         {
@@ -157,12 +159,13 @@ describe("limits", () => {
           pace_cost_per_h: 0.17,
           pace_basis: "window_avg",
           projected_exhaustion_at: "safe",
+          projected_exhaustion_in_s: null,
           stale_s: 30,
         },
       ],
       as_of: "2026-10-01T14:59:30.000Z",
       error: null,
-      note: "projected_exhaustion_at is an estimate from this machine's spend pace: the last 30 minutes' (pace_basis 30m) or, for a weekly window, its average since the window began (window_avg); a weekly window's instant is coarse, good to about a part of a day",
+      note: "projected_exhaustion_at, and projected_exhaustion_in_s (the seconds until it), are an estimate from this machine's spend pace: the last 30 minutes' (pace_basis 30m) or, for a weekly window, its average since the window began (window_avg); a weekly window's instant is coarse, good to about a part of a day",
       warnings: [],
     });
     expect(f.refreshed).toEqual([[f.personal.identity, 60]]);
@@ -217,6 +220,7 @@ describe("should_wait", () => {
       pace_cost_per_h: 10,
       pace_basis: "30m",
       projected_exhaustion_at: "2026-10-01T15:05:03.158Z",
+      projected_exhaustion_in_s: 303,
       wait_s: 38 * 60 + 30,
     });
     expect(f.refreshed).toEqual([[f.personal.identity, 60]]);

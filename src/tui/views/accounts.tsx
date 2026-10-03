@@ -14,9 +14,10 @@ import { dayLabel, fit, percent, textWidth, tokens, truncate } from "../format.t
 import { footerHints, type Keymap, MOVE_KEYS, moveKey } from "../keys.ts";
 import { fitSections, type SectionSpec } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
-import type { AccountRow, AccountsVM, ModelSpend, WeekSlot } from "../vm/accounts.ts";
+import type { AccountRow, AccountsVM, LimitMeter, ModelSpend, WeekSlot } from "../vm/accounts.ts";
 import type { Priced } from "../vm/types.ts";
 import { costText } from "./cells.ts";
+import { projectedForms } from "./projection.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
 export type AccountsState = {
@@ -313,11 +314,33 @@ function wherePart(a: AccountRow, vm: AccountsVM, width: number): Part {
 }
 
 /**
- * One meter line per window: the label, a bar, the % and when it resets. Narrow, the bar
- * shrinks, then "resets" goes, then the bar: the % and the time are never cut. A window
- * past its reset is stale: an empty bar, `—`, and how long ago it reset.
+ * Under a window's meter, when it is projected to reach 100 % before its reset (T26): how
+ * long until then, and when, under the bar, in the alarm colour as on the Overview's cards:
+ * `→ 100% in <2h (16:58)`, a weekly window's time coarse (`→ 100% in ~3d (~Sun evening)`).
+ * Narrow, the time goes, then the `in`.
  */
-function meterLines(a: AccountRow, vm: AccountsVM, width: number): Line[] {
+function projectionLine(m: LimitMeter, indent: number, vm: AccountsVM, width: number): Line[] {
+  if (m.projected === null || m.resetsAt <= vm.asOf) return [];
+  const { at, rough } = m.projected;
+  const forms = projectedForms(at, vm.asOf, rough ?? whenText(at, vm.asOf, vm.tz));
+  return [
+    {
+      left: [
+        seg(" ".repeat(indent), "fg"),
+        seg("→ ", "dim"),
+        seg(firstFit(forms, width - indent - 2), "high", true),
+      ],
+    },
+  ];
+}
+
+/**
+ * One meter line per window: the label, a bar, the % and when it resets, and under it the
+ * window's projection when it has one. Narrow, the bar shrinks, then "resets" goes, then
+ * the bar: the % and the time are never cut. A window past its reset is stale: an empty
+ * bar, `—`, and how long ago it reset. One group of lines per window.
+ */
+function meterLines(a: AccountRow, vm: AccountsVM, width: number): Line[][] {
   const windows = a.limits?.windows ?? [];
   const labelWidth = Math.max(8, ...windows.map((w) => textWidth(w.label) + 1));
   const stale = (t: number) => t <= vm.asOf;
@@ -340,7 +363,7 @@ function meterLines(a: AccountRow, vm: AccountsVM, width: number): Line[] {
       const old = stale(w.resetsAt);
       const n = old ? 0 : filledCells(w.utilization, bar);
       const role: Role = old ? "dim" : level(w.utilization);
-      return {
+      const meter: Line = {
         left: [
           seg(` ${w.label.padEnd(labelWidth)}`, "head", true),
           seg("━".repeat(n), role),
@@ -349,6 +372,7 @@ function meterLines(a: AccountRow, vm: AccountsVM, width: number): Line[] {
           seg(`   ${resetText(w.resetsAt, shape.word)}`, "dim"),
         ],
       };
+      return [meter, ...projectionLine(w, 1 + labelWidth, vm, width)];
     });
   }
   return [];
@@ -374,32 +398,50 @@ function sharedLine(labels: readonly string[], width: number): Line {
  * shared account says so first: the meters are the account's.
  */
 function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
-  let lines: Line[];
+  // A line or a few for each window, or one saying why there are none.
+  let groups: Line[][];
   const l = a.limits;
   const shared = a.sharedWith.length > 0;
   // A history-only root on an account signed in through another root shows its meters.
   if ((a.historyOnly && !(shared && l?.signedIn === true)) || (l !== null && !l.signedIn)) {
-    lines = [{ left: [seg(" not signed in here", "mid")] }];
+    groups = [[{ left: [seg(" not signed in here", "mid")] }]];
   } else if (a.root === null) {
-    lines = [noteLine("limits", ["not fetched: no root on this machine", "no root here"], width)];
+    groups = [
+      [noteLine("limits", ["not fetched: no root on this machine", "no root here"], width)],
+    ];
   } else if (!a.root.enabled) {
-    lines = [
-      noteLine(
-        "limits",
-        [
-          `not fetched: this root is disabled (${ENABLE})`,
-          `not fetched: root disabled (${ENABLE})`,
-          `root disabled (${ENABLE})`,
-          "root disabled",
-        ],
-        width,
-      ),
+    groups = [
+      [
+        noteLine(
+          "limits",
+          [
+            `not fetched: this root is disabled (${ENABLE})`,
+            `not fetched: root disabled (${ENABLE})`,
+            `root disabled (${ENABLE})`,
+            "root disabled",
+          ],
+          width,
+        ),
+      ],
     ];
   } else if (l === null || l.windows.length === 0) {
-    lines = [noteLine("limits", ["none fetched yet"], width)];
+    groups = [[noteLine("limits", ["none fetched yet"], width)]];
   } else {
-    lines = meterLines(a, vm, width);
+    groups = meterLines(a, vm, width);
   }
+  // Short of rows, what goes first: the projections under the meters after the 5-hour and
+  // weekly ones, then those meters, then the projections under the 5-hour and weekly ones.
+  // Those two meters stay. Among equals, the last goes first.
+  const ranked = groups
+    .flatMap((group, i) =>
+      group.map((line, k) => ({ line, rank: (i < 2 ? 0 : 2) + Math.min(k, 1) })),
+    )
+    .map((r, at) => ({ ...r, at }));
+  const order = [...ranked].sort((x, y) => x.rank - y.rank || x.at - y.at);
+  const kept = (rows: number) => {
+    const keep = new Set(order.slice(0, Math.max(0, rows)));
+    return ranked.filter((r) => keep.has(r)).map((r) => r.line);
+  };
   const failed: Line[] =
     l?.error == null
       ? []
@@ -420,13 +462,13 @@ function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
     ];
     head.push({ left: [seg(firstFit(why, width - 1), "mid")] });
   }
-  // Short of rows, the meters after the 5-hour and weekly ones go first.
+  const meters = ranked.filter((r) => r.rank === 0).length;
   return {
     id: "limits",
     priority: 3,
-    height: head.length + lines.length + failed.length,
-    minHeight: head.length + Math.min(lines.length, 2) + failed.length,
-    lines: (h) => [...head, ...lines.slice(0, h - head.length - failed.length), ...failed],
+    height: head.length + ranked.length + failed.length,
+    minHeight: head.length + meters + failed.length,
+    lines: (h) => [...head, ...kept(h - head.length - failed.length), ...failed],
   };
 }
 

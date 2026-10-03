@@ -117,7 +117,7 @@ export function fixtureViews(
   scope: number | null = null,
   /** What the Accounts view reads besides usage, over the fixture's connection. */
   sources: ((db: Database, q: UsageQueries) => AccountSources) | null = null,
-): { views: ViewModels; accounts: AccountInfo[] } {
+): { views: ViewModels; accounts: AccountInfo[]; validUntil: Record<ViewId, number> } {
   const db = openStoreReader(storePath);
   if (db === null) throw new Error("fixture store missing");
   try {
@@ -135,10 +135,15 @@ export function fixtureViews(
       sources: sources?.(db, q) ?? null,
     };
     const views: ViewModels = {};
+    const validUntil = {} as Record<ViewId, number>;
     q.snapshot(() => {
-      for (const id of VIEW_IDS) (views as Record<ViewId, unknown>)[id] = COMPUTE[id](ctx).vm;
+      for (const id of VIEW_IDS) {
+        const computed = COMPUTE[id](ctx);
+        (views as Record<ViewId, unknown>)[id] = computed.vm;
+        validUntil[id] = computed.validUntil;
+      }
     });
-    return { views, accounts };
+    return { views, accounts, validUntil };
   } finally {
     db.close();
   }

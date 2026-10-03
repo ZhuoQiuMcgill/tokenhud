@@ -112,6 +112,7 @@ describe("limits and should_wait for a session in either root", () => {
           pace_cost_per_h: 15,
           pace_basis: "30m",
           projected_exhaustion_at: "2026-10-01T15:03:53.684Z",
+          projected_exhaustion_in_s: 233,
           stale_s: 30,
         },
         {
@@ -122,6 +123,7 @@ describe("limits and should_wait for a session in either root", () => {
           pace_cost_per_h: 0.19,
           pace_basis: "window_avg",
           projected_exhaustion_at: "safe",
+          projected_exhaustion_in_s: null,
           stale_s: 30,
         },
       ]);

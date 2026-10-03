@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Config } from "../../src/config.ts";
 import { Frame } from "../../src/tui/app.tsx";
+import type { Line } from "../../src/tui/components/base.ts";
 import {
   BASELINE,
   chartColumns,
@@ -20,7 +21,9 @@ import {
   fitLabels,
   listedEvents,
   type OverviewState,
+  paceLine,
 } from "../../src/tui/views/overview.tsx";
+import type { ViewContext } from "../../src/tui/views/types.ts";
 import type {
   AccountInfo,
   ActivityWindow,
@@ -144,7 +147,7 @@ describe("what each size keeps (limits first)", () => {
     const old = lines.findIndex((l) => l.includes("old-laptop · claude"));
     expect(lines[old + 1]).toContain("not signed in here");
     expect(text).toContain("work · claude (47m old)");
-    expect(text).toContain("pace $1.3/h (30m) → hits 100% at 12:59");
+    expect(text).toContain("pace $1.3/h (30m) → 100% in <1.5h (12:59)");
     // codex's week at its average since the window began (T18).
     expect(text).toContain("avg $0.08/h this week → week ends ~94%");
     expect(text).toContain("safe until reset");
@@ -564,6 +567,7 @@ describe("which pace, and how precise (T18)", () => {
   test.each([
     [105, 50],
     [120, 45],
+    [160, 50],
     [80, 24],
   ] as const)("%i×%i: snapshot, and every number whole", async (width, height) => {
     for (const show of [true, false]) {
@@ -575,24 +579,129 @@ describe("which pace, and how precise (T18)", () => {
 
   test("105×50: the basis on every card; a weekly time never in minutes", async () => {
     const { text } = await draw(105, 50);
-    expect(text).toContain("pace $1.3/h (30m) → hits 100% at 12:59");
-    expect(text).toContain("avg $16/h this week → hits 100% ~Thu evening");
+    expect(text).toContain("pace $1.3/h (30m) → 100% in <1.5h (12:59)");
+    // The weekly times don't fit beside the basis: they go first (T26).
+    expect(text).toContain("avg $16/h this week → 100% in ~3d ");
     expect(text).toContain("pace $0/h (30m) → idle · week 83%");
-    expect(text).toContain("avg $6.2/h this week → 100% ~tomorrow morning");
+    expect(text).toContain("avg $6.2/h this week → 100% in <24h ");
     expect(text).not.toMatch(/~\S* ?\d\d:\d\d/);
   });
 
-  test("120×45, three cards to a row: the verdict shortens, then the basis goes before the number", async () => {
+  test("120×45, three cards to a row: the time goes, then the in, before the basis", async () => {
     const { text } = await draw(120, 45);
-    expect(text).toContain("pace $1.3/h (30m) → 100% at 12:59");
-    expect(text).toContain("avg $16/h → 100% ~Thu evening");
+    expect(text).toContain("pace $1.3/h (30m) → 100% in <1.5h ");
+    expect(text).toContain("avg $16/h this week → 100% in ~3d ");
     expect(text).toContain("pace $0/h (30m) → idle · week 83%");
-    expect(text).toContain("$6.2/h → 100% ~tomorrow morning");
+    expect(text).toContain("avg $6.2/h this week → 100% <24h ");
+  });
+
+  test("80×24, compact: every countdown with its time", async () => {
+    const { text } = await draw(80, 24);
+    expect(text).toContain("pace $1.3/h (30m) → 100% in <1.5h (12:59)");
+    expect(text).toContain("avg $16/h this week → 100% in ~3d (~Thu evening)");
+    expect(text).toContain("avg $6.2/h this week → 100% in <24h (~tomorrow morning)");
   });
 
   test("an idle card's full window is in the alarm colour", async () => {
     const { setup } = await draw(120, 45);
     expect(roles(setup.captureSpans(), theme("dark"))).toContain("[high/bg]idle · week 83%");
+  });
+});
+
+// T26: a projected 100 % counts down first and gives the time second. Narrower, the time
+// goes first, then the `in`, then (T18) the pace's basis, then its word; no number is cut.
+describe("the countdown to 100 % (T26)", () => {
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+  const ctx = (width: number): ViewContext => ({
+    width,
+    bp: "medium",
+    theme: theme("dark"),
+    showCost: true,
+    tz: TZ,
+    scope: null,
+  });
+  const text = (line: Line) =>
+    line.left
+      .map((s) => s.text)
+      .join("")
+      .trimEnd();
+  const card = (verdict: LimitCard["verdict"], pace: LimitCard["pace"]): LimitCard => ({
+    ...((views.overview as OverviewVM).cards?.[0] as LimitCard),
+    pace,
+    verdict,
+  });
+  const recent = { cost: 1.3, tokens: 52_000, basis: "30m" as const };
+  /**
+   * Each form the pace line takes as its room shrinks from 60 cells to 10, widest first;
+   * at every width, the first of them that fits (the last when none does).
+   */
+  function forms(c: LimitCard, asOf = NOW): string[] {
+    const chosen = new Map<number, string>();
+    for (let width = 60; width >= 10; width--) {
+      chosen.set(width, text(paceLine(c, width, ctx(width), asOf)));
+    }
+    const out = [...new Set(chosen.values())];
+    const widths = out.map((f) => Bun.stringWidth(f));
+    expect(widths).toEqual([...widths].sort((a, b) => b - a));
+    for (const [width, form] of chosen) {
+      expect(form).toBe(out.find((f) => Bun.stringWidth(f) <= width) ?? (out.at(-1) as string));
+    }
+    return out;
+  }
+
+  test("the 5-hour window: the time goes, then the in, then the basis, then the word", () => {
+    // NOW is 11:40 in Toronto; 79 minutes on is 12:59.
+    const c = card({ kind: "hits", at: NOW + 79 * MIN, rough: null }, recent);
+    expect(forms(c)).toEqual([
+      "pace $1.3/h (30m) → 100% in <1.5h (12:59)",
+      "pace $1.3/h (30m) → 100% in <1.5h",
+      "pace $1.3/h (30m) → 100% <1.5h",
+      "pace $1.3/h → 100% <1.5h",
+      "$1.3/h → 100% <1.5h",
+    ]);
+  });
+
+  test("a weekly window: `~` days, its time a part of a day", () => {
+    // NOW is Tue 11:40; 56 h on is Thu 19:40: over two days, so ~3d.
+    const avg = { cost: 16.3, tokens: 652_000, basis: "window_avg" as const };
+    const c = card({ kind: "hits", at: NOW + 56 * HOUR, rough: "~Thu evening" }, avg);
+    expect(forms(c)).toEqual([
+      "avg $16/h this week → 100% in ~3d (~Thu evening)",
+      "avg $16/h this week → 100% in ~3d",
+      "avg $16/h this week → 100% ~3d",
+      "avg $16/h → 100% ~3d",
+      "$16/h → 100% ~3d",
+    ]);
+  });
+
+  test("under a minute: 100% now, in every form", () => {
+    const c = card({ kind: "hits", at: NOW + 59_000, rough: null }, recent);
+    expect(forms(c)).toEqual([
+      "pace $1.3/h (30m) → 100% now",
+      "pace $1.3/h → 100% now",
+      "$1.3/h → 100% now",
+    ]);
+  });
+
+  test("live: each frame counts down from the instant to its own now", () => {
+    const c = card({ kind: "hits", at: NOW + 2 * HOUR + MIN, rough: null }, recent);
+    // 13:41: 2 h 01 m is within 3 h; a minute on, within 2 h; then 45, 5 minutes; then now.
+    const at = (asOf: number) => text(paceLine(c, 60, ctx(60), asOf));
+    expect(at(NOW)).toBe("pace $1.3/h (30m) → 100% in <3h (13:41)");
+    expect(at(NOW + MIN)).toBe("pace $1.3/h (30m) → 100% in <2h (13:41)");
+    expect(at(NOW + 76 * MIN)).toBe("pace $1.3/h (30m) → 100% in <45m (13:41)");
+    expect(at(NOW + 120 * MIN)).toBe("pace $1.3/h (30m) → 100% in <5m (13:41)");
+    expect(at(NOW + 120 * MIN + 1)).toBe("pace $1.3/h (30m) → 100% now");
+  });
+
+  test("past midnight the time has its day", () => {
+    const c = card({ kind: "hits", at: Date.parse("2026-09-30T04:10:00Z"), rough: null }, recent);
+    // 23:50 Tue in Toronto, 20 minutes before Wed 00:10.
+    const asOf = Date.parse("2026-09-30T03:50:00Z");
+    expect(text(paceLine(c, 60, ctx(60), asOf))).toBe(
+      "pace $1.3/h (30m) → 100% in <20m (Wed 00:10)",
+    );
   });
 });
 
@@ -602,7 +711,7 @@ describe("colours", () => {
     const out = roles(setup.captureSpans(), theme("dark")).split("\n");
     // The projection is the alarm colour; the stale age and history-only line are dim. Three
     // cards to a row keep the pace's basis and shorten the verdict.
-    expect(out.join("\n")).toContain("[dim/bg] (30m) → [high/bg/b]100% at 12:59");
+    expect(out.join("\n")).toContain("[dim/bg] (30m) → [high/bg/b]100% in <1.5h");
     expect(out.join("\n")).toContain("[dim/bg] (47m old)");
     expect(out.join("\n")).toContain("[dim/bg]not signed in here");
     expect(out.slice(3, 15).join("\n")).toMatchSnapshot();

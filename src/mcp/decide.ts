@@ -35,6 +35,11 @@ export interface PaceView {
    * window's instant is coarse, good to about a part of a day.
    */
   projected_exhaustion_at: string | "safe" | null;
+  /**
+   * Whole seconds from now to that instant (T26), 0 once it has come; null when there is no
+   * instant ("safe" or null above).
+   */
+  projected_exhaustion_in_s: number | null;
 }
 
 export interface WindowView extends PaceView {
@@ -66,16 +71,24 @@ export interface LimitsView {
 
 const round = (x: number, digits: number) => Math.round(x * 10 ** digits) / 10 ** digits;
 
-function paceView(w: LimitWindow, zone: Zone): PaceView {
+function paceView(w: LimitWindow, zone: Zone, now: number): PaceView {
   const p: Projection = w.projected_exhaustion_at;
   return {
     pace_cost_per_h: w.pace_cost_per_h === null ? null : round(w.pace_cost_per_h, 2),
     pace_basis: w.pace_basis,
     projected_exhaustion_at: typeof p === "number" ? zone.iso(p) : p,
+    // Rounded down: an agent reading it as a deadline is never told it has longer.
+    projected_exhaustion_in_s:
+      typeof p === "number" ? Math.max(0, Math.floor((p - now) / 1000)) : null,
   };
 }
 
-export function limitsView(resolved: Resolved, limits: AccountLimits, zone: Zone): LimitsView {
+export function limitsView(
+  resolved: Resolved,
+  limits: AccountLimits,
+  zone: Zone,
+  now: number,
+): LimitsView {
   return {
     account: {
       label: limits.account.label,
@@ -93,7 +106,7 @@ export function limitsView(resolved: Resolved, limits: AccountLimits, zone: Zone
       label: w.label,
       utilization: round(w.utilization, 4),
       resets_at: zone.iso(w.resets_at),
-      ...paceView(w, zone),
+      ...paceView(w, zone, now),
       stale_s: w.stale_s,
     })),
     as_of: limits.as_of === null ? null : zone.iso(limits.as_of),
@@ -373,7 +386,7 @@ export function evaluate(
         window: w.label,
         utilization: round(w.utilization, 4),
         resets_at: zone.iso(w.resets_at),
-        ...paceView(w, zone),
+        ...paceView(w, zone, now),
         wait_s: Math.max(0, Math.ceil((w.resets_at - now) / 1000)) + RESET_MARGIN_S,
       },
       window: w,
@@ -403,7 +416,7 @@ export function evaluate(
       window: top.label,
       utilization: round(top.utilization, 4),
       resets_at: zone.iso(top.resets_at),
-      ...paceView(top, zone),
+      ...paceView(top, zone, now),
       wait_s: 0,
     },
     window: top,

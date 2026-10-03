@@ -21,6 +21,6 @@ The tokenhud MCP tools report the account this session runs on. Their names end 
      window resets, and let them decide.
 4. "not signed in on this machine" means limits are unknown here: don't wait for them.
 
-`limits` lists every window with its reset time. `projected_exhaustion_at` is an
-estimate. `usage` gives tokens and API-equivalent cost, not the quota. Never guess limits
+`limits` lists every window with its reset time. `projected_exhaustion_at` (and
+`projected_exhaustion_in_s`, the seconds until it) is an estimate. `usage` gives tokens and API-equivalent cost, not the quota. Never guess limits
 or reset times from memory: ask the tools.
