@@ -62,7 +62,7 @@ import { defaultPoolSize } from "./pool.ts";
  * - **A store the cursors were not written for** (recovered, or replaced by another
  *   process) has every transcript read again, so it is backfilled from what is on disk.
  * - **The daily backup** follows a full pass once a day, and at once after a completed
- *   recovery or a key-scheme migration.
+ *   recovery, a key-scheme migration, or a backup that a quit or a kill cut short.
  */
 
 export interface LiveTiming {
@@ -104,6 +104,11 @@ export interface EngineOptions {
    * (the 60 s sweep catches it later).
    */
   watch?: typeof watch;
+  /**
+   * Tests: awaited in every pass once the transcripts are read, before the store is written
+   * (worker.ts's TOKENHUD_TEST_HOLD_PASS holds a pass there).
+   */
+  beforeWrite?: () => Promise<void>;
 }
 
 /** Transcript directories of a root: Claude's `projects`; Codex's active and archived sessions. */
@@ -160,7 +165,9 @@ export class IngestEngine {
     this.#wsl = isWsl(options.discover.platform ?? process.platform);
     this.store = store;
     this.cursors = cursors;
-    this.#backupNow = store.keySchemeMigrated;
+    // A backup that a quit or a kill cut short is taken again after the first full pass,
+    // due or not (a key-scheme migration's, say).
+    this.#backupNow = store.keySchemeMigrated || store.backupCutShort;
     if (cursors.note === "rebuilt")
       this.#log("warn", "the read-position cache was damaged and has been rebuilt");
     if (cursors.note === "in-memory") {
@@ -402,6 +409,9 @@ export class IngestEngine {
       log: this.#log,
       codexSessions: this.#codexSessions,
       ...(rekey === undefined ? {} : { rekey }),
+      ...(this.#options.beforeWrite === undefined
+        ? {}
+        : { beforeWrite: this.#options.beforeWrite }),
     };
   }
 

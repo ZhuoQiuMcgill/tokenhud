@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { processAlive } from "../lock.ts";
 import { guard, SchemeRefused, StoreCorrupt, StoreUnavailable } from "./errors.ts";
 import { KEY_SCHEME } from "./key.ts";
 import {
@@ -83,7 +84,7 @@ const RECOVERED = "recovered";
 const RECOVERY_REPORT = "recovery_report";
 const CHECKED_AT = "checked_at";
 /** A backup's temp file: `<store>.bak.<pid>.tmp`, and SQLite's journal of it. */
-const BACKUP_TEMP = /^\.bak\.\d+\.tmp(-journal)?$/;
+const BACKUP_TEMP = /^\.bak\.(\d+)\.tmp(-journal)?$/;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -341,6 +342,7 @@ export class Store {
   readonly #options: OpenOptions;
   #connection: Connection | null;
   #migrated: boolean;
+  #backupCutShort: boolean;
   #closed = false;
 
   private constructor(path: string, options: OpenOptions, connection: Connection) {
@@ -349,6 +351,7 @@ export class Store {
     this.#options = options;
     this.#connection = connection;
     this.#migrated = connection.migrated;
+    this.#backupCutShort = connection.backupCutShort;
   }
 
   /**
@@ -364,6 +367,11 @@ export class Store {
   /** Whether opening this store ran a key-scheme migration (a backup is due at once). */
   get keySchemeMigrated(): boolean {
     return this.#migrated;
+  }
+
+  /** Whether opening this store found a backup that was cut short (it is due at once). */
+  get backupCutShort(): boolean {
+    return this.#backupCutShort;
   }
 
   /** This store's lineage (`meta.store_id`), as of the file the path named when last connected. */
@@ -412,6 +420,7 @@ export class Store {
   #adopt(connection: Connection): void {
     this.#connection = connection;
     this.#migrated ||= connection.migrated;
+    this.#backupCutShort ||= connection.backupCutShort;
   }
 
   /**
@@ -897,6 +906,8 @@ interface Connection {
   fileId: string | null;
   storeId: string | null;
   migrated: boolean;
+  /** Opening it swept a backup's temp file: a quit or a kill cut that backup short. */
+  backupCutShort: boolean;
 }
 
 /**
@@ -941,8 +952,9 @@ function connect(path: string, options: OpenOptions): Connection {
     const migrated = ensureKeyScheme(db);
     ensureRollups(db);
     sweepScratch(scratchDirOf(path));
-    sweepBackupTemps(path);
-    return { db, fileId, storeId: guard(() => getMeta(db, "store_id")), migrated };
+    const backupCutShort = sweepBackupTemps(path);
+    const storeId = guard(() => getMeta(db, "store_id"));
+    return { db, fileId, storeId, migrated, backupCutShort };
   } catch (error) {
     db.close();
     throw error;
@@ -1110,31 +1122,40 @@ function sweepScratch(dir: string): void {
 }
 
 /**
- * Deletes backup temp files a killed backup left beside the store (`<store>.bak.<pid>.tmp`
- * and its journal), once they are an hour old: only regular files named exactly so,
- * directly beside the store; never a symlink, nothing else. Best effort.
+ * Deletes the temp files of backups that a quit or a kill cut short, beside the store
+ * (`<store>.bak.<pid>.tmp` and its journal; one can be a whole copy of the store). A file
+ * goes at once when no process `<pid>` is running (the lock's liveness check), else once
+ * it is an hour old: no backup takes that long, so that pid is a later process's. A
+ * running backup's file is never touched, this process's own included. Only regular files
+ * named exactly so, directly beside the store; never a symlink, nothing else. Best effort.
+ * Returns whether any was deleted: a backup was cut short.
  */
-function sweepBackupTemps(storePath: string): void {
+function sweepBackupTemps(storePath: string): boolean {
   const dir = dirname(storePath);
   const base = basename(storePath);
   let entries: Dirent[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
-    return;
+    return false;
   }
   const cutoff = Date.now() - SCRATCH_MAX_AGE_MS;
+  let swept = false;
   for (const entry of entries) {
     // Dirent types come from lstat: a symlink is not a file here.
     if (!entry.isFile() || !entry.name.startsWith(base)) continue;
-    if (!BACKUP_TEMP.test(entry.name.slice(base.length))) continue;
+    const pid = BACKUP_TEMP.exec(entry.name.slice(base.length))?.[1];
+    if (pid === undefined) continue;
     const path = join(dir, entry.name);
     try {
-      if (lstatSync(path).mtimeMs < cutoff) rmSync(path, { force: true });
+      if (processAlive(Number(pid)) && lstatSync(path).mtimeMs >= cutoff) continue;
+      rmSync(path, { force: true });
+      swept = true;
     } catch {
       // in use or already gone
     }
   }
+  return swept;
 }
 
 function ensureSchema(db: Database, path: string): void {

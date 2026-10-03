@@ -58,3 +58,8 @@ export function row(key: bigint, over: Partial<UsageRow> = {}): UsageRow {
     ...over,
   };
 }
+
+/** The pid of a process that has exited, for a backup temp file whose backup was cut short. */
+export function deadPid(): number {
+  return Bun.spawnSync([process.execPath, "-e", ""]).pid;
+}

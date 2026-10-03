@@ -2,10 +2,10 @@
 // `script`), driven by keystrokes, its screen read back through a small VT emulator.
 // Linux only; skipped where `script` isn't available.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { guard } from "../guard.ts";
-import { CLI, makeHome, type PtyRun, ptyAvailable, runInPty } from "./pty/driver.ts";
+import { CLI, type Home, makeHome, type PtyRun, ptyAvailable, runInPty } from "./pty/driver.ts";
 
 guard();
 
@@ -24,6 +24,14 @@ function restored(run: PtyRun): void {
 }
 
 const exitCode = (run: PtyRun) => Number(/EXIT=(\d+)/.exec(run.output())?.[1]);
+/** Starts for the q-at-the-first-frame check; before T22's fix, 93 in 100 lost the q. */
+const QUIT_RUNS = 20;
+/** The store's all-time totals, read without ingesting (`tokenhud json usage`). */
+function storedTotals(home: Home): { records: number; input: number; output: number } {
+  const out = Bun.spawnSync([BUN, CLI, "json", "usage", "--period", "all"], { env: home.env });
+  const { totals } = JSON.parse(out.stdout.toString());
+  return { records: totals.records, input: totals.tokens.input, output: totals.tokens.output };
+}
 
 describe.skipIf(!ptyAvailable())("under a real pty", () => {
   test("start, switch views 1–4, settings and help open and close, mouse input, quit: terminal restored", async () => {
@@ -62,6 +70,70 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       restored(run);
     } finally {
       run.kill();
+      home.remove();
+    }
+  }, 60_000);
+
+  // T22: OpenTUI reads keys from the moment it sets raw mode and drops any that nothing
+  // listens for, and the TUI listened only once React's effects ran, after the first frame
+  // was drawn: a q sent as soon as the first frame was read was lost in 93 of 100 runs, and
+  // the TUI never quit. Here q goes at that moment, many times.
+  test("q at the first frame quits within 1 s, every time", async () => {
+    for (let i = 0; i < QUIT_RUNS; i++) {
+      const home = makeHome();
+      const run = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+      try {
+        await run.whenSeen(
+          () => run.vt.altScreen && run.vt.text().includes(" tokenhud "),
+          "a frame",
+        );
+        const sent = performance.now();
+        run.send("q");
+        await run.whenSeen(() => /EXIT=\d+/.test(run.output()), `run ${i + 1} to quit`, 5000);
+        expect(performance.now() - sent).toBeLessThan(1000);
+        expect(exitCode(run)).toBe(0);
+        await run.exited;
+        restored(run);
+      } finally {
+        run.kill();
+        home.remove();
+      }
+    }
+  }, 60_000);
+
+  // T22: quitting waited up to 5 s for the ingest Worker's pass, and a large history's cold
+  // scan takes seconds. Now q quits within 1 s and the exit cuts the pass short; the next
+  // start reads everything again and counts each line once. The Worker's test hold
+  // (TOKENHUD_TEST_HOLD_PASS) keeps the pass under way until the quit, on any machine.
+  test("q while a pass is under way quits within 1 s; the next start counts every line once", async () => {
+    const home = makeHome();
+    try {
+      const held = join(home.dir, "pass-held");
+      const env = { ...home.env, TOKENHUD_TEST_HOLD_PASS: held };
+      const cut = runInPty(`${BUN} ${CLI}; ${AFTER}`, env);
+      try {
+        await cut.waitFor(() => existsSync(held), "the pass to read and hold before its write");
+        const sent = performance.now();
+        cut.send("q");
+        await cut.whenSeen(() => /EXIT=\d+/.test(cut.output()), "the quit", 5000);
+        expect(performance.now() - sent).toBeLessThan(1000);
+        expect(exitCode(cut)).toBe(0);
+      } finally {
+        cut.kill();
+      }
+      expect(storedTotals(home)).toEqual({ records: 0, input: 0, output: 0 });
+      const full = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+      try {
+        await full.waitFor(LIVE, "the first pass");
+        full.send("q");
+        await full.exited;
+        expect(exitCode(full)).toBe(0);
+      } finally {
+        full.kill();
+      }
+      // makeHome's 40 lines: input 1000–1039 (40 × 1000 + 780), output 200 each.
+      expect(storedTotals(home)).toEqual({ records: 40, input: 40_780, output: 8000 });
+    } finally {
       home.remove();
     }
   }, 60_000);
@@ -209,6 +281,31 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       await run.exited;
       expect(exitCode(run)).toBe(1);
       expect(run.output()).toContain("simulated crash in a view");
+      restored(run);
+    } finally {
+      run.kill();
+      home.remove();
+    }
+  }, 60_000);
+
+  // T22: a step of the teardown that threw left the process running for good, the terminal
+  // already restored: a later fatal error found shutdown under way and returned. Now it
+  // exits, with the failed step logged and named on stderr (critique m1), and code 1.
+  test("a teardown step that throws: q exits 1, names the step, the terminal restored", async () => {
+    const home = makeHome();
+    const script = join(import.meta.dir, "pty", "teardown-throws.ts");
+    const run = runInPty(`${BUN} ${script}; ${AFTER}`, home.env);
+    try {
+      await run.waitFor(LIVE, "the live indicator");
+      run.send("q");
+      await run.whenSeen(() => /EXIT=\d+/.test(run.output()), "the quit", 5000);
+      expect(exitCode(run)).toBe(1);
+      const line =
+        "quitting: releasing the ingest lock failed: simulated failure releasing the lock";
+      expect(run.output().split(`tokenhud: ${line}`).length - 1).toBe(1);
+      const log = readFileSync(join(home.configDir, "logs", "tokenhud.log"), "utf8");
+      expect(log).toContain(`error ${line}\n`);
+      await run.exited;
       restored(run);
     } finally {
       run.kill();

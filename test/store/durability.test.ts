@@ -36,7 +36,7 @@ import { KEY_SCHEME, ledgerKey } from "../../src/store/key.ts";
 import { fileIdOf, openStore, type Store, type UsageRow } from "../../src/store/store.ts";
 import { guard } from "../guard.ts";
 import { corruptUsageLeaf, scribblePage, usagePages } from "./damage.ts";
-import { cleanup, row, T0, tempDir, track } from "./helpers.ts";
+import { cleanup, deadPid, row, T0, tempDir, track } from "./helpers.ts";
 
 guard();
 
@@ -851,27 +851,34 @@ describe("files beside the store", () => {
     expect(queueOrphans(store)).toEqual([]); // queued already
   });
 
-  // m3: a killed backup's temp file
-  test("a killed backup's temp files are swept once an hour old, and nothing else", () => {
+  // m3: a killed backup's temp file; T22 critique m3: at once once its process is gone
+  test("a cut-short backup's temp files are swept at once if its process is gone, and nothing else", () => {
     const path = storePath();
     const dir = dirname(path);
     make(path, rows(3));
+    const dead = deadPid();
     const old = (Date.now() - 2 * 3_600_000) / 1000;
     const names = {
-      stale: "tokenhud.db.bak.4242.tmp",
-      staleJournal: "tokenhud.db.bak.4242.tmp-journal",
-      fresh: "tokenhud.db.bak.4243.tmp",
+      dead: `tokenhud.db.bak.${dead}.tmp`,
+      deadJournal: `tokenhud.db.bak.${dead}.tmp-journal`,
+      // A running backup's, this process's own included: never touched.
+      live: `tokenhud.db.bak.${process.pid}.tmp`,
+      // A live pid, but an hour old: that pid was reused; no backup takes an hour.
+      reused: `tokenhud.db.bak.${process.ppid}.tmp`,
       other: "tokenhud.db.bak.notes.tmp",
       bak: "tokenhud.db.bak",
     };
     for (const name of Object.values(names)) writeFileSync(join(dir, name), "x");
-    for (const name of [names.stale, names.staleJournal, names.other, names.bak]) {
+    for (const name of [names.reused, names.other, names.bak]) {
       utimesSync(join(dir, name), old, old);
     }
-    track(openStore(path));
+    expect(track(openStore(path)).backupCutShort).toBe(true);
     const left = new Set(readdirSync(dir));
-    expect(left.has(names.stale) || left.has(names.staleJournal)).toBe(false);
-    expect([names.fresh, names.other, names.bak].every((n) => left.has(n))).toBe(true);
+    expect([names.dead, names.deadJournal, names.reused].some((n) => left.has(n))).toBe(false);
+    expect([names.live, names.other, names.bak].every((n) => left.has(n))).toBe(true);
+    // Nothing left to sweep: no backup was cut short.
+    rmSync(join(dir, names.live));
+    expect(track(openStore(path)).backupCutShort).toBe(false);
   });
 
   test.skipIf(process.platform === "win32")("the sweep never follows a symlink", () => {

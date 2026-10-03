@@ -2,7 +2,7 @@
 // to the rows there are), rule, footer (two lines from 30 rows: the view's keys, then the
 // global ones); plus the help and settings overlays and the action menu. Pure rendering of
 // the controller's state.
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensions } from "@opentui/react";
 import {
   Component,
   memo,
@@ -728,20 +728,8 @@ export function App(props: {
   onFatal: (error: Error) => void;
   onCommit?: (state: UiState) => void;
 }) {
+  // Keys reach the controller from run.tsx, not a React effect here (T22).
   const { width, height } = useTerminalDimensions();
-  // A key handler that throws is a crash like a render error (OpenTUI would swallow it).
-  useKeyboard((key) => {
-    try {
-      props.controller.key({
-        name: key.name,
-        sequence: key.sequence,
-        ctrl: key.ctrl,
-        shift: key.shift,
-      });
-    } catch (error) {
-      props.onFatal(error as Error);
-    }
-  });
   return (
     <Fatal onError={props.onFatal}>
       <Frame

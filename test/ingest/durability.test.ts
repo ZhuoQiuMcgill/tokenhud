@@ -28,7 +28,7 @@ import { ledgerKey } from "../../src/store/key.ts";
 import { openStore, type Store, type UsageRow } from "../../src/store/store.ts";
 import { guard } from "../guard.ts";
 import { corruptUsageLeaf } from "../store/damage.ts";
-import { row } from "../store/helpers.ts";
+import { deadPid, row } from "../store/helpers.ts";
 import { claudeLine, cleanup, makeRoot, openEngine, storedRows, tempDir } from "./helpers.ts";
 
 guard();
@@ -573,6 +573,38 @@ describe("backups", () => {
     expect(readFileSync(prev).equals(foreign)).toBe(true);
     expect(count(bak)).toBe(7 + 50);
     expect(storedRows(e.store).size).toBe(7 + 50); // its history is in every view
+  });
+
+  // T22 critique m3: quitting no longer waits for a backup under way
+  test("one that a quit cut short is taken at the next start's first pass, due or not", async () => {
+    const w = world();
+    await (await w.scanned()).stop(); // today's backup, of 6 rows
+    const { bak } = backupPaths(w.storePath);
+    appendFileSync(join(w.proj, "s1.jsonl"), claudeLine("7", "7", 10, 1));
+    // A backup owed at once (after a recovery, say) was cut short: its whole copy is left
+    // behind and its process is gone. The daily one is not due again today.
+    const tmp = `${bak}.${deadPid()}.tmp`;
+    copyFileSync(w.storePath, tmp);
+    const e = await w.scanned();
+    expect(existsSync(tmp)).toBe(false);
+    expect(count(bak)).toBe(7);
+    await e.stop();
+  });
+
+  test("a daily one that a kill cut short is taken at the next start's first pass", async () => {
+    const w = world();
+    await (await w.scanned()).stop();
+    const { bak } = backupPaths(w.storePath);
+    age(bak);
+    appendFileSync(join(w.proj, "s1.jsonl"), claudeLine("7", "7", 10, 1));
+    // What SIGKILL leaves: an empty temp file and its journal.
+    const tmp = `${bak}.${deadPid()}.tmp`;
+    writeFileSync(tmp, "");
+    writeFileSync(`${tmp}-journal`, "");
+    const e = await w.scanned();
+    expect(existsSync(tmp) || existsSync(`${tmp}-journal`)).toBe(false);
+    expect(count(bak)).toBe(7);
+    await e.stop();
   });
 
   // test_a_key_scheme_migration_is_backed_up_at_once

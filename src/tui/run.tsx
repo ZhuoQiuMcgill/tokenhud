@@ -1,6 +1,7 @@
 // The TUI's lifecycle on the UI thread: the renderer, the ingest Worker, the single-writer
 // lock, the refresh tick and shutdown. Every exit path (q, Ctrl-C, a signal, a crash)
-// restores the terminal, stops the Workers by message and releases the lock.
+// restores the terminal and asks the Workers to stop by message, waiting for them at most
+// QUIT_STOP_MS; the lock is released then, or by the kernel at exit while ingest still runs.
 import { appendFileSync } from "node:fs";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
@@ -12,6 +13,7 @@ import { VERSION } from "../version.ts";
 import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
 import { errorLine, fileLog } from "./log.ts";
+import { QuitSteps } from "./quit.ts";
 import { theme } from "./theme.ts";
 import { RestartBackoff, type VmWorker } from "./vm/client.ts";
 import type { VmMessage } from "./vm/types.ts";
@@ -50,9 +52,15 @@ export interface Boot {
   readonly trace: string | null;
 }
 
-/** How long quitting waits for the ingest Worker to finish its pass. */
+/** How long restarting ingest (accounts edited) waits for the old Worker to finish its pass. */
 const INGEST_STOP_MS = 5000;
-const VM_STOP_MS = 1000;
+/**
+ * How long quitting waits for the Workers to stop, both at once: q quits within 1 s (T22).
+ * A pass still running then (a large history's cold scan takes seconds) is cut short by the
+ * exit, which is safe: the store commits in one transaction before the cursors move, so the
+ * next start reads the same bytes again.
+ */
+const QUIT_STOP_MS = 500;
 /** Start ingest anyway if the first frame with data hasn't come by then (e.g. a store error). */
 const INGEST_FALLBACK_MS = 2000;
 
@@ -98,7 +106,7 @@ export async function runApp(boot: Boot): Promise<number> {
     vmRoots: () => vm.send({ type: "roots" }),
     accountsEdited: () => {
       if (ingest === null) return;
-      void stopIngest().then(startIngest);
+      void stopIngest(INGEST_STOP_MS).then(startIngest);
     },
     quit: () => void shutdown(0),
   });
@@ -191,10 +199,16 @@ export async function runApp(boot: Boot): Promise<number> {
     );
   }
 
-  async function stopIngest(): Promise<void> {
+  /** Whether the ingest Worker (if any) stopped within `ms`. */
+  async function stopIngest(ms: number): Promise<boolean> {
     const worker = ingest;
     ingest = null;
-    if (worker !== null) await within(worker.stop(), INGEST_STOP_MS);
+    if (worker === null) return true;
+    const stopped = await within(
+      worker.stop().then(() => true),
+      ms,
+    );
+    return stopped === true;
   }
 
   // At most once a day, and never before the first frame: a newer release for the footer.
@@ -294,27 +308,40 @@ export async function runApp(boot: Boot): Promise<number> {
   async function shutdown(code: number, error?: unknown): Promise<void> {
     if (closing) return;
     closing = true;
-    clearInterval(tickTimer);
-    clearInterval(beatTimer);
-    clearTimeout(fallback);
-    if (ingestRetry !== null) clearTimeout(ingestRetry);
-    unsubscribe();
+    const steps = new QuitSteps();
+    let exitCode = code;
+    // Whatever fails on the way out, the process still exits: a later fatal error finds
+    // `closing` set and returns, so nothing else would (T22).
     try {
-      renderer.destroy();
-    } catch {
-      // the terminal is restored as far as OpenTUI could
+      clearInterval(tickTimer);
+      clearInterval(beatTimer);
+      clearTimeout(fallback);
+      if (ingestRetry !== null) clearTimeout(ingestRetry);
+      unsubscribe();
+      await steps.run("restoring the terminal", () => renderer.destroy());
+      // OpenTUI turns on grapheme clustering (mode 2027) and leaves it on (critique n1).
+      if (process.stdout.isTTY) process.stdout.write("\x1b[?2027l");
+      if (error !== undefined) {
+        const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        log.write("error", `crashed: ${text}`);
+        process.stderr.write(`tokenhud: crashed: ${text}\n`);
+      }
+      const [ingestStopped] = await Promise.all([
+        steps.run("stopping the ingest worker", () => stopIngest(QUIT_STOP_MS)),
+        steps.run("stopping the view-model worker", () => within(vm.stop(), QUIT_STOP_MS)),
+      ]);
+      // Released by hand only once the Worker this quit stopped has said so. One still in
+      // its pass keeps the lock until the exit, when the kernel drops it. A Worker that an
+      // accounts-edited restart is still stopping is not tracked here, so a quit during
+      // that restart releases at once; lock.ts allows it, as the store stays correct with
+      // two writers.
+      if (ingestStopped === true) {
+        await steps.run("releasing the ingest lock", () => lock?.release());
+      }
+      exitCode = steps.finish(code, log, (line) => process.stderr.write(line));
+    } finally {
+      resolveExit(exitCode);
     }
-    // OpenTUI turns on grapheme clustering (mode 2027) and leaves it on (critique n1).
-    if (process.stdout.isTTY) process.stdout.write("\x1b[?2027l");
-    if (error !== undefined) {
-      const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      log.write("error", `crashed: ${text}`);
-      process.stderr.write(`tokenhud: crashed: ${text}\n`);
-    }
-    await stopIngest();
-    await within(vm.stop(), VM_STOP_MS);
-    lock?.release();
-    resolveExit(code);
   }
 
   const fatal = (error: unknown) => void shutdown(1, error);
@@ -342,6 +369,17 @@ export async function runApp(boot: Boot): Promise<number> {
   };
   boot.attach(fromVm);
   for (const message of boot.early) fromVm(message);
+  // Keys go to the controller from before the first render. OpenTUI reads stdin from the
+  // moment it sets raw mode and drops a key nothing listens for; React's useKeyboard
+  // subscribes in an effect that runs after the first frame is drawn, so a q pressed then
+  // was lost (T22). A key handler that throws is a crash like a render error.
+  renderer.keyInput.on("keypress", (key) => {
+    try {
+      controller.key({ name: key.name, sequence: key.sequence, ctrl: key.ctrl, shift: key.shift });
+    } catch (error) {
+      fatal(error);
+    }
+  });
   createRoot(renderer).render(<App controller={controller} onFatal={fatal} onCommit={onCommit} />);
   return exited;
 }

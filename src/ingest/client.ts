@@ -30,7 +30,7 @@ export interface LimitsWorkerOptions {
 /** Engine options that can cross to the Worker: no callbacks, no file-system port. */
 export type WorkerOptions = Omit<
   EngineOptions,
-  "log" | "onChanged" | "onPass" | "recovery" | "watch"
+  "log" | "onChanged" | "onPass" | "recovery" | "watch" | "beforeWrite"
 > & {
   /** Fetch subscription limits in the Worker; absent, limits are off. */
   limits?: LimitsWorkerOptions;
