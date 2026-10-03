@@ -1,6 +1,7 @@
 // The TUI's lifecycle on the UI thread: the renderer, the ingest Worker, the single-writer
 // lock, the refresh tick and shutdown. Every exit path (q, Ctrl-C, a signal, a crash)
-// restores the terminal, stops the Workers by message and releases the lock.
+// restores the terminal and asks the Workers to stop by message, waiting for them at most
+// QUIT_STOP_MS; the lock is released then, or by the kernel at exit while ingest still runs.
 import { appendFileSync } from "node:fs";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
@@ -12,6 +13,7 @@ import { VERSION } from "../version.ts";
 import { App } from "./app.tsx";
 import { Controller, initialState, type UiState } from "./controller.ts";
 import { errorLine, fileLog } from "./log.ts";
+import { QuitSteps } from "./quit.ts";
 import { theme } from "./theme.ts";
 import { RestartBackoff, type VmWorker } from "./vm/client.ts";
 import type { VmMessage } from "./vm/types.ts";
@@ -306,6 +308,8 @@ export async function runApp(boot: Boot): Promise<number> {
   async function shutdown(code: number, error?: unknown): Promise<void> {
     if (closing) return;
     closing = true;
+    const steps = new QuitSteps();
+    let exitCode = code;
     // Whatever fails on the way out, the process still exits: a later fatal error finds
     // `closing` set and returns, so nothing else would (T22).
     try {
@@ -314,11 +318,7 @@ export async function runApp(boot: Boot): Promise<number> {
       clearTimeout(fallback);
       if (ingestRetry !== null) clearTimeout(ingestRetry);
       unsubscribe();
-      try {
-        renderer.destroy();
-      } catch {
-        // the terminal is restored as far as OpenTUI could
-      }
+      await steps.run("restoring the terminal", () => renderer.destroy());
       // OpenTUI turns on grapheme clustering (mode 2027) and leaves it on (critique n1).
       if (process.stdout.isTTY) process.stdout.write("\x1b[?2027l");
       if (error !== undefined) {
@@ -327,14 +327,20 @@ export async function runApp(boot: Boot): Promise<number> {
         process.stderr.write(`tokenhud: crashed: ${text}\n`);
       }
       const [ingestStopped] = await Promise.all([
-        stopIngest(QUIT_STOP_MS),
-        within(vm.stop(), QUIT_STOP_MS),
+        steps.run("stopping the ingest worker", () => stopIngest(QUIT_STOP_MS)),
+        steps.run("stopping the view-model worker", () => within(vm.stop(), QUIT_STOP_MS)),
       ]);
-      // An ingest Worker still in its pass keeps the lock until the exit, when the kernel
-      // drops it: no other tokenhud starts writing while this one may still be.
-      if (ingestStopped) lock?.release();
+      // Released by hand only once the Worker this quit stopped has said so. One still in
+      // its pass keeps the lock until the exit, when the kernel drops it. A Worker that an
+      // accounts-edited restart is still stopping is not tracked here, so a quit during
+      // that restart releases at once; lock.ts allows it, as the store stays correct with
+      // two writers.
+      if (ingestStopped === true) {
+        await steps.run("releasing the ingest lock", () => lock?.release());
+      }
+      exitCode = steps.finish(code, log, (line) => process.stderr.write(line));
     } finally {
-      resolveExit(code);
+      resolveExit(exitCode);
     }
   }
 

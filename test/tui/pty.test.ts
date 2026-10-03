@@ -315,8 +315,9 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
   }, 60_000);
 
   // T22: a step of the teardown that threw left the process running for good, the terminal
-  // already restored: a later fatal error found shutdown under way and returned.
-  test("a teardown step that throws: q still exits, the terminal restored", async () => {
+  // already restored: a later fatal error found shutdown under way and returned. Now it
+  // exits, with the failed step logged and named on stderr (critique m1), and code 1.
+  test("a teardown step that throws: q exits 1, names the step, the terminal restored", async () => {
     const home = makeHome();
     const script = join(import.meta.dir, "pty", "teardown-throws.ts");
     const run = runInPty(`${BUN} ${script}; ${AFTER}`, home.env);
@@ -324,7 +325,12 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       await run.waitFor(LIVE, "the live indicator");
       run.send("q");
       await run.whenSeen(() => /EXIT=\d+/.test(run.output()), "the quit", 5000);
-      expect(exitCode(run)).toBe(0);
+      expect(exitCode(run)).toBe(1);
+      const line =
+        "quitting: releasing the ingest lock failed: simulated failure releasing the lock";
+      expect(run.output().split(`tokenhud: ${line}`).length - 1).toBe(1);
+      const log = readFileSync(join(home.configDir, "logs", "tokenhud.log"), "utf8");
+      expect(log).toContain(`error ${line}\n`);
       await run.exited;
       restored(run);
     } finally {
