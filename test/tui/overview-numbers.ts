@@ -2,6 +2,7 @@
 // every section on screen. Shared by the TUI's and `--once`'s tests.
 import { expect } from "bun:test";
 import type { Config } from "../../src/config.ts";
+import { countdownTo } from "../../src/limits/derive.ts";
 import { clock, countdown, money, tokens } from "../../src/tui/format.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import { fitBuckets, listedEvents } from "../../src/tui/views/overview.tsx";
@@ -32,8 +33,30 @@ function paceText(c: LimitCard, showCost: boolean): string {
 }
 
 /**
- * Every number of the cards: meters, countdowns, the pace, the verdict's time or share (a
- * weekly window's part of a day, an idle card's full window), the age.
+ * A projected 100 % (T26): its countdown always, and its time (a weekly window's part of a
+ * day) whenever the bracket after the countdown is on screen. So a time is never cut, and
+ * no countdown lost.
+ */
+function projectionNumbers(text: string, vm: OverviewVM): string[] {
+  const out: string[] = [];
+  for (const c of vm.cards ?? []) {
+    const v = c.verdict;
+    if (v.kind !== "hits") continue;
+    const left = countdownTo(v.at, vm.asOf);
+    if (left === "now") {
+      out.push("100% now");
+      continue;
+    }
+    out.push(left);
+    const time = `${left} (${v.rough ?? when(v.at, vm.asOf)})`;
+    if (text.includes(`${left} (`)) out.push(time);
+  }
+  return out;
+}
+
+/**
+ * Every number of the cards: meters, countdowns, the pace, the verdict's share (an idle
+ * card's full window), the age; a projection's in `projectionNumbers`.
  */
 function cardNumbers(vm: OverviewVM, showCost: boolean, resets: boolean): string[] {
   const out: string[] = [];
@@ -50,8 +73,6 @@ function cardNumbers(vm: OverviewVM, showCost: boolean, resets: boolean): string
       }
     }
     const v = c.verdict;
-    // A weekly window's time is a part of a day (T18): `~Sun evening`, whole.
-    if (v.kind === "hits") out.push(v.rough ?? when(v.at, vm.asOf));
     if (v.kind === "full") out.push(when(v.until, vm.asOf));
     if (v.kind === "week") out.push(`~${pct(v.utilization)}`);
     if (v.kind === "idle" && v.high !== null)
@@ -79,7 +100,7 @@ export function expectOverviewWhole(
   window: ActivityWindow = "24h",
 ) {
   const show = config.show_cost;
-  const numbers = cardNumbers(vm, show, true);
+  const numbers = [...cardNumbers(vm, show, true), ...projectionNumbers(text, vm)];
   const alternatives: string[][] = [];
   if (text.includes(" SPEND")) {
     const header = text.split("\n").find((l) => l.includes("today")) ?? "";

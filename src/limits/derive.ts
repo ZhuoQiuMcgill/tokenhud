@@ -247,3 +247,28 @@ export function roughly(t: number, now: number, offset: (t: number) => number): 
   if (ahead === 1) return `~tomorrow ${part}`;
   return `~${ahead >= 7 ? "next " : ""}${weekday} ${part}`;
 }
+
+// ── how long, at most ────────────────────────────────────────────────────────────────
+
+const MINUTE_MS = 60_000;
+/** Each step's upper end (ms) and how it reads: a time left within it reads as it. */
+const STEPS: readonly (readonly [number, string])[] = [
+  ...[5, 10, 15, 20, 30, 45].map((m) => [m * MINUTE_MS, `<${m}m`] as const),
+  ...[1, 1.5, 2, 3, 4, 6, 8, 12, 18, 24].map((h) => [h * HOUR_MS, `<${h}h`] as const),
+];
+
+/**
+ * How long until a projected 100 % at `at`, from `now` (T26): `now` under a minute, else
+ * the time left rounded **up** to the next step, so "within" holds: `<5m`, `<10m`, `<15m`,
+ * `<20m`, `<30m`, `<45m`, `<1h`, `<1.5h`, `<2h`, `<3h`, `<4h`, `<6h`, `<8h`, `<12h`,
+ * `<18h`, `<24h`; past a day, whole days up, `~2d`, `~3d` (only a weekly window gets that
+ * far, and its projection is good to about a part of a day, hence `~`). Exactly 2 hours is
+ * `<2h`, a minute more `<3h`. A duration, not a clock time: a DST change in between doesn't
+ * move it.
+ */
+export function countdownTo(at: number, now: number): string {
+  const left = at - now;
+  if (left < MINUTE_MS) return "now";
+  const step = STEPS.find(([upTo]) => left <= upTo);
+  return step === undefined ? `~${Math.ceil(left / DAY_MS)}d` : step[1];
+}

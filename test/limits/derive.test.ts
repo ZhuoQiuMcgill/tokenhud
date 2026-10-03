@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { saveLimitsCache } from "../../src/limits/cache.ts";
 import {
+  countdownTo,
   MIN_AVERAGE_MS,
   type ProjectionInput,
   projectAtReset,
@@ -518,5 +519,78 @@ describe("roughly: a weekly window's time, to a part of a day", () => {
     expect(there(Date.UTC(2026, 10, 1, 11))).toBe("~tomorrow morning");
     // The same instants in UTC are Sunday morning already.
     expect(roughly(Date.UTC(2026, 10, 1, 10, 59), sat, () => 0)).toBe("~tomorrow morning");
+  });
+});
+
+describe("countdownTo: how long until a projected 100 %, at most (T26)", () => {
+  const SEC = 1000;
+  const DAY = 24 * HOUR;
+  /** The countdown `left` ms before the instant, with the clock at NOW. */
+  const left = (ms: number) => countdownTo(NOW + ms, NOW);
+
+  test("under a minute: now", () => {
+    expect(left(59 * SEC)).toBe("now");
+    expect(left(MIN - 1)).toBe("now");
+    expect(left(0)).toBe("now");
+    // An instant already past (a frame drawn after it) is now too.
+    expect(left(-5 * MIN)).toBe("now");
+    expect(left(MIN)).toBe("<5m");
+  });
+
+  test("each step's upper end is in it; a moment more is the next step's", () => {
+    const steps: [number, string, string][] = [
+      [5 * MIN, "<5m", "<10m"],
+      [10 * MIN, "<10m", "<15m"],
+      [15 * MIN, "<15m", "<20m"],
+      [20 * MIN, "<20m", "<30m"],
+      [30 * MIN, "<30m", "<45m"],
+      [45 * MIN, "<45m", "<1h"],
+      [HOUR, "<1h", "<1.5h"],
+      [90 * MIN, "<1.5h", "<2h"],
+      [2 * HOUR, "<2h", "<3h"],
+      [3 * HOUR, "<3h", "<4h"],
+      [4 * HOUR, "<4h", "<6h"],
+      [6 * HOUR, "<6h", "<8h"],
+      [8 * HOUR, "<8h", "<12h"],
+      [12 * HOUR, "<12h", "<18h"],
+      [18 * HOUR, "<18h", "<24h"],
+      [24 * HOUR, "<24h", "~2d"],
+    ];
+    for (const [upTo, at, after] of steps) {
+      expect([upTo, left(upTo)]).toEqual([upTo, at]);
+      expect([upTo + 1, left(upTo + 1)]).toEqual([upTo + 1, after]);
+    }
+  });
+
+  test("the task's cases: 2h00m is <2h, 2h01m <3h, 59 s now", () => {
+    expect(left(2 * HOUR)).toBe("<2h");
+    expect(left(2 * HOUR + MIN)).toBe("<3h");
+    expect(left(59 * SEC)).toBe("now");
+    expect(left(79 * MIN)).toBe("<1.5h");
+  });
+
+  test("past a day, whole days up, as an estimate: a weekly window's", () => {
+    expect(left(DAY + 1)).toBe("~2d");
+    expect(left(36 * HOUR)).toBe("~2d");
+    expect(left(2 * DAY)).toBe("~2d");
+    expect(left(2 * DAY + MIN)).toBe("~3d");
+    // T18's user case: Tue 11:40 to Thu 19:40 is 56 h.
+    expect(left(56 * HOUR)).toBe("~3d");
+    expect(left(3 * DAY + 6 * MIN)).toBe("~4d");
+    expect(left(6 * DAY + 23 * HOUR)).toBe("~7d");
+  });
+
+  test("a duration, not a clock time: a DST change in between doesn't move it", () => {
+    // Toronto falls back on Sun Nov 1 2026: 01:30 EDT (05:30Z) to 02:30 EST (07:30Z) is an
+    // hour on the wall clock and two in fact.
+    const from = Date.parse("2026-11-01T05:30:00Z");
+    const to = Date.parse("2026-11-01T07:30:00Z");
+    const toronto = Zone.of("America/Toronto");
+    expect((to + toronto.offset(to) - (from + toronto.offset(from))) / HOUR).toBe(1);
+    expect(countdownTo(to, from)).toBe("<2h");
+    // Springing forward on Sun Mar 8 2026: 01:30 EST (06:30Z) to 03:00 EDT (07:00Z) is 90
+    // minutes on the wall clock and 30 in fact.
+    const spring = Date.parse("2026-03-08T06:30:00Z");
+    expect(countdownTo(spring + 30 * MIN, spring)).toBe("<30m");
   });
 });

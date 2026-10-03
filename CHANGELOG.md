@@ -10,11 +10,24 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ### Changed
 
+- **A projected 100 % counts down.** A limits card said `100% at 12:13` (or
+  `100% ~Sun evening` for a weekly window), which left the subtraction to you. It now says
+  how long first, rounded up so it never says later than it is, and the time second where
+  the card has room: `100% in <2h (12:13)`, `100% in ~3d (~Sun evening)`, `100% now` under
+  a minute. Narrower, the time goes first, then the `in` (`100% <2h`); a weekly card drops
+  `this week` from its pace before its time. The countdown is worked out afresh each time
+  the screen is drawn.
+- **The Accounts view shows each window's projection**, under its meter, in the same form.
 - **The Overview's top models follow the activity chart's window.** They always covered
   the last 24 hours, even beside a 5-hour or 7-day chart. `a`/`d` now switch both between
   the last 5 hours, 24 hours and 7 days, and the title names the window
   (`TOP MODELS · 7d`). When a row is free, a dim `more windows: 3 Models` under the list
   points to the Models view for today, this week, this month and the rest.
+
+### Added
+
+- **MCP:** `limits` and `should_wait` give `projected_exhaustion_in_s`, the whole seconds
+  until `projected_exhaustion_at` (null when there is none).
 
 ## [0.1.2] - 2026-10-02
 

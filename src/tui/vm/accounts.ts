@@ -5,13 +5,20 @@
 // formats it.
 
 import { sep } from "node:path";
+import { isWeekly, roughly } from "../../limits/derive.ts";
 import type { AccountLimits, LimitEvent, Limits, LimitWindow } from "../../limits/index.ts";
 import type { McpActivity } from "../../mcp/heartbeat.ts";
 import type { Range } from "../../query/types.ts";
-import { addDays } from "../../query/tz.ts";
+import { addDays, type Zone } from "../../query/tz.ts";
 import { onWindowsDrive, type Root } from "../../sources/roots.ts";
 import { modelName } from "../format.ts";
-import { ALL_TIME, amount, type ComputeContext, type Computed } from "./compute.ts";
+import {
+  ALL_TIME,
+  amount,
+  type ComputeContext,
+  type Computed,
+  ROLLING_REFRESH_MS,
+} from "./compute.ts";
 import type { AccountInfo, Priced } from "./types.ts";
 
 export const SPARK_DAYS = 30;
@@ -39,6 +46,12 @@ export interface LimitMeter {
   /** 0..1 (a provider may report more); 0 once the window has reset. */
   readonly utilization: number;
   readonly resetsAt: number;
+  /**
+   * When the window reaches 100 % at its pace, before its reset (T8's estimate), and for a
+   * weekly window that time as coarsely as it is known (`~Sun evening`, T18); null when it
+   * lasts to its reset or there is too little to tell. The view counts down to it (T26).
+   */
+  readonly projected: { readonly at: number; readonly rough: string | null } | null;
 }
 
 export interface AccountLimitsInfo {
@@ -182,17 +195,25 @@ export function weeklySlots(
   return slots;
 }
 
-function limitsInfo(l: AccountLimits): AccountLimitsInfo {
+function limitsInfo(l: AccountLimits, now: number, zone: Zone): AccountLimitsInfo {
   return {
     signedIn: l.account.signed_in,
     asOf: l.as_of,
     error: l.error,
-    windows: l.windows.map((w) => ({
-      kind: w.kind,
-      label: w.label,
-      utilization: w.utilization,
-      resetsAt: w.resets_at,
-    })),
+    windows: l.windows.map((w) => {
+      const at = w.projected_exhaustion_at;
+      const weekly = isWeekly(w.window_s === null ? null : w.window_s * 1000);
+      return {
+        kind: w.kind,
+        label: w.label,
+        utilization: w.utilization,
+        resetsAt: w.resets_at,
+        projected:
+          typeof at === "number"
+            ? { at, rough: weekly ? roughly(at, now, (t) => zone.offset(t)) : null }
+            : null,
+      };
+    }),
   };
 }
 
@@ -243,6 +264,10 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
       // Meters drop to 0 % at their reset: the view is out of date then.
       for (const w of l.windows)
         if (w.resets_at > now) validUntil = Math.min(validUntil, w.resets_at);
+      // A projection moves with the pace's rolling 30 minutes, as the Overview's cards do.
+      if (l.windows.some((w) => typeof w.projected_exhaustion_at === "number")) {
+        validUntil = Math.min(validUntil, now + ROLLING_REFRESH_MS);
+      }
       const events =
         sources?.limits?.limitEvents(
           { from: now - (WEEKS_SHOWN + 1) * WEEK_MS, to: now + 1 },
@@ -281,7 +306,7 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
       sparkTokens: days.map((d) => d.usage.tokens.total),
       last30: amount(q.totals({ range: last30, accounts: [a.id] }).usage),
       topModels: topModels(ctx, a.id, last30),
-      limits: l === undefined ? null : limitsInfo(l),
+      limits: l === undefined ? null : limitsInfo(l, now, ctx.zone),
       sharedWith: others.map((o) => o.stored?.label ?? o.label),
       accountLast30:
         others.length === 0 ? null : amount(q.totals({ range: last30, accounts: shared }).usage),

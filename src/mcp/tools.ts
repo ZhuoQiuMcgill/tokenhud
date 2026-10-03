@@ -102,9 +102,12 @@ export interface AccountEntry {
   is_current: boolean;
 }
 
-/** `projected_exhaustion_at` must always be labelled an estimate (T8), a weekly one coarse (T18). */
+/**
+ * `projected_exhaustion_at` must always be labelled an estimate (T8), a weekly one coarse
+ * (T18); so must the seconds until it (T26).
+ */
 export const PROJECTION_NOTE =
-  "projected_exhaustion_at is an estimate from this machine's spend pace: the last 30 minutes' (pace_basis 30m) or, for a weekly window, its average since the window began (window_avg); a weekly window's instant is coarse, good to about a part of a day";
+  "projected_exhaustion_at, and projected_exhaustion_in_s (the seconds until it), are an estimate from this machine's spend pace: the last 30 minutes' (pace_basis 30m) or, for a weekly window, its average since the window began (window_avg); a weekly window's instant is coarse, good to about a part of a day";
 
 type StoreAccounts = Map<string, { id: number; lastSeen: number | null }>;
 
@@ -214,7 +217,7 @@ export class Tools {
     this.#d.record?.("limits", resolved.root.label);
     const { limits, storeDown } = await this.#accountLimits(resolved.root, true);
     return {
-      ...limitsView(resolved, limits, this.#d.zone),
+      ...limitsView(resolved, limits, this.#d.zone, this.#d.now()),
       note: PROJECTION_NOTE,
       warnings: storeDown ? [STORE_DOWN] : [],
     };

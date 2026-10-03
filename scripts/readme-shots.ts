@@ -312,7 +312,7 @@ const SHOTS: readonly Shot[] = [
         section: "limits",
         locate: (s) => tight(s, "limits"),
         name: "Limits",
-        text: "A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder of the two paces, `pace (30m)` over the last 30 minutes and `avg` over the week so far, and that every time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.",
+        text: "A card per account, Claude Code and Codex alike: its 5-hour and weekly subscription limits, and what its current spending means for them. The note on the right is a reminder of the two paces, `pace (30m)` over the last 30 minutes and `avg` over the week so far, that `<2h` means within 2 hours, and that every countdown and time on a card is an estimate. [Reading a limits card](#reading-a-limits-card) explains each reading.",
       },
       {
         section: "limits",
@@ -401,7 +401,7 @@ const SHOTS: readonly Shot[] = [
         locate: (s) => s.find(/→ .*\S/, card(s, /work · claude/)),
         badge: "br",
         name: "Verdict",
-        text: "What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `100% at 12:13` (`hits 100% at …` on a wider card), the time the 5-hour window fills at its pace, with the day when it isn't today; `100% ~tonight`, the part of the day the weekly window fills at its average (or tomorrow morning, Sunday evening and so on; never to the minute, which a week's average can't tell); `wk ~94%` (`week ends ~…` on a wider card), the weekly window is on course to end its week at 80 % or more; `idle`, nothing spent in 30 minutes, or `idle · week N%` when a window is at 80 % or more all the same; `safe` (`safe until …` on a wider card), both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.",
+        text: "What that pace means for the two windows: an estimate (see [How the projection works](#how-the-projection-works)). The first of these that applies: `at 100% until …`, a window is full now, until the last full one resets; `100% in <45m`, how soon the 5-hour window fills at its pace, rounded up to the next of 5, 10, 15, 20, 30 or 45 minutes, or 1, 1.5, 2, 3, 4, 6, 8, 12, 18 or 24 hours, so it never says later than it is (just `now` under a minute), and where the card has room, when (`… (12:13)`, with the day when it isn't today); `100% <18h`, the same for the weekly window at its average, past a day in days with a `~`, and its time only to a part of the day (`… (~tonight)`, or tomorrow morning, Sunday evening and so on; never to the minute, which a week's average can't tell). A narrow card drops a weekly average's `this week` first, then the time, then the `in`, then the pace's basis. `wk ~94%` (`week ends ~…` on a wider card), the weekly window is on course to end its week at 80 % or more; `idle`, nothing spent in 30 minutes, or `idle · week N%` when a window is at 80 % or more all the same; `safe` (`safe until …` on a wider card), both windows last until they reset; `no estimate yet`, too little spending in a window to tell. Red means a window is or will be full, amber a high week.",
       },
       {
         section: "limits",
@@ -548,9 +548,9 @@ const SHOTS: readonly Shot[] = [
       },
       {
         section: "accounts",
-        locate: (s) => s.tight(s.run(detail(s), /resets? |reset .* ago|failed/)),
+        locate: (s) => s.tight(s.run(detail(s), /resets? |reset .* ago|failed|→ 100%/)),
         name: "Limits",
-        text: "Every limit window of the account: 5-hour, weekly, then any of a model's own. The bar and the percentage are how much is used (colours as on the cards), then when the window resets: a time today, a weekday and a time within a week, else a date. A window that has reset since the last fetch shows an empty bar, `—`, and how long ago it reset. A failed fetch is noted under the meters.",
+        text: "Every limit window of the account: 5-hour, weekly, then any of a model's own. The bar and the percentage are how much is used (colours as on the cards), then when the window resets: a time today, a weekday and a time within a week, else a date. A window projected to fill before it resets says so under its bar, as the cards do: `→ 100% in <45m (12:13)`, and for a weekly window `→ 100% in ~2d (~tomorrow night)`. A window that has reset since the last fetch shows an empty bar, `—`, and how long ago it reset. A failed fetch is noted under the meters.",
       },
       {
         section: "accounts",

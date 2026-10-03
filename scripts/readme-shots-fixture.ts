@@ -4,11 +4,11 @@
 // Built in a temp dir from the TUI test fixture's helpers; nothing here reads a real file.
 //
 // What each account is there to show:
-// - `work`: near its 5-hour limit and spending now, so its card projects when it hits 100 %;
+// - `work`: near its 5-hour limit and spending now, so its card counts down to 100 %;
 // - `old-laptop`: history only (it moved to another machine), "not signed in here";
 // - `home`: spending a little, "safe until reset";
 // - `lab`: limits captured 52 minutes ago (stale), nothing spent since, but 62 % of a week
-//   one day old: at that week's average it fills tonight ("100% ~tonight");
+//   one day old: at that week's average it fills tonight, within 18 hours ("100% <18h");
 // - `codex-main`: its weekly window high, "week ends ~N%".
 // Models include an unpriced one (`*`) and an estimated one (`≈`).
 import type { Database } from "bun:sqlite";

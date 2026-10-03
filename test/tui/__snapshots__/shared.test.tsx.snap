@@ -4,11 +4,11 @@ exports[`105×50 Overview: one card titled with both labels 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts            scope all accounts ▾   ● live · 5s 
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                          
- LIMITS      pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
+ LIMITS                       pace = last 30 min · avg = this week so far · <2h = within 2 h · estimates 
  ╭─ personal-like + win-like · claude ─────────────╮  ╭─ work-like · claude ───────────────────────────╮ 
  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  64%  1h35m │  │ 5h   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  12%  4h00m │ 
  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  31%  2d22h │  │ week ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  40%  2d22h │ 
- │ pace $1.4/h (30m) → hits 100% at 12:10          │  │ pace $0/h (30m) → idle                         │ 
+ │ pace $1.4/h (30m) → 100% in <45m (12:10)        │  │ pace $0/h (30m) → idle                         │ 
  ╰─────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────╯ 
                                                                                                          
  SPEND                                                                                                   
@@ -65,8 +65,9 @@ exports[`105×50 Accounts: win-like says what it shares, and the account's total
  ● work-like          claude  40% │                                                                      
  + add a root…                    │  shared with personal-like                                           
                                   │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15    
- w/s   account                    │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40
- enter actions                    │                                                                      
+ w/s   account                    │          → 100% in <45m (12:10)                                      
+ enter actions                    │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40
+                                  │                                                                      
                                   │  weekly usage when it reset · last 8 weeks                           
                                   │                                                                      
                                   │                                                                      
@@ -80,7 +81,6 @@ exports[`105×50 Accounts: win-like says what it shares, and the account's total
                                   │            account total (all linked roots): $12.59                  
                                   │                                                                      
                                   │  models    Sonnet 4.6 100%                                           
-                                                                                                         
                                                                                                          
                                                                                                          
                                                                                                          
@@ -274,11 +274,11 @@ exports[`120×45 Overview: one card titled with both labels 1`] = `
 " tokenhud   1 Overview   2 History   3 Models   4 Accounts                           scope all accounts ▾   ● live · 5s 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
                                                                                                                         
- LIMITS                     pace (30m) = spend rate over the last 30 min · avg = this week so far · times are estimates 
+ LIMITS            pace (30m) = spend rate over the last 30 min · avg = this week so far · <2h = within 2 h · estimates 
  ╭─ personal-like + win-like ─────────╮  ╭─ work-like · claude ───────────────╮                                         
  │ 5h   ━━━━━━━━━━━━━━━━━  64%  1h35m │  │ 5h   ━━━━━━━━━━━━━━━━━  12%  4h00m │                                         
  │ week ━━━━━━━━━━━━━━━━━  31%  2d22h │  │ week ━━━━━━━━━━━━━━━━━  40%  2d22h │                                         
- │ pace $1.4/h (30m) → 100% at 12:10  │  │ pace $0/h (30m) → idle             │                                         
+ │ pace $1.4/h (30m) → 100% in <45m   │  │ pace $0/h (30m) → idle             │                                         
  ╰────────────────────────────────────╯  ╰────────────────────────────────────╯                                         
                                                                                                                         
  SPEND                                                                                                                  
@@ -330,8 +330,9 @@ exports[`120×45 Accounts: win-like says what it shares, and the account's total
  ● work-like           claude  40% │                                                                                    
  + add a root…                     │  shared with personal-like                                                         
                                    │  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   64%   resets 13:15         
- w/s   account                     │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40     
- enter actions                     │                                                                                    
+ w/s   account                     │          → 100% in <45m (12:10)                                                    
+ enter actions                     │  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   31%   resets Fri 09:40     
+                                   │                                                                                    
                                    │  weekly usage when it reset · last 8 weeks                                         
                                    │                                                                                    
                                    │                                                                                    
@@ -345,7 +346,6 @@ exports[`120×45 Accounts: win-like says what it shares, and the account's total
                                    │            account total (all linked roots): $12.59                                
                                    │                                                                                    
                                    │  models    Sonnet 4.6 100%                                                         
-                                                                                                                        
                                                                                                                         
                                                                                                                         
                                                                                                                         

@@ -14,7 +14,6 @@ import type { McpActivity } from "../../src/mcp/heartbeat.ts";
 import type { Root } from "../../src/sources/roots.ts";
 import { openStore, type UsageRow } from "../../src/store/store.ts";
 import type { AccountSources } from "../../src/tui/vm/accounts.ts";
-import type { AccountInfo, ViewModels } from "../../src/tui/vm/types.ts";
 import { prng } from "../query/synthetic.ts";
 import {
   FIXTURE_ACCOUNTS,
@@ -214,7 +213,7 @@ export function t13Views(
   config: Config = fixtureConfig(),
   scope: number | null = null,
   mcp: McpActivity | null = MCP,
-): { views: ViewModels; accounts: AccountInfo[] } {
+): ReturnType<typeof fixtureViews> {
   const roots = fixtureRoots();
   return fixtureViews(fx.storePath, config, scope, (db, q) => {
     const sources: AccountSources = {
