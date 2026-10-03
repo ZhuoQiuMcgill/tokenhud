@@ -8,6 +8,15 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-02
+
+### Fixed
+
+- **Bar charts draw a baseline where usage is zero.** An idle stretch in the Overview's
+  activity chart (or the Accounts view's charts) was blank, so one chart could read as two.
+  Zero is now a dim `▁` along the bottom row, and bars start at `▂`, so `▁` only ever means
+  zero, with or without colour.
+
 ## [0.1.1] - 2026-10-02
 
 ### Fixed

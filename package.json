@@ -1,6 +1,6 @@
 {
   "name": "tokenhud",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Live terminal heads-up display for coding-agent usage, limits and cost",
   "license": "MIT",
