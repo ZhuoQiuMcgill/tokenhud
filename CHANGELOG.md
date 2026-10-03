@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-03
+
 ### Added
 
 - **Limit alerts for agents.** Three MCP tools: `set_alert` ("tell me when the 5-hour
