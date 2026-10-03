@@ -8,8 +8,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-02
+
 ### Fixed
 
+- **The Overview's activity chart fills its width in every window.** At a wide terminal
+  the 7-day chart stopped at about 60 % of the row, its bars one cell each; now the bars
+  widen to fill it, spread so they differ by at most one cell, and the ticks follow.
 - **A new release on npm never lacks its binary.** For 0.1.0, npm served
   `@tokenhud/linux-x64` as a 404 for about 10 minutes after it was published, and
   `bun add -g tokenhud` installed tokenhud without it, leaving a command that only said its
