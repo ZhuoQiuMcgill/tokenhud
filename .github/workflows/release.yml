@@ -1,7 +1,7 @@
 name: Release
 
 # On a tag v*: build every binary, test them on their platforms, sign the macOS ones, publish
-# a GitHub Release with SHA256SUMS, then publish to npm when an NPM_TOKEN secret exists.
+# a GitHub Release with SHA256SUMS, then publish to npm as this workflow's trusted publisher.
 # Tags with a suffix (v0.1.0-rc.1, v0.2.0-beta.2) make prereleases and npm's `next` tag.
 #
 # Pull requests that touch the release path run everything up to the publishing, so a broken
@@ -36,6 +36,12 @@ concurrency:
 
 env:
   BUN_VERSION: 1.4.2
+  # The npm job's. npm's trusted publishing (OIDC) needs Node 22.14 or later, and npm 11.5.1
+  # or later to publish, but 11.21.0 or later (12.2.0 on npm 12) to set a dist-tag, as moving
+  # `next` does. scripts/publish-npm.ts checks npm before it publishes anything; ci.yml tests
+  # it with the same two.
+  NODE_VERSION: 24.4.1
+  NPM_VERSION: 11.21.0
 
 jobs:
   build:
@@ -305,94 +311,45 @@ jobs:
               --verify-tag --title "tokenhud ${TAG#v}" --notes-file notes.md "${prerelease[@]}"
           fi
 
+  # npm authenticates as this workflow's trusted publisher, which each package names on
+  # npmjs.com (this repository, release.yml, no environment): there is no token. With it,
+  # npm adds provenance on its own; --provenance only says so.
   npm:
     name: npm publish
     if: startsWith(github.ref, 'refs/tags/v')
     needs: release
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # It may wait up to 30 min for the platform tarballs to download.
+    timeout-minutes: 50
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # trusted publishing and provenance
     steps:
-      - name: Look for NPM_TOKEN
-        id: token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "npm publish skipped (no NPM_TOKEN)" | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - if: steps.token.outputs.publish == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - if: steps.token.outputs.publish == 'true'
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - if: steps.token.outputs.publish == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      - if: steps.token.outputs.publish == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm install --global "npm@$NPM_VERSION" && npm --version
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: binaries-linux
           path: dist
-      - if: steps.token.outputs.publish == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: binaries-windows
           path: dist
-      - if: steps.token.outputs.publish == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: binaries-darwin-signed
           path: dist
 
-      - name: Publish the platform packages, then tokenhud
-        if: steps.token.outputs.publish == 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          TAG: ${{ github.ref_name }}
+      # The platform packages; then, once every one's tarball downloads and matches its
+      # integrity (checked every 20 s for up to 30 min), tokenhud; then, for a release,
+      # tokenhud's `next` tag. A re-run skips what is already on npm.
+      - name: Publish the platform packages, wait until they download, then tokenhud
         run: |
           bun scripts/stage-npm.ts
-          dist_tag=latest
-          case "$TAG" in *-*) dist_tag=next ;; esac
-          version="${TAG#v}"
-          # The launcher last: its optional dependencies must already be on npm.
-          packages=()
-          for dir in dist/npm/*/; do
-            [ "$dir" = dist/npm/tokenhud/ ] || packages+=("$dir")
-          done
-          for dir in "${packages[@]}" dist/npm/tokenhud/; do
-            name=$(node -p "require('./${dir}package.json').name")
-            # A re-run skips what the first run published.
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "$name@$version is already on npm"
-              continue
-            fi
-            npm publish "$dir" --access public --tag "$dist_tag" --provenance
-          done
-          # A release moves `next` up to it too, so next is never older than latest: but only
-          # when it is newer than next, which may already hold the next release's candidates
-          # (0.3.0-rc.1 while 0.2.1 ships).
-          if [ "$dist_tag" = latest ]; then
-            for dir in "${packages[@]}" dist/npm/tokenhud/; do
-              name=$(node -p "require('./${dir}package.json').name")
-              next=$(npm view "$name" dist-tags.next 2>/dev/null || true)
-              order=1
-              if [ -n "$next" ]; then
-                order=$(V="$version" N="$next" bun -e 'process.stdout.write(String(Bun.semver.order(process.env.V, process.env.N)))')
-              fi
-              if [ "$order" = 1 ]; then
-                npm dist-tag add "$name@$version" next
-              else
-                echo "$name: next stays at $next, not older than $version"
-              fi
-            done
-          fi
+          bun scripts/publish-npm.ts --provenance

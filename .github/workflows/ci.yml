@@ -38,6 +38,33 @@ jobs:
       - run: claude plugin validate --strict plugin
       - run: claude plugin validate --strict .
 
+  # scripts/publish-npm.ts, which the release job publishes with: the real npm against a
+  # registry on localhost that 404s a platform tarball for a while, and tokenhud published only
+  # once it downloads (test/release/publish-npm.test.ts). With the Node and npm release.yml's
+  # npm job pins (test/release/publish-npm.test.ts checks they match); none of it may skip.
+  publish:
+    name: npm publish order
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.4.1
+      - run: npm install --global npm@11.21.0 && npm --version
+      - run: bun install --frozen-lockfile
+      - name: Publish in order against a registry that serves a tarball late
+        shell: bash
+        run: |
+          bun test test/release/publish-npm.test.ts 2>&1 | tee publish-npm.log
+          if grep -Eq '^ *[1-9][0-9]* skip' publish-npm.log || ! grep -Eq '^ *0 fail' publish-npm.log; then
+            echo "::error::every publish test must run (with npm on PATH) and pass"
+            exit 1
+          fi
+
   test:
     name: test (${{ matrix.os }})
     strategy:

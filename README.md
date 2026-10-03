@@ -16,7 +16,7 @@ history on first run.
 
 ## Install
 
-**With Bun** (recommended on Linux and macOS, once the packages are on npm):
+**With Bun** (recommended on Linux and macOS):
 
 ```sh
 bun add -g tokenhud
@@ -25,6 +25,10 @@ bun add -g tokenhud
 No Node is needed. Bun puts the `tokenhud` command in `~/.bun/bin`, which Bun's installer
 adds to your PATH; `tokenhud doctor` says if it isn't there. Release candidates:
 `bun add -g tokenhud@next`.
+
+Bun ends by saying `Blocked 1 postinstall`. That is expected, and harmless on Linux and
+macOS: the script it blocked is tokenhud's own `preinstall`, which sets up the command for
+npm on Windows and does nothing anywhere else. Leave it blocked; don't `bun pm -g trust` it.
 
 > **On Windows, Bun isn't supported yet.** `bun add -g tokenhud` installs a command that
 > fails at once with `interpreter executable "/bin/sh" not found`. On Windows, use
@@ -42,6 +46,13 @@ dependency: don't install with `--omit=optional`. On Linux and macOS the `tokenh
 is a small sh script that starts the binary: no JS runtime runs, so it needs neither Node
 nor Bun, and nothing in the directory you run it in (a `.env`, a `bunfig.toml`) can reach
 tokenhud.
+
+If a download of that package fails, Bun and npm install tokenhud without it, and the
+command only says the package is not installed (`tokenhud doctor`, from another copy, says
+so too). Right after a release, npm's servers can take a few minutes to serve it
+everywhere; wait a few minutes and reinstall:
+`bun remove -g tokenhud && bun add -g --no-cache tokenhud`, or
+`npm install -g --prefer-online tokenhud`.
 
 **On Windows**, tokenhud is supported through npm (`npm i -g tokenhud`, Node 18 or later)
 or the PowerShell installer, `install.ps1`, below; not through Bun. npm's install script
@@ -646,7 +657,7 @@ test/              bun test suites
 scripts/build.ts   builds, checksums and smoke-tests the binaries
 install.sh         the Linux and macOS installer; install.ps1 is the Windows one
 npm/               the npm package's command (sh) and Windows launcher; scripts/stage-npm.ts
-                   builds the npm packages
+                   builds the npm packages, scripts/publish-npm.ts publishes them
 plugin/            the Claude Code plugin (listed by .claude-plugin/marketplace.json)
 ```
 

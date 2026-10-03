@@ -138,6 +138,10 @@ if [ -z "$binary" ]; then
         "  bun add -g tokenhud          (a global install with bun)" \
         "  npm install -g tokenhud      (a global install with npm)" \
         "  npm install tokenhud         (in a project)" \
+        "It is also missing when its download failed, which bun and npm pass over without an" \
+        "error. If tokenhud was just released, wait a few minutes and reinstall:" \
+        "  bun remove -g tokenhud && bun add -g --no-cache tokenhud" \
+        "  npm install -g --prefer-online tokenhud" \
         "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install"
       ;;
   esac

@@ -55,6 +55,16 @@ export function npmPackage(t: ReleaseTarget): string {
   return `@tokenhud/${nodePlatform(t)}-${t.arch}${t.musl ? "-musl" : ""}`;
 }
 
+/**
+ * The platform packages, as `@tokenhud/<name>` names them, whose binary runs on a machine
+ * that runs `t`'s: its own and, on a Mac, the other architecture's (Rosetta), as the npm
+ * package's command accepts.
+ */
+export function runnablePackages(t: ReleaseTarget): string[] {
+  const own = npmPackage(t).slice("@tokenhud/".length);
+  return t.os === "darwin" ? [own, `darwin-${t.arch === "arm64" ? "x64" : "arm64"}`] : [own];
+}
+
 export function targetById(id: string): ReleaseTarget | undefined {
   return RELEASE_TARGETS.find((t) => targetId(t) === id);
 }

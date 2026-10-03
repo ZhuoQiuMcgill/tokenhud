@@ -83,6 +83,9 @@ if (bin === null) {
           "made on another platform). Reinstall tokenhud the same way, without --omit=optional:\n" +
           "  npm install -g tokenhud      (a global install)\n" +
           "  npm install tokenhud         (in a project)\n" +
+          "It is also missing when its download failed, which npm passes over without an\n" +
+          "error. If tokenhud was just released, wait a few minutes and reinstall:\n" +
+          "  npm install -g --prefer-online tokenhud\n" +
           "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install",
   );
   process.exit(1);
