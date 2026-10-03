@@ -77,7 +77,7 @@ describe("doctor: Claude Code", () => {
 
   test("the alert hook: in settings.json, from the plugin, or both (it then runs twice)", () => {
     const m = machine();
-    const hook = { type: "command", command: "/opt/tokenhud/tokenhud", args: ["hook"] };
+    const hook = { type: "command", command: "'/opt/tokenhud/tokenhud' hook; exit 0" };
     const hooks = {
       PostToolBatch: [{ hooks: [hook] }],
       UserPromptSubmit: [{ hooks: [hook] }],

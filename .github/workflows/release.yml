@@ -8,7 +8,8 @@ name: Release
 # build, installer or update is caught before a tag is pushed.
 #
 # Every smoke test (scripts/build.ts --smoke) runs each binary with --version, with a headless
-# --once, and as `tokenhud mcp`, which scripts/mcp-smoke.ts drives over stdio as Claude Code
+# --once, as `tokenhud hook` with an event on stdin (silent, then telling a fixture alert),
+# and as `tokenhud mcp`, which scripts/mcp-smoke.ts drives over stdio as Claude Code
 # does. Each binary is tested on a runner that can execute it (darwin-x64 under Rosetta,
 # where the macOS runner has it).
 

@@ -1,12 +1,12 @@
 {
-  "description": "Tells agents when a usage limit alert they set with tokenhud's set_alert tool fires",
+  "description": "Tells agents when a usage limit alert they set with tokenhud's set_alert tool fires. The command always exits 0 with nothing on stdout when tokenhud is missing, older than its hook command, or fails, so it never blocks a prompt.",
   "hooks": {
     "PostToolBatch": [
-      { "hooks": [{ "type": "command", "command": "tokenhud", "args": ["hook"], "timeout": 10 }] }
+      { "hooks": [{ "type": "command", "command": "tokenhud hook; exit 0", "timeout": 10 }] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "tokenhud", "args": ["hook"], "timeout": 10 }] }
+      { "hooks": [{ "type": "command", "command": "tokenhud hook; exit 0", "timeout": 10 }] }
     ],
-    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "tokenhud", "args": ["hook"] }] }]
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "tokenhud hook; exit 0" }] }]
   }
 }

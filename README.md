@@ -524,11 +524,15 @@ next prompt:
   agent, not to subagents.
 - **Delivery.** A Claude Code hook, `tokenhud hook`, runs after each batch of tool calls
   and on each prompt; it reads only `limits.json` and `alerts.json`, never the network,
-  and takes about 20 ms. The plugin installs it. With the MCP server added by hand,
-  `tokenhud mcp install --hooks` adds it to the account's `settings.json` (by the
-  installed tokenhud's full path, keeping every other hook, after a backup copy), and
+  and takes about 20 ms. Its command line ends in `; exit 0`, so with a tokenhud too old
+  to have it, or none on the PATH, it stays silent and never holds up a prompt. The
+  plugin installs it. With the MCP server added by hand, `tokenhud mcp install --hooks`
+  adds it to the account's `settings.json` (by the installed tokenhud's full path, run by
+  PowerShell on Windows; every other hook is kept, the file's permissions too, and a
+  backup copy is made beside it, beside the real file when `settings.json` is a link), and
   `tokenhud mcp install --hooks --remove` takes it out. `tokenhud doctor` shows which
-  accounts have it; `set_alert` warns an agent whose session doesn't run it.
+  accounts have it; `set_alert` warns an agent whose session doesn't run it, or whose
+  session id the MCP server could not follow after a `/clear`.
 - **Fresh limits.** While one of its session's alerts is armed, the MCP server fetches
   that account's limits every 5 minutes. A fetch by the TUI or by an agent's own call in
   between counts, so with the TUI running there are no extra requests, and with no alert

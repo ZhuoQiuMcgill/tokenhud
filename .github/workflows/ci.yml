@@ -131,6 +131,73 @@ jobs:
             exit 1
           fi
 
+  # The plugin's hook commands must never block Claude Code, whatever tokenhud a user has
+  # (T29 B1): the plugin is served from main, and a tokenhud from before `hook` answers it
+  # with exit 2, which Claude Code takes as "block the prompt". scripts/hook-compat.ts runs
+  # the plugin's command for each event, and the one `tokenhud mcp install --hooks` writes,
+  # through every shell Claude Code uses on the runner (sh; Git Bash and both PowerShells on
+  # Windows): against the released 0.1.3, checked against its release's SHA256SUMS, each run
+  # must exit 0 with nothing on stdout; against this build, a fixture alert must come out.
+  hook-compat:
+    name: hook command vs released tokenhud (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+
+      - name: Download tokenhud 0.1.3 and check its checksum
+        run: |
+          case "$RUNNER_OS" in
+            Linux) asset=tokenhud-linux-x64 name=tokenhud ;;
+            macOS) asset=tokenhud-darwin-arm64 name=tokenhud ;;
+            Windows) asset=tokenhud-windows-x64.exe name=tokenhud.exe ;;
+          esac
+          base=https://github.com/ZhuoQiuMcgill/tokenhud/releases/download/v0.1.3
+          mkdir -p old
+          curl -fsSL --retry 3 -o "old/$asset" "$base/$asset"
+          curl -fsSL --retry 3 -o old/SHA256SUMS "$base/SHA256SUMS"
+          line=$(grep -E " \*?$asset\$" old/SHA256SUMS)
+          echo "$line"
+          if [ "$RUNNER_OS" = macOS ]; then
+            (cd old && echo "$line" | shasum -a 256 -c -)
+          else
+            (cd old && echo "$line" | sha256sum -c -)
+          fi
+          mv "old/$asset" "old/$name"
+          chmod +x "old/$name"
+
+      - name: Against 0.1.3 (no hook command), every run exits 0 with nothing on stdout
+        run: bun scripts/hook-compat.ts old --expect silent --version 0.1.3 | tee old.log
+
+      - name: Against this build, the alert comes out
+        run: |
+          bun scripts/build.ts
+          mkdir -p new
+          mv dist/tokenhud* new/
+          bun scripts/hook-compat.ts new --expect alert | tee new.log
+
+      - name: Every shell ran
+        run: |
+          want="sh"
+          if [ "$RUNNER_OS" = Windows ]; then want="Git Bash, PowerShell 7, Windows PowerShell"; fi
+          for log in old.log new.log; do
+            if ! grep -q "in $want\$" "$log"; then
+              echo "::error::$log does not name every shell: $want"
+              exit 1
+            fi
+          done
+
   # `bun add -g tokenhud` and `npm install -g tokenhud` end to end
   # (test/release/npm-e2e.test.ts): this OS's packages, staged by scripts/stage-npm.ts and
   # packed by `bun pm pack`, from a fake npm registry on localhost. bun runs with no Node on

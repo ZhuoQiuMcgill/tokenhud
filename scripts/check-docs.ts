@@ -154,7 +154,12 @@ export function checkInvocation(words: string[], spec: CliSpec): string[] {
 export function invocations(text: string): Array<{ line: number; words: string[] }> {
   const out: Array<{ line: number; words: string[] }> = [];
   for (const { line, code } of codeOf(text)) {
-    const words = code.trim().split(/\s+/).filter(Boolean);
+    // A `;` ends a command even written against the word before it (`tokenhud hook; exit 0`).
+    const words = code
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .flatMap((w) => (w.length > 1 && w.endsWith(";") ? [w.slice(0, -1), ";"] : [w]));
     for (let i = 0; i < words.length; i++) {
       if (words[i]?.startsWith("#")) break;
       if (words[i]?.replace(/^\$?\(/, "") !== "tokenhud") continue;

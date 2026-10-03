@@ -17,7 +17,10 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
   Alerts last for their session or, with `scope: "persistent"`, until cleared. While one
   is armed, the MCP server refreshes that account's limits every 5 minutes, which a TUI's
   own fetches cover. The plugin brings the hook; `tokenhud mcp install --hooks` adds it to
-  an account's `settings.json` for a server added by hand (`--remove` takes it out).
+  an account's `settings.json` for a server added by hand (`--remove` takes it out),
+  keeping the file's permissions and a symlink, and touching no other hook. The hook's
+  command line always exits 0, so a tokenhud older than this release (or none) never
+  blocks a prompt.
   `tokenhud doctor` reports it per account, and the Accounts view lists each account's
   alerts. See the README, "Alerts".
 

@@ -185,4 +185,7 @@ prints Claude Code's hook reply, one line per alert:
 
 `hookEventName` is the event it ran for. Otherwise, and on `SessionEnd` (which removes the
 session's alerts), it prints nothing. It always exits 0: a failure (unreadable input, say)
-is written once to `logs/hook.log` and never reaches the agent.
+is written once to `logs/hook.log` and never reaches the agent. The command line the plugin
+registers is `tokenhud hook; exit 0`, and `tokenhud mcp install --hooks` writes the same
+with the binary's full path, so a tokenhud without `hook` exits 0 with nothing on stdout
+too.

@@ -50,6 +50,8 @@ describe("the docs checker", () => {
       "there is no command 'tokenhud frob'",
     ]);
     expect(check("tokenhud doctor # then tokenhud frob")).toEqual([]);
+    expect(check("tokenhud hook; exit 0")).toEqual([]);
+    expect(check("tokenhud hook; tokenhud frob")).toEqual(["there is no command 'tokenhud frob'"]);
   });
 
   test("leaves paths, packages and URLs alone", () => {
