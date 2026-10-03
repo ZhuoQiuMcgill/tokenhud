@@ -6,7 +6,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Config } from "../../src/config.ts";
 import { Frame } from "../../src/tui/app.tsx";
-import { chartColumns, columnEdges, type XLabel } from "../../src/tui/components/vchart.ts";
+import {
+  BASELINE,
+  chartColumns,
+  columnEdges,
+  type XLabel,
+} from "../../src/tui/components/vchart.ts";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import { theme } from "../../src/tui/theme.ts";
 import type { AccountsState } from "../../src/tui/views/accounts.tsx";
@@ -286,14 +291,15 @@ describe("the activity chart fills its width (T24)", () => {
       }
     }
     // As drawn: 7 d in 150 cells, a day with no usage (12 columns of 2 h from the 25th)
-    // is 22 blank cells, 12 × 150 / 84 = 21.4 rounded by where it falls.
+    // is 22 cells of baseline, 12 × 150 / 84 = 21.4 rounded by where it falls.
     const hours = series(168).map((v, h) => (h >= 48 && h < 72 ? 0 : v));
     const plotted = fitBuckets(hours, 150);
     expect(plotted.values.slice(24, 36)).toEqual(Array(12).fill(0));
     const bottom = ((await chart(plotted.values, 150))[8] as string).slice(CHART_LABELS);
-    expect(bottom.indexOf(" ")).toBe(42);
-    expect(bottom.slice(42).search(/[^ ]/)).toBe(22);
-    expect(bottom.trimEnd()).toHaveLength(150);
+    expect(bottom.indexOf(BASELINE)).toBe(42);
+    expect(bottom.slice(42).search(/[^▁]/)).toBe(22);
+    expect(bottom).not.toContain(" ");
+    expect(bottom).toHaveLength(150);
   });
 
   test("x ticks start at the column they fall in; now ends at the plot's last cell", async () => {

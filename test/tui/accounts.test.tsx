@@ -6,12 +6,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import { type RGBA, rgbToHex } from "@opentui/core";
 import type { Config } from "../../src/config.ts";
 import type { LimitEvent, LimitWindow } from "../../src/limits/index.ts";
 import { Frame } from "../../src/tui/app.tsx";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import { money } from "../../src/tui/format.ts";
 import { type MenuState, menuItems } from "../../src/tui/menu.ts";
+import { ROLES, theme } from "../../src/tui/theme.ts";
 import { type AccountsState, ADD_ROOT, highest } from "../../src/tui/views/accounts.tsx";
 import { costText } from "../../src/tui/views/cells.ts";
 import {
@@ -578,6 +580,62 @@ describe("no line cut at the side-by-side widths", () => {
     const frame = await frameAt(80, 24, "codex-win");
     expect(frame).toContain("root disabled (enter, then Enable)");
     expect(frame.replace("add a root…", "")).not.toContain("…");
+  });
+});
+
+describe("zero on the baseline (T25)", () => {
+  type Cell = { readonly ch: string; readonly roles: readonly string[] };
+  /** The frame at 105×50, personal selected: each row's cells, a character and its roles. */
+  async function cellsAt(v: ViewModels = views): Promise<Cell[][]> {
+    const c = controller(fixtureConfig(), v);
+    const setup = await render(<Frame controller={c} width={105} height={50} />, 105, 50);
+    await settle(setup, () => select(c, "personal", v.accounts as AccountsVM));
+    const dark = theme("dark");
+    const roleOf = (fg: RGBA) => ROLES.filter((r) => dark.hex[r] === rgbToHex(fg).toLowerCase());
+    return setup
+      .captureSpans()
+      .lines.map((line) =>
+        line.spans.flatMap((span) => [...span.text].map((ch) => ({ ch, roles: roleOf(span.fg) }))),
+      );
+  }
+  const text = (row: readonly Cell[] = []) => row.map((c) => c.ch).join("");
+
+  test("30-day spend: a day without usage is the dim baseline; any other is ▂ or more", async () => {
+    const days = byLabel("personal").spark;
+    const hi = Math.max(...days);
+    // The fixture has both: idle days, and days under an eighth of the busiest.
+    expect(days.filter((d) => d === 0).length).toBeGreaterThan(2);
+    expect(days.some((d) => d > 0 && d < hi / 8)).toBe(true);
+    const row = (await cellsAt()).find((r) => text(r).includes("spend 30d ")) ?? [];
+    const from = text(row).indexOf("spend 30d ") + "spend 30d ".length;
+    days.forEach((d, i) => {
+      const cell = row[from + i];
+      if (d === 0) expect(cell).toEqual({ ch: "▁", roles: ["dim"] });
+      else expect(cell).toEqual({ ch: expect.stringMatching(/^[▂-█]$/), roles: ["cost", "mid"] });
+    });
+  });
+
+  test("weekly: a week at 0 % is the dim baseline; a week with no record has none", async () => {
+    const zero = vm.rows.map((r) =>
+      r.label !== "personal" || r.weekly === null
+        ? r
+        : {
+            ...r,
+            weekly: r.weekly.map((w, i) => (i === WEEKS_SHOWN - 1 ? { ...w, value: 0 } : w)),
+          },
+    );
+    const rows = await cellsAt({ ...views, accounts: { ...vm, rows: zero } });
+    // Bottom up: the dates, the values, the bars' foot, the row above it. A week's column
+    // starts where its date does: the first week's (`—`) at Aug 17, this week's at now.
+    const dates = rows.findIndex((r) => /Aug 17 .* now/.test(text(r)));
+    const [above, foot, values] = [rows[dates - 3], rows[dates - 2], text(rows[dates - 1])];
+    const now = text(rows[dates]).indexOf("now");
+    const first = text(rows[dates]).indexOf("Aug 17");
+    expect(values.slice(now, now + 6)).toBe("0%    ");
+    expect(foot?.slice(now, now + 6)).toEqual(Array(6).fill({ ch: "▁", roles: ["dim"] }));
+    expect(text(above).slice(now, now + 6)).toBe(" ".repeat(6));
+    expect(values.slice(first, first + 6)).toBe("—     ");
+    expect(text(foot).slice(first, first + 6)).toBe(" ".repeat(6));
   });
 });
 

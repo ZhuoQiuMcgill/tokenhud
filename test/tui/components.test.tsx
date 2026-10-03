@@ -3,13 +3,14 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import "../../src/tui/components/index.ts";
+import { frameToText } from "../../src/tui/ansi.ts";
 import { type Line, seg } from "../../src/tui/components/base.ts";
 import { shareCells } from "../../src/tui/components/hbar.ts";
 import { heatLevel } from "../../src/tui/components/heat-grid.ts";
 import { filledCells } from "../../src/tui/components/meter.ts";
 import { sparkChar } from "../../src/tui/components/spark.ts";
 import { type Column, layoutColumns, scrollTop } from "../../src/tui/components/table.ts";
-import { chartCell, chartColumns, columnEdges } from "../../src/tui/components/vchart.ts";
+import { BASELINE, chartCell, chartColumns, columnEdges } from "../../src/tui/components/vchart.ts";
 import { Table } from "../../src/tui/elements.tsx";
 import { theme } from "../../src/tui/theme.ts";
 import { guard } from "../guard.ts";
@@ -158,27 +159,30 @@ describe("HBar", () => {
 });
 
 describe("Spark", () => {
-  test("ticks scale to the largest value (gen.py spark); null is a gap", () => {
-    expect([0, 1, 4, 7, 8].map((v) => sparkChar(v, 8)).join("")).toBe("▁▁▄▇█");
+  test("ticks scale to the largest value (gen.py spark); zero is the baseline; null is a gap", () => {
+    // floor(v / 8 × 7.999): 1 is tick 0, raised to ▂ above zero's ▁ (T25).
+    expect([0, 1, 4, 7, 8].map((v) => sparkChar(v, 8)).join("")).toBe("▁▂▄▇█");
+    expect(sparkChar(0.001, 8)).toBe("▂");
     expect(sparkChar(null, 8)).toBe(" ");
   });
 
-  test("the latest values show when there are more than cells", async () => {
+  test("the latest values show when there are more than cells; zero is dim", async () => {
     const values = [9, 9, 9, 0, 1, 2, 3, null, 5, 6, 7, 8];
     const node = <th-spark values={values} theme={dark} width={9} height={1} />;
     const out = await snap(node, 9, 1);
     // The last 9: 0 1 2 3 null 5 6 7 8, scaled to 8.
-    expect(out.split("\n")[0]).toBe("▁▁▂▃ ▅▆▇█");
+    expect(out.split("\n")[0]).toBe("▁▂▂▃ ▅▆▇█");
+    expect(out.split("\n")[1]).toBe("[dim/bg]▁[cost|mid/bg]▂▂▃ ▅▆▇█");
     expect(out).toMatchSnapshot();
   });
 
   test("a fixed max keeps scales comparable", async () => {
     const out = await snap(
-      <th-spark values={[1, 2]} max={8} theme={dark} width={2} height={1} />,
+      <th-spark values={[2, 4]} max={8} theme={dark} width={2} height={1} />,
       2,
       1,
     );
-    expect(out.split("\n")[0]).toBe("▁▂");
+    expect(out.split("\n")[0]).toBe("▂▄");
   });
 });
 
@@ -187,8 +191,22 @@ describe("VChart", () => {
     // 7 rows: a value at 50 % of the top fills 3.5 rows: three full cells, a half block.
     const column = [0, 1, 2, 3, 4, 5, 6].map((r) => chartCell(5, 10, 7, r)).join("");
     expect(column).toBe("   ▄███");
-    expect(chartCell(0.01, 10, 7, 6)).toBe("▁");
-    expect(chartCell(0, 10, 7, 6)).toBe(" ");
+    // A top of 56 in 7 rows: a value is its height in eighths. Above a full cell, one
+    // eighth is the bar's ▁.
+    expect(chartCell(3, 56, 7, 6)).toBe("▃");
+    expect([5, 6].map((r) => chartCell(8.5, 56, 7, r))).toEqual(["▁", "█"]);
+  });
+
+  test("zero is the baseline in the bottom row; a bar's foot is never shorter than ▂ (T25)", () => {
+    expect(BASELINE).toBe("▁");
+    expect(chartCell(0, 10, 7, 6)).toBe("▁");
+    expect(chartCell(0, 10, 7, 5)).toBe(" ");
+    expect(chartCell(0, 0, 1, 0)).toBe("▁");
+    // One eighth, or less, is drawn as two: above the baseline, not on it.
+    expect(chartCell(1, 56, 7, 6)).toBe("▂");
+    expect(chartCell(0.01, 10, 7, 6)).toBe("▂");
+    expect(chartCell(1e-300, 1e300, 7, 6)).toBe("▂");
+    expect(chartCell(2, 56, 7, 6)).toBe("▂");
   });
 
   test("columns: spread over the whole width when values are few, summed groups when they are many", () => {
@@ -232,19 +250,59 @@ describe("VChart", () => {
     expect(await snap(node, 36, 8)).toMatchSnapshot();
   });
 
-  test("an empty chart shows only the 0 label", async () => {
+  test("an all-zero series: the 0 label, and a dim baseline across the whole plot (T25)", async () => {
+    for (const values of [[0, 0, 0], []]) {
+      const out = await snap(
+        <th-vchart values={values} theme={dark} width={20} height={4} />,
+        20,
+        4,
+      );
+      const lines = out.split("\n");
+      expect(lines.slice(0, 4)).toEqual([
+        " ".repeat(20),
+        " ".repeat(20),
+        " ".repeat(20),
+        `     0 ${"▁".repeat(13)}`,
+      ]);
+      expect(lines[7]).toBe(`[-/bg]     [dim/bg]0[-/bg] [dim/bg]${"▁".repeat(13)}`);
+    }
+  });
+
+  test("zeros between bars: the baseline, dim, in exactly their cells (T25)", async () => {
+    // 6 columns of 2 cells, a top of 40 in 3 rows (24 eighths): 20 is 12 eighths, a full
+    // foot and half a cell; 1 is 0.6 of an eighth, drawn ▂.
     const out = await snap(
-      <th-vchart values={[0, 0, 0]} theme={dark} width={20} height={4} />,
-      20,
-      4,
+      <th-vchart values={[20, 0, 0, 40, 0, 1]} theme={dark} width={19} height={3} />,
+      19,
+      3,
     );
-    expect(out.split("\n").slice(0, 4)).toEqual([
-      " ".repeat(20),
-      " ".repeat(20),
-      " ".repeat(20),
-      `     0${" ".repeat(14)}`,
+    expect(out.split("\n")).toEqual([
+      "    40       ██    ",
+      "    20 ▄▄    ██    ",
+      "     0 ██▁▁▁▁██▁▁▂▂",
+      "[-/bg]    [dim/bg]40[-/bg] [cost|mid/bg]      ██    ",
+      "[-/bg]    [dim/bg]20[-/bg] [cost|mid/bg]▄▄    ██    ",
+      "[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]██[dim/bg]▁▁▁▁[cost|mid/bg]██[dim/bg]▁▁[cost|mid/bg]▂▂",
     ]);
   });
+
+  test.each(["dark", "light", "high-contrast"] as const)(
+    "%s, colour off: zero and the smallest bar differ in their characters (T25)",
+    async (name) => {
+      const t = theme(name);
+      // One spare row: OpenTUI's test renderer drops a 1-row frame's box-drawing characters.
+      const setup = await render(
+        <box width={10} height={3} backgroundColor={t.hex.bg} flexDirection="column">
+          <th-vchart values={[0, 1, 1000]} theme={t} width={10} height={2} />
+        </box>,
+        10,
+        3,
+      );
+      // As `--once` prints without colour.
+      const text = frameToText(setup.captureSpans(), t.hex.empty).split("\n");
+      expect(text.slice(0, 2)).toEqual(["  1000   █", "     0 ▁▂█"]);
+    },
+  );
 });
 
 describe("HeatGrid", () => {

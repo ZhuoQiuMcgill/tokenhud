@@ -33,7 +33,7 @@ exports[`105×50 view 1 (overview) 1`] = `
  $0.73                                        █                              █               █ █ █ █     
                                               █                             ▄█           ▁▃  █ █ █ █  ▁  
                                               █                             ██           ██  █ █ █ █  █▁▁
-     0                                       ▂█▃                            ██           ██  █ █ █ █  ███
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁███
        -24h                    -18h                     -12h                    -6h                   now
                                                                                                          
  TOP MODELS · 24h                                                                                        
@@ -183,7 +183,7 @@ exports[`105×50 view 4 (accounts) 1`] = `
                                   │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now       
                                   │    no limit events recorded yet: only this week is known             
                                   │                                                                      
-                                  │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27                    
+                                  │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▂  $66.27                    
                                   │                                                                      
                                   │  models    gpt-5.5 59% · gpt-5.6-sol 41%                             
                                   │                                                                      
@@ -244,7 +244,7 @@ exports[`120×45 view 1 (overview) 1`] = `
  $0.77                              █                     ▅         █  ██ ██       Mystery 9        unpriced   0% ━━━━━━
                                     █                     █▆        █  ██ ██  ▁▁                                        
                                     █                     ██        █  ██ ██  ██   peak $1.53 at Mon 21:25              
-     0                              █▃                    ██        █  ██ ██ ▇██                                        
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██                                        
        -24h              -18h              -12h              -6h             now                                        
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
@@ -384,7 +384,7 @@ exports[`120×45 view 4 (accounts) 1`] = `
                                    │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now                     
                                    │    no limit events recorded yet: only this week is known                           
                                    │                                                                                    
-                                   │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27                                  
+                                   │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▂  $66.27                                  
                                    │                                                                                    
                                    │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                           
                                    │                                                                                    
@@ -516,7 +516,7 @@ exports[`80×24 view 4 (accounts) 1`] = `
                            │    8/12  8/19  8/26  9/2   9/9   9/16  9/23  now   
                            │    no limit events yet: only this week is known    
                            │                                                    
-                           │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27  
+                           │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▂  $66.27  
                            │                                                    
                            │  models    gpt-5.5 59% · gpt-5.6-sol 41%           
 ────────────────────────────────────────────────────────────────────────────────
@@ -552,7 +552,7 @@ exports[`160×50 view 1 (overview) 1`] = `
  $0.73                                        █                             █               █ █ █ █       Mystery 9                unpriced   0% ━━━━━━         
                                               █                            ▄█           ▁▃  █ █ █ █  ▁                                                          
                                               █                            ██           ██  █ █ █ █  █▁   peak $1.47 at Mon 21:30                               
-     0                                       ▂█▃                           ██           ██  █ █ █ █  ██                                                         
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██                                                         
        -24h                    -18h                    -12h                    -6h                  now                                                         
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          
@@ -707,7 +707,7 @@ exports[`160×50 view 4 (accounts) 1`] = `
                                    │    Aug 12  Aug 19  Aug 26  Sep 2   Sep 9   Sep 16  Sep 23  now                                                             
                                    │    no limit events recorded yet: only this week is known                                                                   
                                    │                                                                                                                            
-                                   │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27                                                                          
+                                   │  spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▂  $66.27                                                                          
                                    │                                                                                                                            
                                    │  models    gpt-5.5 59% · gpt-5.6-sol 41%                                                                                   
                                    │                                                                                                                            
@@ -830,7 +830,7 @@ exports[`narrow 50×20 view 4 (accounts): every number whole 1`] = `
  5-HOUR  ━━━━━━━━━━━━━━━━   44%   resets 13:50    
  WEEKLY  ━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
                                                   
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27 
+ spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▂  $66.27 
 ──────────────────────────────────────────────────
  w/s account   ? help              MCP ● 2 agents 
 "
@@ -926,7 +926,7 @@ exports[`narrow 60×20 view 4 (accounts): every number whole 1`] = `
  5-HOUR  ━━━━━━━━━━━━━━━━━━━━━━━━━━   44%   resets 13:50    
  WEEKLY  ━━━━━━━━━━━━━━━━━━━━━━━━━━   58%   resets Wed 14:40
                                                             
- spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▁  $66.27           
+ spend 30d ▃▃▃▁█▄▅▃▅▂▅▁▆▅▃▁▁▅▃▃▅▃▇▃▁▆▂▃▃▂  $66.27           
 ────────────────────────────────────────────────────────────
  w/s account   enter actions   ? help        MCP ● 2 agents 
 "
@@ -960,7 +960,7 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [-/bg] [dim/bg]$0.77[-/bg] [cost|mid/bg]                             █                     ▅         █  ██ ██    [-/bg]   [fg/bg]Mystery 9      [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [empty/bg]━━━━━━
 [-/bg]       [cost|mid/bg]                             █                     █▆        █  ██ ██  ▁▁[-/bg]                                        
 [-/bg]       [cost|mid/bg]                             █                     ██        █  ██ ██  ██[-/bg]  [dim/bg] peak $1.53 at Mon 21:25[-/bg]              
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                             █▃                    ██        █  ██ ██ ▇██[-/bg]                                        
+[-/bg]     [dim/bg]0[-/bg] [dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]█▃[dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]██[dim/bg]▁▁▁▁▁▁▁▁[cost|mid/bg]█[dim/bg]▁▁[cost|mid/bg]██[dim/bg]▁[cost|mid/bg]██[dim/bg]▁[cost|mid/bg]▇██[-/bg]                                        
 [-/bg]       [dim/bg]-24h[-/bg]              [dim/bg]-18h[-/bg]              [dim/bg]-12h[-/bg]              [dim/bg]-6h[-/bg]             [dim/bg]now[-/bg]                                        
 [-/bg]                                                                                                                        
 [head/bg/b] LIMIT EVENTS · 7 days[-/bg]                                                                                                  
@@ -1013,7 +1013,7 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [-/bg] [dim/bg]$0.73[-/bg] [cost|mid/bg]                                       █                              █               █ █ █ █     
 [-/bg]       [cost|mid/bg]                                       █                             ▄█           ▁▃  █ █ █ █  ▁  
 [-/bg]       [cost|mid/bg]                                       █                             ██           ██  █ █ █ █  █▁▁
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                                      ▂█▃                            ██           ██  █ █ █ █  ███
+[-/bg]     [dim/bg]0[-/bg] [dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]▂█▃[dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]██[dim/bg]▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]██[dim/bg]▁▁[cost|mid/bg]█[dim/bg]▁[cost|mid/bg]█[dim/bg]▁[cost|mid/bg]█[dim/bg]▁[cost|mid/bg]█[dim/bg]▁▁[cost|mid/bg]███
 [-/bg]       [dim/bg]-24h[-/bg]                    [dim/bg]-18h[-/bg]                     [dim/bg]-12h[-/bg]                    [dim/bg]-6h[-/bg]                   [dim/bg]now
 [-/bg]                                                                                                         
 [head/bg/b] TOP MODELS · 24h[-/bg]                                                                                        

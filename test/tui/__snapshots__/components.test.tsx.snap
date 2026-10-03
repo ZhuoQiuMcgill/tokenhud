@@ -47,9 +47,9 @@ exports[`HBar a nonzero share shows at least one cell; the track is optional 1`]
 [tokens|heat4/bg]━━━[empty/bg]━━━━━━━━━"
 `;
 
-exports[`Spark the latest values show when there are more than cells 1`] = `
-"▁▁▂▃ ▅▆▇█
-[cost|mid/bg]▁▁▂▃ ▅▆▇█"
+exports[`Spark the latest values show when there are more than cells; zero is dim 1`] = `
+"▁▂▂▃ ▅▆▇█
+[dim/bg]▁[cost|mid/bg]▂▂▃ ▅▆▇█"
 `;
 
 exports[`VChart y labels (top, middle, 0), bars and x tick labels 1`] = `
@@ -59,7 +59,7 @@ exports[`VChart y labels (top, middle, 0), bars and x tick labels 1`] = `
   $9.2         ▁▁████          ██▃▃▃
                ██████▂▂        █████
              ▄▄████████▁▁    ▇▇█████
-     0   ▃▃▆▆████████████    ███████
+     0 ▁▁▃▃▆▆████████████▁▁▁▁███████
        -24h          -12h        now
 [-/bg] [dim/bg]$18.4[-/bg] [cost|mid/bg]          ▁▁            ██   
 [-/bg]       [cost|mid/bg]          ██            ██   
@@ -67,7 +67,7 @@ exports[`VChart y labels (top, middle, 0), bars and x tick labels 1`] = `
 [-/bg]  [dim/bg]$9.2[-/bg] [cost|mid/bg]        ▁▁████          ██▃▃▃
 [-/bg]       [cost|mid/bg]        ██████▂▂        █████
 [-/bg]       [cost|mid/bg]      ▄▄████████▁▁    ▇▇█████
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]  ▃▃▆▆████████████    ███████
+[-/bg]     [dim/bg]0[-/bg] [dim/bg]▁▁[cost|mid/bg]▃▃▆▆████████████[dim/bg]▁▁▁▁[cost|mid/bg]███████
 [-/bg]       [dim/bg]-24h[-/bg]          [dim/bg]-12h[-/bg]        [dim/bg]now"
 `;
 
