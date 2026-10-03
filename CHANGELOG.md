@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-03
+
 ### Changed
 
 - **A projected 100 % counts down.** A limits card said `100% at 12:13` (or
