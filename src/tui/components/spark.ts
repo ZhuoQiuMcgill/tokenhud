@@ -1,6 +1,7 @@
 import type { OptimizedBuffer, RenderContext } from "@opentui/core";
 import type { Role } from "../theme.ts";
-import { Themed, type ThemedOptions } from "./base.ts";
+import { drawRun, Themed, type ThemedOptions } from "./base.ts";
+import { BASELINE, cellRole } from "./vchart.ts";
 
 const TICKS = "▁▂▃▄▅▆▇█";
 
@@ -12,13 +13,20 @@ export interface SparkOptions extends ThemedOptions<SparkRenderable> {
   max?: number;
 }
 
-/** gen.py `spark()`: the tick for `v`, scaled so `hi` is a full block. */
+/**
+ * gen.py `spark()`: the tick for `v`, scaled so `hi` is a full block. Zero is the baseline
+ * (VChart's `BASELINE`, drawn dim), so any other value is at least `▂`.
+ */
 export function sparkChar(v: number | null, hi: number): string {
   if (v === null) return " ";
-  return TICKS[Math.max(0, Math.min(7, Math.floor((v / hi) * 7.999)))] as string;
+  if (!(v > 0)) return BASELINE;
+  return TICKS[Math.max(1, Math.min(7, Math.floor((v / hi) * 7.999)))] as string;
 }
 
-/** A one-row sparkline of `▁…█`. With more values than cells, the latest values show. */
+/**
+ * A one-row sparkline of `▂…█` on a dim `▁` baseline. With more values than cells, the
+ * latest values show.
+ */
 export class SparkRenderable extends Themed {
   #values: readonly (number | null)[] = [];
   #role: Role = "cost";
@@ -52,8 +60,9 @@ export class SparkRenderable extends Themed {
     let hi = this.#max ?? 0;
     if (this.#max === undefined) for (const v of shown) if (v !== null && v > hi) hi = v;
     if (!(hi > 0)) hi = 1;
-    let text = "";
-    for (const v of shown) text += sparkChar(v, hi);
-    buffer.drawText(text, this.x, this.y, this.color(this.#role));
+    shown.forEach((v, i) => {
+      const fg = this.color(v === null ? this.#role : cellRole(v, this.#role));
+      drawRun(buffer, sparkChar(v, hi), this.x + i, this.y, 1, fg);
+    });
   }
 }

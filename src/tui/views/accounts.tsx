@@ -8,7 +8,7 @@ import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column } from "../components/index.ts";
 import { filledCells } from "../components/meter.ts";
 import { sparkChar } from "../components/spark.ts";
-import { chartCell } from "../components/vchart.ts";
+import { cellRole, chartCell } from "../components/vchart.ts";
 import { Lines, Table } from "../elements.tsx";
 import { dayLabel, fit, percent, textWidth, tokens, truncate } from "../format.ts";
 import { footerHints, type Keymap, MOVE_KEYS, moveKey } from "../keys.ts";
@@ -489,8 +489,10 @@ function weeklyPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
     for (let r = 0; r < rows; r++) {
       const segs: Seg[] = [seg("   ", "fg")];
       for (const s of slots) {
+        // No record is no bar and no baseline: the baseline says zero, and `—` unknown.
         const cell = s.value === null ? " " : chartCell(Math.min(1, s.value), 1, rows, r);
-        segs.push(seg(cell.repeat(colw), slotRole(s)), seg(" ".repeat(slotWidth - colw), "fg"));
+        const role = s.value === null ? slotRole(s) : cellRole(s.value, slotRole(s));
+        segs.push(seg(cell.repeat(colw), role), seg(" ".repeat(slotWidth - colw), "fg"));
       }
       out.push({ left: segs });
     }
@@ -504,6 +506,20 @@ function weeklyPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
     return out;
   };
   return { id: "weekly", priority: 6, height: CHART_ROWS + 4, minHeight: 6, lines };
+}
+
+/** A sparkline of `values` as runs of `role`, its days without usage on the dim baseline. */
+function sparkSegs(values: readonly number[], role: Role): Seg[] {
+  const hi = Math.max(0, ...values);
+  const out: Seg[] = [];
+  for (const v of values) {
+    const tick = sparkChar(v, hi > 0 ? hi : 1);
+    const last = out[out.length - 1];
+    const r = cellRole(v, role);
+    if (last?.role === r) out[out.length - 1] = seg(last.text + tick, r);
+    else out.push(seg(tick, r));
+  }
+  return out;
 }
 
 /** The 30-day total, as cost, or as tokens with costs hidden. */
@@ -522,14 +538,10 @@ function spendPart(a: AccountRow, ctx: ViewContext, width: number): Part {
   const spendLine = (after: readonly Seg[]): Line => {
     const fixed = FIELD + 2 + textWidth(total.text) + 1 + segsWidth(after);
     const shown = values.slice(-Math.max(0, Math.min(SPARK_DAYS, width - fixed)));
-    const hi = Math.max(0, ...shown);
     return {
       left: [
         label(ctx.showCost ? "spend 30d" : "tokens 30d"),
-        seg(
-          shown.map((v) => sparkChar(v, hi > 0 ? hi : 1)).join(""),
-          ctx.showCost ? "cost" : "tokens",
-        ),
+        ...sparkSegs(shown, ctx.showCost ? "cost" : "tokens"),
         seg(`  ${total.text}`, total.role, total.role === "cost"),
         ...after,
       ],

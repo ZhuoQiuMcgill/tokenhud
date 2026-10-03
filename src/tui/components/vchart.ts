@@ -1,9 +1,23 @@
 import type { OptimizedBuffer, RenderContext } from "@opentui/core";
 import { textWidth } from "../format.ts";
 import type { Role } from "../theme.ts";
-import { Themed, type ThemedOptions } from "./base.ts";
+import { drawRun, Themed, type ThemedOptions } from "./base.ts";
 
 const EIGHTHS = " ▁▂▃▄▅▆▇";
+
+/**
+ * A zero bucket's cell in a chart's bottom row: the baseline, drawn dim (`cellRole`), so a
+ * quiet stretch reads as part of the chart rather than its end (T25). It is the one-eighth
+ * block, flush with the bars' feet, and a non-zero value's bottom cell is never shorter
+ * than `▂`, so zero and the smallest bar differ in their characters too: without colour
+ * (`NO_COLOR`, `--once` piped), and in the high-contrast theme.
+ */
+export const BASELINE = "▁";
+
+/** The role to draw value `v`'s cells in: the bar's, or the baseline's for zero. */
+export function cellRole(v: number, bar: Role): Role {
+  return v > 0 ? bar : "dim";
+}
 
 export interface XLabel {
   /**
@@ -58,18 +72,24 @@ export function chartColumns(
   return { columns, edges: columnEdges(columns.length, width) };
 }
 
-/** gen.py `vchart()`: the cell for `v` in row `r` (0 = top) of `rows`, eighth blocks on top. */
+/**
+ * gen.py `vchart()`: the cell for `v` in row `r` (0 = top) of `rows`, eighth blocks on top.
+ * The bottom row is the baseline where `v` is zero, and at least `▂` where it isn't.
+ */
 export function chartCell(v: number, hi: number, rows: number, r: number): string {
-  const units = (v / hi) * rows * 8;
-  const base = (rows - 1 - r) * 8;
-  if (units >= base + 8) return "█";
-  if (units > base) return EIGHTHS[Math.max(1, Math.floor(units - base))] as string;
-  return " ";
+  const bottom = r === rows - 1;
+  if (!(v > 0)) return bottom ? BASELINE : " ";
+  // How many eighths of this row the bar fills.
+  const eighths = (v / hi) * rows * 8 - (rows - 1 - r) * 8;
+  if (eighths >= 8) return "█";
+  if (bottom) return EIGHTHS[Math.max(2, Math.floor(eighths))] as string;
+  return eighths > 0 ? (EIGHTHS[Math.max(1, Math.floor(eighths))] as string) : " ";
 }
 
 /**
  * A vertical block chart: y labels on the left (top value, middle value, 0), the bars
- * across the whole of the rest of the width, and a row of x tick labels under them.
+ * across the whole of the rest of the width on a dim baseline, and a row of x tick labels
+ * under them.
  */
 export class VChartRenderable extends Themed {
   #values: readonly number[] = [];
@@ -134,13 +154,19 @@ export class VChartRenderable extends Themed {
     }
     const bar = this.color(this.#role);
     const scale = hi > 0 ? hi : 1;
-    for (let r = 0; r < rows; r++) {
-      let line = "";
-      for (let i = 0; i < columns.length; i++) {
-        const cells = (edges[i + 1] as number) - (edges[i] as number);
-        line += chartCell(columns[i] as number, scale, rows, r).repeat(cells);
+    const bottom = rows - 1;
+    // With no buckets at all, the baseline alone still shows where the plot is.
+    if (columns.length === 0) drawRun(buffer, BASELINE, x0, y + bottom, plotWidth, dim);
+    for (let i = 0; i < columns.length; i++) {
+      const v = columns[i] as number;
+      const at = x0 + (edges[i] as number);
+      const cells = (edges[i + 1] as number) - (edges[i] as number);
+      for (let r = 0; r < bottom; r++) {
+        drawRun(buffer, chartCell(v, scale, rows, r), at, y + r, cells, bar);
       }
-      buffer.drawText(line, x0, y + r, bar);
+      // Only the foot is dim for zero: the blank cells above stay one run with the bars.
+      const foot = this.color(cellRole(v, this.#role));
+      drawRun(buffer, chartCell(v, scale, rows, bottom), at, y + bottom, cells, foot);
     }
     if (this.#xLabels.length === 0) return;
     let free = x0; // the first cell a label may start at

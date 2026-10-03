@@ -354,8 +354,10 @@ its last 30 days.
 - `━` **bars**: a limit meter or a share. The coloured part is the share used, the dark
   track the rest. Limit meters are blue below 50 %, amber from 50 % and red-orange from 80 %;
   share bars are amber for cost and blue for tokens.
-- `▁▂▃▄▅▆▇█` **columns**: the activity chart, the 30-day bars and the weekly history, in
-  eighths of a row.
+- `▂▃▄▅▆▇█` **columns**: the activity chart, the 30-day bars and the weekly history, in
+  eighths of a row; any usage at all shows as `▂` or more. A dim baseline, `▁`, = no usage
+  in that bucket, so a quiet stretch reads as part of the chart, not its end. Without
+  colour, `▁` still means none.
 - `■` **heat map**: the darkest square is a day without usage; the four lighter shades are
   days under a quarter of the busiest day shown, under a half, under three quarters, and
   the rest. White is the table's selected row: a day, or a week's or month's days.
