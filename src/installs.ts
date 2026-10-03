@@ -12,7 +12,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, extname, join, posix, win32 } from "node:path";
+import { basename, dirname, extname, join, posix, win32 } from "node:path";
 import { testMayRun } from "./limits/clients.ts";
 import { bunGlobalRoot, compareVersions, type InstallMethod, parseVersion } from "./update.ts";
 
@@ -161,6 +161,42 @@ export function tokenhudsOnPath(
     }
   }
   return copies;
+}
+
+/**
+ * The tokenhud package (`…/node_modules/tokenhud`) a bun or npm copy runs, or null: the one
+ * its link leads to on POSIX; on Windows the one beside npm's tokenhud.cmd, which starts it.
+ * Bun's Windows shim is left out: it can't run tokenhud's command at all.
+ */
+export function packageOf(copy: PathCopy, platform: NodeJS.Platform): string | null {
+  if (platform === "win32") {
+    return copy.method === "npm" ? join(dirname(copy.path), "node_modules", "tokenhud") : null;
+  }
+  if (copy.method !== "bun" && copy.method !== "npm") return null;
+  const target = real(copy.path);
+  return /[/\\]node_modules[/\\]tokenhud[/\\]bin[/\\][^/\\]+$/.test(target)
+    ? dirname(dirname(target))
+    : null;
+}
+
+/**
+ * Whether the tokenhud package at `pkg` has one of the platform packages `names` (`linux-x64`,
+ * …) where its command looks: node_modules beside it, or in any directory above it.
+ */
+export function hasPlatformPackage(
+  pkg: string,
+  names: readonly string[],
+  platform: NodeJS.Platform,
+): boolean {
+  const exe = platform === "win32" ? "tokenhud.exe" : "tokenhud";
+  for (let dir = pkg; ; dir = dirname(dir)) {
+    if (basename(dir) !== "node_modules") {
+      for (const name of names) {
+        if (existsSync(join(dir, "node_modules", "@tokenhud", name, "bin", exe))) return true;
+      }
+    }
+    if (dirname(dir) === dir) return false;
+  }
 }
 
 /** Whether `copy` runs the install `method` describes (this copy's, from `execPath`). */

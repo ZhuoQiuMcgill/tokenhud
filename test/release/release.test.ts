@@ -5,6 +5,8 @@ import {
   formatSums,
   npmPackage,
   RELEASE_TARGETS,
+  type ReleaseTarget,
+  runnablePackages,
   sumFor,
   targetById,
   targetId,
@@ -37,6 +39,15 @@ describe("release targets", () => {
       ["windows-x64", "tokenhud-windows-x64.exe", "bun-windows-x64", "@tokenhud/win32-x64"],
       ["windows-arm64", "tokenhud-windows-arm64.exe", "bun-windows-arm64", "@tokenhud/win32-arm64"],
     ]);
+  });
+
+  test("the platform packages that run where a target runs: on a Mac, either architecture's", () => {
+    const runs = (id: string) => runnablePackages(targetById(id) as ReleaseTarget);
+    expect(runs("linux-x64")).toEqual(["linux-x64"]);
+    expect(runs("linux-arm64-musl")).toEqual(["linux-arm64-musl"]);
+    expect(runs("darwin-arm64")).toEqual(["darwin-arm64", "darwin-x64"]);
+    expect(runs("darwin-x64")).toEqual(["darwin-x64", "darwin-arm64"]);
+    expect(runs("windows-x64")).toEqual(["win32-x64"]);
   });
 
   test("ids find their target, and nothing else does", () => {

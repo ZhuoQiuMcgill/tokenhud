@@ -55,6 +55,7 @@ function report(
   PATH: string[],
   execPath: string,
   versions: Record<string, string>,
+  platformPackages: readonly string[] = ["linux-x64"],
 ): DoctorReport["install"] {
   const probe: InstallProbe = {
     execPath,
@@ -62,6 +63,7 @@ function report(
     platform: "linux",
     npmPrefix: () => null,
     versionOf: (copy) => versions[copy.path] ?? null,
+    platformPackages,
   };
   const env = {
     PATH: PATH.join(":"),
@@ -78,6 +80,12 @@ function rendered(install: DoctorReport["install"]): string {
   const text = renderDoctor({ ...base, install }, home);
   return text.slice(text.indexOf("Install"), text.indexOf("Claude Code")).trimEnd();
 }
+
+/** How doctor's warning about a bun or npm install without its platform package ends. */
+const LEFT_OUT =
+  "It is left out with optional dependencies, and passed over when its download fails, as " +
+  "it can for a few minutes after a release. If tokenhud was just released, wait a few " +
+  "minutes, then reinstall:";
 
 describe.skipIf(process.platform === "win32")("doctor: Install", () => {
   test("install.sh's copy ahead of a newer bun install: both listed, which to remove, and that it shadows", () => {
@@ -162,6 +170,87 @@ describe.skipIf(process.platform === "win32")("doctor: Install", () => {
     ]);
   });
 
+  // v0.1.0: npm's CDN 404ed @tokenhud/linux-x64 for minutes after it was published, and
+  // `bun add -g tokenhud` installed tokenhud without it.
+  const REINSTALL_BUN = {
+    problem: `~/.bun/bin/tokenhud can't run: @tokenhud/linux-x64, the package with its binary for this machine, is not installed. ${LEFT_OUT}`,
+    fix: ["bun remove -g tokenhud && bun add -g --no-cache tokenhud"],
+  };
+
+  test("a bun install without its platform package: which, and how to reinstall it", () => {
+    const bun = bunInstall();
+    rmSync(join(bun.exe, "..", ".."), { recursive: true });
+    // Run from another copy: bun's can't run, so it has no version.
+    const curl = curlInstall();
+    const install = report([join(home, ".bun", "bin")], curl, {});
+    expect(install.warnings).toEqual([REINSTALL_BUN]);
+    expect(rendered(install)).toBe(
+      [
+        "Install (every tokenhud on PATH; a shell runs the first)",
+        "  this copy     a standalone binary (install.sh, install.ps1 or a download)",
+        "  on PATH       ~/.bun/bin/tokenhud · bun · version unknown · runs as tokenhud",
+        "  bun bin       ~/.bun/bin is on PATH",
+        "  warning       ~/.bun/bin/tokenhud can't run: @tokenhud/linux-x64, the package with its",
+        "                binary for this machine, is not installed. It is left out with optional",
+        "                dependencies, and passed over when its download fails, as it can for a few",
+        "                minutes after a release. If tokenhud was just released, wait a few minutes,",
+        "                then reinstall:",
+        "                  bun remove -g tokenhud && bun add -g --no-cache tokenhud",
+      ].join("\n"),
+    );
+    // bun's bin directory off PATH: the same, after that.
+    expect(report([], curl, {}).warnings).toEqual([
+      {
+        problem: "tokenhud is installed with bun, but ~/.bun/bin is not on PATH",
+        fix: [
+          `add it in your shell's profile (bun's installer does): export PATH="$HOME/.bun/bin:$PATH"`,
+        ],
+      },
+      REINSTALL_BUN,
+    ]);
+  });
+
+  test("an npm install: only a package that runs here counts, the other Mac architecture too", () => {
+    const top = join(dir, "prefix", "lib", "node_modules", "tokenhud");
+    const launcher = file(join(top, "bin", "tokenhud"), "#!/bin/sh\n");
+    file(join(top, "package.json"), "{}");
+    mkdirSync(join(dir, "prefix", "bin"));
+    symlinkSync(launcher, join(dir, "prefix", "bin", "tokenhud"));
+    const curl = curlInstall();
+    file(join(top, "node_modules", "@tokenhud", "win32-x64", "bin", "tokenhud.exe"), "MZ");
+    const mac = ["darwin-arm64", "darwin-x64"];
+    const install = report([join(dir, "prefix", "bin")], curl, {}, mac);
+    expect(install.on_path.map((c) => c.method)).toEqual(["npm"]);
+    expect(install.warnings).toEqual([
+      {
+        problem: `${join(dir, "prefix", "bin", "tokenhud")} can't run: @tokenhud/darwin-arm64, the package with its binary for this machine, is not installed. ${LEFT_OUT}`,
+        fix: ["npm install -g --prefer-online tokenhud"],
+      },
+    ]);
+    // Hoisted beside tokenhud, as npm puts it in a project, and the x64 one.
+    file(
+      join(dir, "prefix", "lib", "node_modules", "@tokenhud", "darwin-x64", "bin", "tokenhud"),
+      "",
+    );
+    expect(report([join(dir, "prefix", "bin")], curl, {}, mac).warnings).toEqual([]);
+  });
+
+  test("musl: the binary's package, installed by name beside tokenhud", () => {
+    // Bun installs the glibc package on musl too (it ignores `libc`): that one can't run.
+    bunInstall();
+    const curl = curlInstall();
+    const install = report([join(home, ".bun", "bin")], curl, {}, ["linux-x64-musl"]);
+    expect(install.warnings).toEqual([
+      {
+        problem:
+          "~/.bun/bin/tokenhud can't run: @tokenhud/linux-x64-musl, the package with " +
+          "its binary for this machine, is not installed. On musl Linux it is a package of its " +
+          "own; install it beside tokenhud:",
+        fix: ["bun add -g @tokenhud/linux-x64-musl tokenhud"],
+      },
+    ]);
+  });
+
   test("one copy, or none: no warnings", () => {
     const curl = curlInstall();
     expect(report([join(home, ".local", "bin")], curl, { [curl]: "0.1.0" }).warnings).toEqual([]);
@@ -199,6 +288,7 @@ describe("doctor: Install on Windows", () => {
       platform: "win32",
       npmPrefix: () => null,
       versionOf: (copy) => (copy.path === ps1 ? "0.1.0" : "0.1.0"),
+      platformPackages: ["win32-x64"],
     };
     const env = {
       Path: [join(home, "AppData", "Local", "tokenhud", "bin"), bunBin].join(";"),
@@ -233,5 +323,53 @@ describe("doctor: Install on Windows", () => {
     const alone = doctorReport({ ...env, Path: "" }, NOW, home, probe).install;
     expect(alone.on_path).toEqual([]);
     expect(alone.warnings).toEqual([unsupported]);
+  });
+
+  test("npm's tokenhud.cmd without the platform package beside it: npm's reinstall", () => {
+    const prefix = join(home, "AppData", "Roaming", "npm");
+    const cmd = file(
+      join(prefix, "tokenhud.cmd"),
+      '@ECHO off\r\n"%dp0%\\node_modules\\tokenhud\\bin\\tokenhud" %*\r\n',
+    );
+    file(join(prefix, "node_modules", "tokenhud", "package.json"), "{}");
+    const ps1 = file(join(home, "AppData", "Local", "tokenhud", "bin", "tokenhud.exe"), "MZ");
+    const probe: InstallProbe = {
+      execPath: ps1,
+      compiled: true,
+      platform: "win32",
+      npmPrefix: () => prefix,
+      versionOf: () => null,
+      platformPackages: ["win32-x64"],
+    };
+    const env = {
+      Path: prefix,
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      USERPROFILE: home,
+      HOME: home,
+      XDG_CONFIG_HOME: join(dir, "xdg"),
+      TOKENHUD_WSL_USERS: "",
+    };
+    const install = doctorReport(env, NOW, home, probe).install;
+    expect(install.on_path.map((c) => [c.path, c.method])).toEqual([[cmd, "npm"]]);
+    expect(install.warnings).toEqual([
+      {
+        problem: `${cmd} can't run: @tokenhud/win32-x64, the package with its binary for this machine, is not installed. ${LEFT_OUT}`,
+        fix: ["npm install -g --prefer-online tokenhud"],
+      },
+    ]);
+    file(
+      join(
+        prefix,
+        "node_modules",
+        "tokenhud",
+        "node_modules",
+        "@tokenhud",
+        "win32-x64",
+        "bin",
+        "tokenhud.exe",
+      ),
+      "MZ",
+    );
+    expect(doctorReport(env, NOW, home, probe).install.warnings).toEqual([]);
   });
 });

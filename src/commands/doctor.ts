@@ -29,8 +29,10 @@ import {
   type CopyMethod,
   copyToKeep,
   copyVersion,
+  hasPlatformPackage,
   isCopyOf,
   type PathCopy,
+  packageOf,
   pathDirs,
   removeCommand,
   samePath,
@@ -46,6 +48,7 @@ import { bundledPricing } from "../pricing/table.ts";
 import { UsageQueries } from "../query/engine.ts";
 import { JSON_SCHEMA, type Totals } from "../query/types.ts";
 import { Zone } from "../query/tz.ts";
+import { type ReleaseTarget, runnablePackages, targetById } from "../release.ts";
 import {
   discoverClaudeRoots,
   discoverCodexRoots,
@@ -532,15 +535,30 @@ export interface InstallProbe {
   readonly npmPrefix: () => string | null;
   /** What a copy on PATH says its version is, or null. */
   readonly versionOf: (copy: PathCopy) => string | null;
+  /** The platform packages whose binary runs here (`linux-x64`, …), this machine's own first. */
+  readonly platformPackages: readonly string[];
+}
+
+/**
+ * The release target this machine runs: the one this binary was built for or, from source,
+ * the one for this OS and CPU (glibc on Linux: a source checkout is a developer's).
+ */
+function hostTarget(): ReleaseTarget | undefined {
+  const built = process.env.TOKENHUD_TARGET;
+  if (built !== undefined) return targetById(built);
+  const os = process.platform === "win32" ? "windows" : process.platform;
+  return targetById(`${os}-${process.arch}`);
 }
 
 function defaultProbe(env: Env): InstallProbe {
+  const host = hostTarget();
   return {
     execPath: process.execPath,
     compiled: isCompiled(),
     platform: process.platform,
     npmPrefix: npmGlobalPrefix,
     versionOf: (copy) => copyVersion(copy, env, process.platform),
+    platformPackages: host === undefined ? [] : runnablePackages(host),
   };
 }
 
@@ -556,6 +574,59 @@ function listed(items: readonly string[]): string {
   return items.length < 2
     ? (items[0] ?? "")
     : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * A warning for each bun or npm install of tokenhud without the platform package that holds
+ * its binary: optional dependencies left out, or its download failed (npm's CDN 404ed one
+ * for minutes after v0.1.0 was published, and bun and npm carried on without it). Its
+ * command can only say so, and it suggests the same repair. The installs are those on PATH,
+ * and bun's global one, which may not be.
+ */
+function missingBinaries(
+  copies: readonly PathCopy[],
+  bunRoot: string | null,
+  home: string,
+  probe: InstallProbe,
+): DoctorReport["install"]["warnings"] {
+  const { platform, platformPackages } = probe;
+  const own = platformPackages[0];
+  if (own === undefined) return [];
+  const installs = copies.flatMap((c) => {
+    const pkg = packageOf(c, platform);
+    return pkg === null ? [] : [{ path: c.path, method: c.method, pkg }];
+  });
+  if (bunRoot !== null && platform !== "win32") {
+    const pkg = join(bunRoot, "install", "global", "node_modules", "tokenhud");
+    if (!installs.some((i) => samePath(i.pkg, pkg, platform))) {
+      installs.push({ path: join(bunRoot, "bin", "tokenhud"), method: "bun", pkg });
+    }
+  }
+  const shown = (path: string) => (platform === "win32" ? path : shortPath(path, home));
+  return installs
+    .filter((i) => !hasPlatformPackage(i.pkg, platformPackages, platform))
+    .map(({ path, method }) => {
+      const bun = method === "bun";
+      const missing = `${shown(path)} can't run: @tokenhud/${own}, the package with its binary for this machine, is not installed.`;
+      // Not an optional dependency on musl: Bun ignores `libc` (scripts/stage-npm.ts).
+      if (own.endsWith("-musl")) {
+        return {
+          problem: `${missing} On musl Linux it is a package of its own; install it beside tokenhud:`,
+          fix: [`${bun ? "bun add -g" : "npm install -g"} @tokenhud/${own} tokenhud`],
+        };
+      }
+      return {
+        problem:
+          `${missing} It is left out with optional dependencies, and passed over when its ` +
+          "download fails, as it can for a few minutes after a release. If tokenhud was just " +
+          "released, wait a few minutes, then reinstall:",
+        fix: [
+          bun
+            ? "bun remove -g tokenhud && bun add -g --no-cache tokenhud"
+            : "npm install -g --prefer-online tokenhud",
+        ],
+      };
+    });
 }
 
 /** This copy's install, every tokenhud on PATH, and what is wrong with them. */
@@ -624,6 +695,7 @@ function installSection(env: Env, home: string, probe: InstallProbe): DoctorRepo
       });
     }
   }
+  warnings.push(...missingBinaries(copies, bunRoot, home, probe));
   return {
     method: method.kind,
     on_path: copies.map((c) => ({
