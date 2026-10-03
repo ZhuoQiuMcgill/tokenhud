@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -215,7 +216,8 @@ describe("editHooks", () => {
       expect(lstatSync(link).isSymbolicLink()).toBe(true);
       expect(readlinkSync(link)).toBe(target);
       expect(hooksInstalled(read(target))).toBe(true);
-      expect(change.backup).toBe(backupPath(target, NOW));
+      // Beside the target as the OS resolves it (macOS's temp dir is behind /var -> /private/var).
+      expect(change.backup).toBe(backupPath(realpathSync(target), NOW));
       expect(read(change.backup as string)).toEqual(THEIRS);
       // Nothing but the link in the config dir; no temp file left anywhere.
       expect(readdirSync(dir)).toEqual(["settings.json"]);
