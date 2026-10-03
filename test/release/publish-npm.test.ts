@@ -17,6 +17,7 @@ import {
   type Registry,
   type Staged,
   stagedPackages,
+  TRUSTED_NPM,
   waitForTarballs,
 } from "../../scripts/publish-npm.ts";
 import { stageNpm } from "../../scripts/stage-npm.ts";
@@ -138,6 +139,29 @@ describe("the wait for the platform tarballs", () => {
     expect(r.tarballs).toEqual([]);
   });
 
+  // Tarballs served somewhere other than npm's usual path: only a client that follows the
+  // document's dist.tarball finds them.
+  test("it downloads the tarball from where the document says, not the usual path", async () => {
+    const r = fakeNpm(
+      [listed(LINUX, "0.2.0")],
+      {},
+      {
+        tarballPath: (name, version) => `/cdn/${version}/${name.replace("/", "-")}.tgz`,
+      },
+    );
+    registries.push(r);
+    const usual = await fetch(`${r.url}@tokenhud/linux-x64/-/linux-x64-0.2.0.tgz`);
+    expect(usual.status).toBe(404);
+    const left = await waitForTarballs(registryAt(r), [staged(LINUX, "0.2.0")], {
+      intervalMs: 20_000,
+      timeoutMs: 0,
+      clock: fakeClock(),
+      log: () => {},
+    });
+    expect(left).toEqual([]);
+    expect(r.events).toEqual([`tarball ${LINUX}@0.2.0 200`]);
+  });
+
   test("never downloadable: gives up after 30 min, at the 91st check, naming it and why", async () => {
     const r = serve([listed(LINUX, "0.2.0"), listed(MAC, "0.2.0")], {}, (id) =>
       id === `${LINUX}@0.2.0` ? "missing" : undefined,
@@ -197,35 +221,44 @@ describe("the staged packages", () => {
 describe("publishing, with npm stood in for", () => {
   /** publishNpm with an npm that answers `answer` and records what it was asked. */
   async function publishWith(
-    r: FakeNpm,
+    r: FakeNpm | Registry,
     out: string,
     answer: (args: string[]) => { code: number; output: string },
+    trusted = false,
   ) {
     const calls: string[] = [];
     const log: string[] = [];
     const errors: string[] = [];
+    const warnings: string[] = [];
+    const summary: string[] = [];
     const ok = await publishNpm({
       dir: out,
-      registry: registryAt(r),
+      registry: "fetch" in r ? r : registryAt(r),
       provenance: true,
+      trusted,
       intervalMs: 20_000,
       timeoutMs: 0,
       clock: fakeClock(),
       log: (l) => log.push(l),
       error: (l) => errors.push(l),
+      warn: (l) => warnings.push(l),
+      summary: (m) => summary.push(m),
       npm: async (args) => {
         calls.push(args.join(" "));
         return answer(args);
       },
     });
-    return { ok, calls, log, errors };
+    return { ok, calls, log, errors, warnings, summary };
   }
+
+  /** An npm that publishes to `r` as the real one would, by hand: here, only the call matters. */
+  const succeeds = () => ({ code: 0, output: "" });
 
   test("everything already on npm, and next on the following release's candidates: nothing to do", async () => {
     const r = serve([listed(LINUX, "0.2.1"), listed(MAC, "0.2.1"), listed("tokenhud", "0.2.1")], {
       tokenhud: { latest: "0.2.1", next: "0.3.0-rc.1" },
     });
-    const run = await publishWith(r, stage("0.2.1"), () => ({ code: 0, output: "" }));
+    const run = await publishWith(r, stage("0.2.1"), succeeds);
     expect(run).toEqual({
       ok: true,
       calls: [],
@@ -236,6 +269,8 @@ describe("publishing, with npm stood in for", () => {
         "tokenhud: next stays at 0.3.0-rc.1, not older than 0.2.1",
       ],
       errors: [],
+      warnings: [],
+      summary: [],
     });
   });
 
@@ -273,19 +308,133 @@ describe("publishing, with npm stood in for", () => {
     ]);
   });
 
-  test("moving next refused: tokenhud's trusted publisher may not be allowed to set dist-tags", async () => {
-    const r = serve([listed(LINUX, "0.2.0"), listed(MAC, "0.2.0"), listed("tokenhud", "0.2.0")]);
+  // The release is out by then: a stale `next` must not fail the job.
+  test("moving next refused: a warning and a summary with the command to run by hand, and success", async () => {
+    const r = serve([listed(LINUX, "0.2.0"), listed(MAC, "0.2.0"), listed("tokenhud", "0.2.0")], {
+      tokenhud: { latest: "0.2.0", next: "0.2.0-rc.1" },
+    });
     const run = await publishWith(r, stage("0.2.0"), (args) =>
-      args[0] === "dist-tag"
-        ? { code: 1, output: "npm error code E401\n" }
-        : { code: 0, output: "" },
+      args[0] === "dist-tag" ? { code: 1, output: "npm error code ENEEDAUTH\n" } : succeeds(),
     );
-    expect(run.ok).toBe(false);
+    expect(run.ok).toBe(true);
+    expect(run.errors).toEqual([]);
     expect(run.calls).toEqual([`dist-tag add tokenhud@0.2.0 next --registry ${r.url}`]);
-    expect(run.errors[0]).toContain(
-      "check the trusted publisher settings for tokenhud on npmjs.com (repository " +
-        "ZhuoQiuMcgill/tokenhud, workflow release.yml, no environment, allowed to set dist-tags)",
+    expect(run.warnings).toEqual([
+      "tokenhud@0.2.0 is published, but npm didn't move its next tag (still 0.2.0-rc.1). Check " +
+        "that tokenhud's trusted publisher on npmjs.com allows npm dist-tag. Move it by hand: " +
+        "npm dist-tag add tokenhud@0.2.0 next",
+    ]);
+    expect(run.summary).toEqual([
+      "**tokenhud's `next` tag was not moved to 0.2.0.** The release is published; move the tag " +
+        "by hand:\n\n```sh\nnpm dist-tag add tokenhud@0.2.0 next\n```",
+    ]);
+  });
+
+  test("an npm that can't set dist-tags as a trusted publisher: stops before publishing anything", async () => {
+    const r = serve([]);
+    for (const version of ["11.5.1", "12.1.0"]) {
+      const run = await publishWith(
+        r,
+        stage(`0.2.0`),
+        () => ({ code: 0, output: `${version}\n` }),
+        true,
+      );
+      expect([version, run.ok, run.calls]).toEqual([version, false, ["--version"]]);
+      expect(run.errors).toEqual([
+        `npm ${version} can't publish and set dist-tags as a trusted publisher: that takes npm ` +
+          "11.21.0 or later (12.2.0 or later on npm 12). Nothing was published. Pin NPM_VERSION " +
+          "in release.yml to such a version.",
+      ]);
+      rmSync(join(dir, "dist-0.2.0"), { recursive: true });
+    }
+    expect(r.events).toEqual([]);
+    // One that can: the run goes on.
+    const run = await publishWith(
+      r,
+      stage("0.2.0"),
+      (args) => (args[0] === "--version" ? { code: 0, output: "11.21.0\n" } : succeeds()),
+      true,
     );
+    expect(run.calls.slice(0, 2)).toEqual([
+      "--version",
+      `publish ${join(dir, "npm-0.2.0", "darwin-arm64")} --access public --tag latest --registry ${r.url} --provenance`,
+    ]);
+  });
+
+  test("the npm versions that can: 11.21.0 on, and 12.2.0 on", () => {
+    const can = ["11.5.1", "11.21.0", "11.30.2", "12.0.0", "12.1.9", "12.2.0", "13.0.0"].filter(
+      (v) => Bun.semver.satisfies(v, TRUSTED_NPM),
+    );
+    expect(can).toEqual(["11.21.0", "11.30.2", "12.2.0", "13.0.0"]);
+  });
+
+  test("a registry that fails while saying what is published: stops, with the re-run hint", async () => {
+    const broken = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("oops", { status: 503 }),
+    });
+    try {
+      const run = await publishWith(
+        { url: `http://127.0.0.1:${broken.port}/`, fetch, requestTimeoutMs: 5_000 },
+        stage("0.2.0"),
+        succeeds,
+      );
+      expect([run.ok, run.calls]).toEqual([false, []]);
+      expect(run.errors).toEqual([
+        "the registry answered 503 for @tokenhud/darwin-arm64. The run stopped there. Re-run " +
+          "this job: it skips what is already published.",
+      ]);
+    } finally {
+      broken.stop(true);
+    }
+  });
+
+  describe("a prerelease's tag", () => {
+    /** The tag each platform package and tokenhud were published under. */
+    const tags = (calls: string[]) =>
+      calls.filter((c) => c.startsWith("publish")).map((c) => /--tag (\S+)/.exec(c)?.[1]);
+
+    test("next, when it is newer than next or next is unset, or (a re-run) is next", async () => {
+      for (const [next, version] of [
+        [undefined, "0.2.0-rc.1"],
+        ["0.2.0-rc.1", "0.2.0-rc.2"],
+        ["0.1.0", "0.3.0-rc.1"],
+      ] as const) {
+        const r = serve([listed("tokenhud", "0.1.0")], {
+          tokenhud: { latest: "0.1.0", ...(next === undefined ? {} : { next }) },
+        });
+        const run = await publishWith(r, stage(version), succeeds);
+        expect([next, tags(run.calls), run.summary]).toEqual([next, ["next", "next"], []]);
+      }
+      // A re-run after tokenhud went out: next is this version, and stays its tag.
+      const r = serve([listed(LINUX, "0.2.0-rc.3"), listed(MAC, "0.2.0-rc.3")], {
+        tokenhud: { latest: "0.1.0", next: "0.2.0-rc.3" },
+      });
+      const run = await publishWith(r, stage("0.2.0-rc.3"), succeeds);
+      expect(tags(run.calls)).toEqual(["next"]);
+    });
+
+    // A backport's candidate (0.1.2-rc.1 while next holds 0.2.0-rc.1) would move next back.
+    test("next-<major>.<minor> when next is newer, said in the log and the summary", async () => {
+      const r = serve([listed("tokenhud", "0.1.1")], {
+        tokenhud: { latest: "0.1.1", next: "0.2.0-rc.1" },
+      });
+      const run = await publishWith(r, stage("0.1.2-rc.1"), succeeds);
+      // The platform packages'. (The stand-in npm sends nothing, so tokenhud's wait runs out;
+      // the real npm's test publishes it under next-0.2.)
+      expect(tags(run.calls)).toEqual(["next-0.1", "next-0.1"]);
+      expect(run.log[0]).toBe(
+        "tokenhud@0.1.2-rc.1 is older than next: it goes under next-0.1, and next stays",
+      );
+      expect(run.summary).toEqual([
+        "**tokenhud 0.1.2-rc.1 is published under `next-0.1`**, not `next`, which holds a newer " +
+          "prerelease. Install it with `bun add -g tokenhud@next-0.1` or " +
+          "`npm install -g tokenhud@next-0.1`.",
+      ]);
+      // A prerelease never moves next with dist-tag: publishing set the tag.
+      expect(run.calls.filter((c) => c.startsWith("dist-tag"))).toEqual([]);
+    });
   });
 });
 
@@ -301,6 +450,7 @@ describe("the release workflow", () => {
     const release = workflow("release.yml");
     const ci = workflow("ci.yml");
     const job = release.slice(release.indexOf("\n  npm:\n"));
+    // npm's own registry, which turns on the check that npm can be a trusted publisher.
     expect(job).toContain(
       "bun scripts/stage-npm.ts\n          bun scripts/publish-npm.ts --provenance\n",
     );
@@ -308,10 +458,10 @@ describe("the release workflow", () => {
     expect(release).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN/);
     const node = /^ {2}NODE_VERSION: (\S+)$/m.exec(release)?.[1] as string;
     const npm = /^ {2}NPM_VERSION: (\S+)$/m.exec(release)?.[1] as string;
-    // What npm's trusted publishing needs.
+    // What npm's trusted publishing needs, `npm dist-tag` included.
     expect([
       Bun.semver.satisfies(node, ">=22.14.0"),
-      Bun.semver.satisfies(npm, ">=11.5.1"),
+      Bun.semver.satisfies(npm, TRUSTED_NPM),
     ]).toEqual([true, true]);
     expect(ci).toContain(`node-version: ${node}\n`);
     expect(ci).toContain(`npm install --global npm@${npm} `);
@@ -323,7 +473,12 @@ const NPM = Bun.which("npm");
 
 describe.skipIf(NPM === null || process.platform === "win32")("publishing with npm", () => {
   /** Runs the script on `out` against `r`, as the release job does but for the registry. */
-  async function publish(r: FakeNpm, out: string, timeout = "30") {
+  async function publish(
+    r: FakeNpm,
+    out: string,
+    timeout = "30",
+    extra: Record<string, string> = {},
+  ) {
     const home = join(dir, "home");
     mkdirSync(home, { recursive: true });
     const npmrc = join(dir, "npmrc");
@@ -357,6 +512,7 @@ describe.skipIf(NPM === null || process.platform === "win32")("publishing with n
           npm_config_update_notifier: "false",
           npm_config_audit: "false",
           npm_config_fund: "false",
+          ...extra,
         },
         stdin: "ignore",
         stdout: "pipe",
@@ -436,5 +592,27 @@ describe.skipIf(NPM === null || process.platform === "win32")("publishing with n
       "publish tokenhud@0.2.0-rc.1",
     ]);
     expect(r.tags("tokenhud")).toEqual({ latest: "0.1.0", next: "0.2.0-rc.1" });
+  }, 120_000);
+
+  test("a backport's prerelease, older than next: under next-0.2, next left alone, and the summary says so", async () => {
+    const r = serve([listed("tokenhud", "0.3.0-rc.1")], {
+      tokenhud: { latest: "0.2.0", next: "0.3.0-rc.1" },
+    });
+    const summary = join(dir, "summary.md");
+    const run = await publish(r, stage("0.2.1-rc.1"), "30", { GITHUB_STEP_SUMMARY: summary });
+    expect(run.code).toBe(0);
+    expect(r.events.filter((e) => !e.startsWith("tarball"))).toEqual([
+      `publish ${MAC}@0.2.1-rc.1`,
+      `publish ${LINUX}@0.2.1-rc.1`,
+      "publish tokenhud@0.2.1-rc.1",
+    ]);
+    expect(r.tags("tokenhud")).toEqual({
+      latest: "0.2.0",
+      next: "0.3.0-rc.1",
+      "next-0.2": "0.2.1-rc.1",
+    });
+    expect(readFileSync(summary, "utf8")).toContain(
+      "**tokenhud 0.2.1-rc.1 is published under `next-0.2`**",
+    );
   }, 120_000);
 });

@@ -7,6 +7,11 @@
 //      for up to 30 min;
 //   3. only then tokenhud. If the wait runs out, tokenhud is not published and this fails;
 //   4. a release (not a prerelease) moves tokenhud's `next` tag up to it, when it is newer.
+//      The release is out by then, so a refusal is a warning with the command to run by hand.
+//
+// A release goes under `latest`, a prerelease under `next`; but a prerelease older than
+// tokenhud's `next` (a backport's candidate, 0.1.2-rc.1 while next is 0.2.0-rc.1) goes under
+// `next-<major>.<minor>` (`next-0.1`), so it never moves `next` backwards.
 //
 // For v0.1.0, npm's CDN served @tokenhud/linux-x64's tarball as a 404 for about 10 minutes
 // after it was published. `bun add -g tokenhud` installed tokenhud anyway, without the
@@ -19,14 +24,22 @@
 //   bun scripts/publish-npm.ts --provenance
 //
 // Options: --dir (dist/npm), --registry (npm's), --provenance, and --interval and --timeout,
-// in seconds (20 and 1800). npm authenticates as the release workflow's trusted publisher
-// (OIDC), so a failure to publish names the npmjs.com settings to check.
-import { readdirSync, readFileSync } from "node:fs";
+// in seconds (20 and 1800). On npm's registry, npm authenticates as the release workflow's
+// trusted publisher (OIDC): before anything is published, this checks that npm is one that
+// can, and a refused publish names the npmjs.com settings to check. Another registry (a
+// test's) takes a token, from any npm.
+import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { REPO } from "../src/release.ts";
 
 export const NPM_REGISTRY = "https://registry.npmjs.org/";
+
+/**
+ * The npm versions that can both publish and set dist-tags as a trusted publisher: `npm
+ * publish` learned OIDC in 11.5.1, `npm dist-tag` only in 11.21.0 and 12.2.0.
+ */
+export const TRUSTED_NPM = ">=11.21.0 <12.0.0 || >=12.2.0";
 
 /** A staged package: its directory, name and version. */
 export interface Staged {
@@ -159,32 +172,91 @@ export interface PublishOptions extends WaitOptions {
   readonly dir: string;
   readonly registry: Registry;
   readonly provenance: boolean;
+  /** Whether npm must be one that can publish and set dist-tags as a trusted publisher. */
+  readonly trusted: boolean;
   /** Runs npm with these arguments: its exit code, and what it printed. */
   readonly npm: (args: string[]) => Promise<{ code: number; output: string }>;
-  /** Errors, as GitHub annotations. */
+  /** Errors and warnings, as GitHub annotations. */
   readonly error: (line: string) => void;
+  readonly warn: (line: string) => void;
+  /** A paragraph of Markdown for the job's summary. */
+  readonly summary: (markdown: string) => void;
 }
 
 // npm answers a publish it may not make with a 404 as often as with a 401 or 403.
 const AUTH_FAILURE = /\b(E401|E403|E404|ENEEDAUTH)\b|\b40[134]\b|oidc|trusted publish/i;
 
-/** What to say when `npm <what>` fails for `name`, from npm's output. */
-function failure(what: string, name: string, output: string): string {
+/** What to say when publishing `name` fails, from npm's output. */
+function failure(name: string, output: string): string {
   if (AUTH_FAILURE.test(output)) {
     return (
-      `npm ${what} ${name} was refused: check the trusted publisher settings for ${name} on ` +
-      `npmjs.com (repository ${REPO}, workflow release.yml, no environment${what === "dist-tag" ? ", allowed to set dist-tags" : ""}), ` +
+      `npm publish ${name} was refused: check the trusted publisher settings for ${name} on ` +
+      `npmjs.com (repository ${REPO}, workflow release.yml, no environment), ` +
       "and that this job has `id-token: write`."
     );
   }
-  return `npm ${what} ${name} failed; npm's output is above.`;
+  return `npm publish ${name} failed; npm's output is above.`;
+}
+
+/** The npm version npm printed (`11.21.0`), or null. */
+function npmVersion(output: string): string | null {
+  return /^\d+\.\d+\.\d+\S*$/m.exec(output)?.[0] ?? null;
+}
+
+/**
+ * The dist-tag `version` goes under: `latest` for a release; for a prerelease `next`, unless
+ * tokenhud's `next` is newer, which it would move backwards: then `next-<major>.<minor>`.
+ */
+async function publishTag(registry: Registry, version: string): Promise<string> {
+  if (!version.includes("-")) return "latest";
+  const next = (await document(registry, "tokenhud"))?.["dist-tags"]?.next;
+  // Equal on a re-run that already published tokenhud.
+  if (next === undefined || Bun.semver.order(version, next) >= 0) return "next";
+  const [major, minor] = version.split(".");
+  return `next-${major}.${minor}`;
 }
 
 /** Publishes the staged packages in order; returns whether everything went through. */
 export async function publishNpm(o: PublishOptions): Promise<boolean> {
-  const { platforms, launcher } = stagedPackages(o.dir);
+  const staged = stagedPackages(o.dir);
+  try {
+    return await publishInOrder(o, staged);
+  } catch (error) {
+    // The registry couldn't say what is published (a 5xx, the network): nothing more is sent.
+    o.error(
+      `${(error as Error).message}. The run stopped there. Re-run this job: it skips what is ` +
+        "already published.",
+    );
+    return false;
+  }
+}
+
+async function publishInOrder(
+  o: PublishOptions,
+  { platforms, launcher }: ReturnType<typeof stagedPackages>,
+): Promise<boolean> {
   const { version } = launcher;
-  const tag = version.includes("-") ? "next" : "latest";
+  if (o.trusted) {
+    const run = await o.npm(["--version"]);
+    const found = run.code === 0 ? npmVersion(run.output) : null;
+    if (found === null || !Bun.semver.satisfies(found, TRUSTED_NPM)) {
+      o.error(
+        `npm ${found ?? "(its version unknown)"} can't publish and set dist-tags as a trusted ` +
+          "publisher: that takes npm 11.21.0 or later (12.2.0 or later on npm 12). Nothing was " +
+          "published. Pin NPM_VERSION in release.yml to such a version.",
+      );
+      return false;
+    }
+  }
+  const tag = await publishTag(o.registry, version);
+  if (tag !== "latest" && tag !== "next") {
+    o.log(`tokenhud@${version} is older than next: it goes under ${tag}, and next stays`);
+    o.summary(
+      `**tokenhud ${version} is published under \`${tag}\`**, not \`next\`, which holds a newer ` +
+        `prerelease. Install it with \`bun add -g tokenhud@${tag}\` or ` +
+        `\`npm install -g tokenhud@${tag}\`.`,
+    );
+  }
   const registry = o.registry.url;
   const onNpm = async (p: Staged) =>
     (await document(o.registry, p.name))?.versions?.[version] !== undefined;
@@ -201,7 +273,7 @@ export async function publishNpm(o: PublishOptions): Promise<boolean> {
       o.log(`${p.name}@${version} is already on npm`);
       return true;
     }
-    o.error(failure("publish", p.name, run.output));
+    o.error(failure(p.name, run.output));
     return false;
   };
 
@@ -230,6 +302,7 @@ export async function publishNpm(o: PublishOptions): Promise<boolean> {
     if (next !== undefined && Bun.semver.order(version, next) !== 1) {
       o.log(`tokenhud: next stays at ${next}, not older than ${version}`);
     } else {
+      const manual = `npm dist-tag add tokenhud@${version} next`;
       const run = await o.npm([
         "dist-tag",
         "add",
@@ -239,8 +312,18 @@ export async function publishNpm(o: PublishOptions): Promise<boolean> {
         registry,
       ]);
       if (run.code !== 0) {
-        o.error(failure("dist-tag", "tokenhud", run.output));
-        return false;
+        // The release is out: a stale `next` is worth a warning, not a failed job.
+        const refused = AUTH_FAILURE.test(run.output)
+          ? " Check that tokenhud's trusted publisher on npmjs.com allows npm dist-tag."
+          : "";
+        o.warn(
+          `tokenhud@${version} is published, but npm didn't move its next tag (still ${next ?? "unset"}).` +
+            `${refused} Move it by hand: ${manual}`,
+        );
+        o.summary(
+          `**tokenhud's \`next\` tag was not moved to ${version}.** The release is published; ` +
+            `move the tag by hand:\n\n\`\`\`sh\n${manual}\n\`\`\``,
+        );
       }
     }
   }
@@ -288,24 +371,23 @@ if (import.meta.main) {
     if (!Number.isFinite(n) || n < 0) throw new Error(`not a number of seconds: ${s}`);
     return n * 1000;
   };
+  const registry = values.registry.replace(/\/*$/, "/");
   const ok = await publishNpm({
     dir: values.dir,
-    registry: {
-      url: values.registry.replace(/\/*$/, "/"),
-      fetch,
-      requestTimeoutMs: 60_000,
-    },
+    registry: { url: registry, fetch, requestTimeoutMs: 60_000 },
     provenance: values.provenance,
+    trusted: registry === NPM_REGISTRY,
     intervalMs: seconds(values.interval),
     timeoutMs: seconds(values.timeout),
     clock: { now: Date.now, sleep: Bun.sleep },
     log: (line) => console.log(line),
     error: (line) => console.log(`::error::${line}`),
+    warn: (line) => console.log(`::warning::${line}`),
+    summary: (markdown) => {
+      const file = process.env.GITHUB_STEP_SUMMARY;
+      if (file) appendFileSync(file, `${markdown}\n\n`);
+    },
     npm: runNpm,
-  }).catch((error: Error) => {
-    // The registry couldn't say what is published: nothing more is sent.
-    console.log(`::error::${error.message}`);
-    return false;
   });
   process.exit(ok ? 0 : 1);
 }

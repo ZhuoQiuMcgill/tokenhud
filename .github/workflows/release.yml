@@ -36,10 +36,12 @@ concurrency:
 
 env:
   BUN_VERSION: 1.4.2
-  # The npm job's. npm's trusted publishing (OIDC) needs npm 11.5.1 or later on Node 22.14 or
-  # later. ci.yml tests scripts/publish-npm.ts with the same two.
+  # The npm job's. npm's trusted publishing (OIDC) needs Node 22.14 or later, and npm 11.5.1
+  # or later to publish, but 11.21.0 or later (12.2.0 on npm 12) to set a dist-tag, as moving
+  # `next` does. scripts/publish-npm.ts checks npm before it publishes anything; ci.yml tests
+  # it with the same two.
   NODE_VERSION: 24.4.1
-  NPM_VERSION: 11.5.1
+  NPM_VERSION: 11.21.0
 
 jobs:
   build:

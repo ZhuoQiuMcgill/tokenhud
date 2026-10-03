@@ -28,9 +28,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ### For contributors
 
-- Releases publish to npm as a trusted publisher (OIDC), with no token or secret, and move
-  only `tokenhud`'s `next` tag. `scripts/publish-npm.ts` does the publishing; CI runs it
-  with the real npm against a registry on localhost that serves a tarball late.
+- Releases publish to npm as a trusted publisher (OIDC), with no token or secret, on npm
+  11.21.0, and move only `tokenhud`'s `next` tag. A prerelease older than the one on `next`
+  goes under `next-<major>.<minor>`, so `next` never moves backwards.
+  `scripts/publish-npm.ts` does the publishing; CI runs it with the real npm against a
+  registry on localhost that serves a tarball late.
 
 ## [0.1.0] - 2026-10-02
 

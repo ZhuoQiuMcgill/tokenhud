@@ -28,6 +28,11 @@ export interface FakeNpmOptions {
    * it: a 404, or bytes that don't match the integrity its document gives.
    */
   readonly fault?: (id: string, nth: number) => TarballFault | undefined;
+  /**
+   * Where tarballs are served, as a path, when not where npm's registry serves them: so a
+   * test can tell a client that follows `dist.tarball` from one that builds the usual URL.
+   */
+  readonly tarballPath?: (name: string, version: string) => string;
 }
 
 export interface FakeNpm {
@@ -46,7 +51,7 @@ export interface FakeNpm {
 }
 
 /** The registry's tarball path for a version: `/@scope/name/-/name-1.0.0.tgz`. */
-const tarballPath = (name: string, version: string) =>
+const npmTarballPath = (name: string, version: string) =>
   `/${name}/-/${name.replace(/^@[^/]+\//, "")}-${version}.tgz`;
 
 /** The scripts npm runs at install: the registry marks a version with one `hasInstallScript`. */
@@ -78,6 +83,7 @@ export function fakeNpm(
   const distTags = new Map<string, Record<string, string>>();
   const files = new Map<string, { name: string; version: string }>();
   const requests = new Map<string, number>();
+  const tarballPath = options.tarballPath ?? npmTarballPath;
   let origin = "";
 
   const add = (name: string, version: string, entry: Version) => {
