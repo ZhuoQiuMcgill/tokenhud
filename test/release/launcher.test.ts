@@ -220,9 +220,25 @@ describe.skipIf(!posix).each(shells())("the sh command under %s", (_, shell) => 
     platformAt(join(global, "@tokenhud", "win32-x64"));
     const out = await run(command);
     expect([out.code, out.stdout]).toEqual([1, ""]);
-    expect(out.stderr).toContain(`@tokenhud/${here()},\nis not installed`);
-    expect(out.stderr).toContain("--omit=optional");
-    expect(out.stderr).toContain("  bun add -g tokenhud          (a global install with bun)\n");
+    // Both causes: optional dependencies left out, and a download that failed, as npm's CDN
+    // 404ed @tokenhud/linux-x64 for minutes after v0.1.0 was published.
+    expect(out.stderr).toBe(
+      [
+        `tokenhud: the package with the tokenhud binary for this machine, @tokenhud/${here()},`,
+        "is not installed. It comes as an optional dependency, so it is missing when",
+        "optional dependencies were skipped (--omit=optional, --no-optional, or a lockfile",
+        "made on another platform). Reinstall tokenhud the same way, without --omit=optional:",
+        "  bun add -g tokenhud          (a global install with bun)",
+        "  npm install -g tokenhud      (a global install with npm)",
+        "  npm install tokenhud         (in a project)",
+        "It is also missing when its download failed, which bun and npm pass over without an",
+        "error. If tokenhud was just released, wait a few minutes and reinstall:",
+        "  bun remove -g tokenhud && bun add -g --no-cache tokenhud",
+        "  npm install -g --prefer-online tokenhud",
+        "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install",
+        "",
+      ].join("\n"),
+    );
   });
 
   test("musl: its own package, never the glibc one, and how to install both it and libstdc++", async () => {

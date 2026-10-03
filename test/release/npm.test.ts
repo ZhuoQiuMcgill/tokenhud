@@ -132,10 +132,24 @@ describe.skipIf(process.platform === "win32").each(RUNTIMES)(
       const out = await result(launch("--version"));
       expect(out.code).toBe(1);
       expect(out.stdout).toBe("");
-      expect(out.stderr).toContain(`@tokenhud/${id}`);
-      expect(out.stderr).toContain("--omit=optional");
-      expect(out.stderr).toContain("npm install -g tokenhud      (a global install)");
-      expect(out.stderr).toContain("npm install tokenhud         (in a project)");
+      // Both causes: optional dependencies left out, and a download that failed. Only npm's
+      // commands: this launcher runs only where npm installed it (Bun isn't supported on
+      // Windows).
+      expect(out.stderr).toBe(
+        [
+          `tokenhud: the package with the tokenhud binary for this machine, @tokenhud/${id},`,
+          "is not installed. It comes as an optional dependency, so it is missing when",
+          "optional dependencies were skipped (--omit=optional, --no-optional, or a lockfile",
+          "made on another platform). Reinstall tokenhud the same way, without --omit=optional:",
+          "  npm install -g tokenhud      (a global install)",
+          "  npm install tokenhud         (in a project)",
+          "It is also missing when its download failed, which npm passes over without an",
+          "error. If tokenhud was just released, wait a few minutes and reinstall:",
+          "  npm install -g --prefer-online tokenhud",
+          "or install the binary directly: https://github.com/ZhuoQiuMcgill/tokenhud#install",
+          "",
+        ].join("\n"),
+      );
     });
 
     // Bun ignores `libc` and installs a glibc package on Alpine too (and the other way
