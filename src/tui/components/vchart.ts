@@ -6,7 +6,10 @@ import { Themed, type ThemedOptions } from "./base.ts";
 const EIGHTHS = " ▁▂▃▄▅▆▇";
 
 export interface XLabel {
-  /** Position along the chart, 0 (first column) to 1 (last). */
+  /**
+   * Where along the chart's span the tick falls, 0 (its start) to 1 (its end). A tick
+   * starts at the first cell of the column it falls in; the one at 1 ends at the last cell.
+   */
   readonly at: number;
   readonly text: string;
 }
@@ -22,18 +25,29 @@ export interface VChartOptions extends ThemedOptions<VChartRenderable> {
 }
 
 /**
- * Columns to draw `values` in `width` cells: one value per `colw` cells when they fit,
- * else `group` neighbouring values summed per cell (a coarser bucket, e.g. 40 instead of
- * 20 minutes), so every value counts and the chart never scrolls.
+ * Where each of `n` columns starts in `width` cells, then where the last one ends: column
+ * `i` takes cells `edges[i]` to `edges[i + 1] - 1`. Each gets `floor(width / n)` cells and
+ * the leftover cells are spread evenly (Bresenham), so widths differ by at most one, the
+ * columns fill the width exactly, and a run of columns takes its share of it to within a
+ * cell: time stays proportional to width.
+ */
+export function columnEdges(n: number, width: number): number[] {
+  const edges: number[] = [];
+  for (let i = 0; i <= n; i++) edges.push(Math.floor((i * width) / Math.max(1, n)));
+  return edges;
+}
+
+/**
+ * Columns to draw `values` across all of `width` cells: a value a column when they fit,
+ * else `group` neighbouring values summed per column (a coarser bucket, e.g. 40 instead of
+ * 20 minutes), so every value counts and the chart never scrolls. `edges` places them
+ * (`columnEdges`).
  */
 export function chartColumns(
   values: readonly number[],
   width: number,
-): { columns: number[]; colw: number } {
-  if (values.length === 0 || width <= 0) return { columns: [], colw: 1 };
-  if (values.length <= width) {
-    return { columns: [...values], colw: Math.max(1, Math.floor(width / values.length)) };
-  }
+): { columns: number[]; edges: number[] } {
+  if (values.length === 0 || width <= 0) return { columns: [], edges: [0] };
   const group = Math.ceil(values.length / width);
   const columns: number[] = [];
   for (let i = 0; i < values.length; i += group) {
@@ -41,7 +55,7 @@ export function chartColumns(
     for (let k = i; k < Math.min(values.length, i + group); k++) sum += values[k] as number;
     columns.push(sum);
   }
-  return { columns, colw: 1 };
+  return { columns, edges: columnEdges(columns.length, width) };
 }
 
 /** gen.py `vchart()`: the cell for `v` in row `r` (0 = top) of `rows`, eighth blocks on top. */
@@ -54,8 +68,8 @@ export function chartCell(v: number, hi: number, rows: number, r: number): strin
 }
 
 /**
- * A vertical block chart: y labels on the left (top value, middle value, 0), the bars, and
- * a row of x tick labels under them.
+ * A vertical block chart: y labels on the left (top value, middle value, 0), the bars
+ * across the whole of the rest of the width, and a row of x tick labels under them.
  */
 export class VChartRenderable extends Themed {
   #values: readonly number[] = [];
@@ -104,7 +118,7 @@ export class VChartRenderable extends Themed {
     const x0 = x + this.#labelWidth + 1;
     const plotWidth = x + width - x0;
     if (rows < 1 || plotWidth < 1) return;
-    const { columns, colw } = chartColumns(this.#values, plotWidth);
+    const { columns, edges } = chartColumns(this.#values, plotWidth);
     let hi = 0;
     for (const v of columns) if (v > hi) hi = v;
     const dim = this.color("dim");
@@ -122,16 +136,19 @@ export class VChartRenderable extends Themed {
     const scale = hi > 0 ? hi : 1;
     for (let r = 0; r < rows; r++) {
       let line = "";
-      for (const v of columns) line += chartCell(v, scale, rows, r).repeat(colw);
+      for (let i = 0; i < columns.length; i++) {
+        const cells = (edges[i + 1] as number) - (edges[i] as number);
+        line += chartCell(columns[i] as number, scale, rows, r).repeat(cells);
+      }
       buffer.drawText(line, x0, y + r, bar);
     }
     if (this.#xLabels.length === 0) return;
-    const span = columns.length * colw;
     let free = x0; // the first cell a label may start at
     for (const label of this.#xLabels) {
       const w = textWidth(label.text);
-      const at = Math.round(Math.min(1, Math.max(0, label.at)) * (span - 1));
-      let start = label.at >= 1 ? x0 + at - w + 1 : x0 + at;
+      const at = Math.min(1, Math.max(0, label.at));
+      let start =
+        at >= 1 ? x0 + plotWidth - w : x0 + (edges[Math.round(at * columns.length)] as number);
       start = Math.min(start, x + width - w);
       if (start < free) continue;
       buffer.drawText(label.text, start, y + rows, dim);

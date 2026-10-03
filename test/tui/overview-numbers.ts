@@ -5,7 +5,13 @@ import type { Config } from "../../src/config.ts";
 import { clock, countdown, money, tokens } from "../../src/tui/format.ts";
 import { costText } from "../../src/tui/views/cells.ts";
 import { fitBuckets, listedEvents } from "../../src/tui/views/overview.tsx";
-import type { LimitCard, OverviewVM, Priced, SpendColumn } from "../../src/tui/vm/types.ts";
+import type {
+  ActivityWindow,
+  LimitCard,
+  OverviewVM,
+  Priced,
+  SpendColumn,
+} from "../../src/tui/vm/types.ts";
 import { TZ } from "./fixture.ts";
 import { appearsWhole, expectWhole } from "./whole.ts";
 
@@ -62,9 +68,16 @@ const costForms = (p: Priced) => [costText(p).text, costText(p, true).text];
 
 /**
  * Checks every number of every Overview section on screen. Which spend columns show is read
- * off the header row, and the chart's bucket from the same width rule the view uses.
+ * off the header row, and the chart's bucket from the same width rule the view uses; the
+ * peak note, its amount and time, is `window`'s (the chart's tab).
  */
-export function expectOverviewWhole(text: string, vm: OverviewVM, width: number, config: Config) {
+export function expectOverviewWhole(
+  text: string,
+  vm: OverviewVM,
+  width: number,
+  config: Config,
+  window: ActivityWindow = "24h",
+) {
   const show = config.show_cost;
   const numbers = cardNumbers(vm, show, true);
   const alternatives: string[][] = [];
@@ -80,13 +93,16 @@ export function expectOverviewWhole(text: string, vm: OverviewVM, width: number,
     }
   }
   if (text.includes(" ACTIVITY")) {
-    const series = vm.activity["24h"];
+    const series = vm.activity[window];
     const beside = width >= 120;
     const top = Math.max(38, Math.min(56, width - 2 - 103));
     const plot = (beside ? width - top - 2 : width) - 7;
-    const plotted = fitBuckets(show ? series.cost : series.tokens, plot).values;
-    const peak = Math.max(...plotted);
-    if (text.includes("peak ")) numbers.push(show ? money(peak) : tokens(peak));
+    const { values, group } = fitBuckets(show ? series.cost : series.tokens, plot);
+    const peak = values.indexOf(Math.max(...values));
+    const amount = show ? money(values[peak] as number) : tokens(values[peak] as number);
+    // The time is the start of the drawn bucket: it moves with the bucket's size (T24).
+    const at = when(series.from + peak * group * series.bucketMs, vm.asOf);
+    if (text.includes("peak ")) numbers.push(`peak ${amount} at ${at}`);
   }
   if (text.includes(" TOP MODELS")) {
     for (const m of show ? vm.topModels : vm.topModelsByTokens) {

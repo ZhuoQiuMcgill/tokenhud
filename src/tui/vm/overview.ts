@@ -44,9 +44,10 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /**
- * Each chart's span and finest bucket. The view sums neighbouring buckets into the widest
- * whole number of columns that fits (15 min on a 105-column screen, 20 min at 80), so the
- * finest bucket is the one that divides into the most useful sizes.
+ * Each chart's span and finest bucket. The view sums neighbouring buckets into the largest
+ * whole number of columns that fits (15 min on a 105-column screen, 20 min at 80) and
+ * spreads them over the chart's width, so the finest bucket is the one that divides into
+ * the most useful sizes.
  */
 export const ACTIVITY: Readonly<Record<ActivityWindow, { span: number; bucket: number }>> = {
   "5h": { span: 5 * HOUR, bucket: MINUTE },

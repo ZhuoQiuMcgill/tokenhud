@@ -56,19 +56,19 @@ exports[`VChart y labels (top, middle, 0), bars and x tick labels 1`] = `
 " $18.4           ▁▁            ██   
                  ██            ██   
                  ██▄▄          ██   
-  $9.2         ▁▁████          ██▃▃ 
-               ██████▂▂        ████ 
-             ▄▄████████▁▁    ▇▇████ 
-     0   ▃▃▆▆████████████    ██████ 
-       -24h          -12h       now 
-[-/bg] [dim/bg]$18.4[-/bg] [cost|mid/bg]          ▁▁            ██  [-/bg] 
-[-/bg]       [cost|mid/bg]          ██            ██  [-/bg] 
-[-/bg]       [cost|mid/bg]          ██▄▄          ██  [-/bg] 
-[-/bg]  [dim/bg]$9.2[-/bg] [cost|mid/bg]        ▁▁████          ██▃▃[-/bg] 
-[-/bg]       [cost|mid/bg]        ██████▂▂        ████[-/bg] 
-[-/bg]       [cost|mid/bg]      ▄▄████████▁▁    ▇▇████[-/bg] 
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]  ▃▃▆▆████████████    ██████[-/bg] 
-[-/bg]       [dim/bg]-24h[-/bg]          [dim/bg]-12h[-/bg]       [dim/bg]now[-/bg] "
+  $9.2         ▁▁████          ██▃▃▃
+               ██████▂▂        █████
+             ▄▄████████▁▁    ▇▇█████
+     0   ▃▃▆▆████████████    ███████
+       -24h          -12h        now
+[-/bg] [dim/bg]$18.4[-/bg] [cost|mid/bg]          ▁▁            ██   
+[-/bg]       [cost|mid/bg]          ██            ██   
+[-/bg]       [cost|mid/bg]          ██▄▄          ██   
+[-/bg]  [dim/bg]$9.2[-/bg] [cost|mid/bg]        ▁▁████          ██▃▃▃
+[-/bg]       [cost|mid/bg]        ██████▂▂        █████
+[-/bg]       [cost|mid/bg]      ▄▄████████▁▁    ▇▇█████
+[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]  ▃▃▆▆████████████    ███████
+[-/bg]       [dim/bg]-24h[-/bg]          [dim/bg]-12h[-/bg]        [dim/bg]now"
 `;
 
 exports[`HeatGrid weeks × days of ■, five levels, the selected day in head, blanks after today 1`] = `

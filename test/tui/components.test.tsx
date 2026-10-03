@@ -9,7 +9,7 @@ import { heatLevel } from "../../src/tui/components/heat-grid.ts";
 import { filledCells } from "../../src/tui/components/meter.ts";
 import { sparkChar } from "../../src/tui/components/spark.ts";
 import { type Column, layoutColumns, scrollTop } from "../../src/tui/components/table.ts";
-import { chartCell, chartColumns } from "../../src/tui/components/vchart.ts";
+import { chartCell, chartColumns, columnEdges } from "../../src/tui/components/vchart.ts";
 import { Table } from "../../src/tui/elements.tsx";
 import { theme } from "../../src/tui/theme.ts";
 import { guard } from "../guard.ts";
@@ -191,12 +191,26 @@ describe("VChart", () => {
     expect(chartCell(0, 10, 7, 6)).toBe(" ");
   });
 
-  test("columns: wider cells when values are few, summed groups when they are many", () => {
-    expect(chartColumns([1, 2, 3], 10)).toEqual({ columns: [1, 2, 3], colw: 3 });
-    expect(chartColumns([1, 2, 3, 4, 5], 2)).toEqual({ columns: [6, 9], colw: 1 });
-    expect(chartColumns([], 10)).toEqual({ columns: [], colw: 1 });
+  test("columns: spread over the whole width when values are few, summed groups when they are many", () => {
+    // 10 cells for 3 columns: 3, 3 and 4 cells, the extra cell where the spread puts it.
+    expect(chartColumns([1, 2, 3], 10)).toEqual({ columns: [1, 2, 3], edges: [0, 3, 6, 10] });
+    expect(chartColumns([1, 2, 3, 4, 5], 2)).toEqual({ columns: [6, 9], edges: [0, 1, 2] });
+    expect(chartColumns([], 10)).toEqual({ columns: [], edges: [0] });
     // 72 twenty-minute buckets in 60 cells: pairs, 40 minutes a column.
     expect(chartColumns(Array(72).fill(1), 60).columns).toHaveLength(36);
+  });
+
+  test("column edges: floor(width / n) cells each, the leftover spread evenly (T24)", () => {
+    // 10 / 4 = 2.5: widths 2, 3, 2, 3.
+    expect(columnEdges(4, 10)).toEqual([0, 2, 5, 7, 10]);
+    expect(columnEdges(3, 3)).toEqual([0, 1, 2, 3]);
+    expect(columnEdges(0, 10)).toEqual([0]);
+    // 84 columns in 150 cells: 66 of 2 cells and 18 of 1, never two 1-cell columns together.
+    const edges = columnEdges(84, 150);
+    const widths = edges.slice(1).map((e, i) => e - (edges[i] as number));
+    expect(widths.filter((w) => w === 2)).toHaveLength(66);
+    expect(widths.filter((w) => w === 1)).toHaveLength(18);
+    expect(widths.join("")).not.toContain("11");
   });
 
   test("y labels (top, middle, 0), bars and x tick labels", async () => {
