@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { processAlive } from "../lock.ts";
+import { byCodePoint } from "../sources/order.ts";
 import { guard, SchemeRefused, StoreCorrupt, StoreUnavailable } from "./errors.ts";
 import { KEY_SCHEME } from "./key.ts";
 import {
@@ -53,6 +54,7 @@ import {
  */
 
 export { UNATTRIBUTED } from "./schema.ts";
+export { byCodePoint };
 
 export const BUSY_TIMEOUT_MS = 5000;
 // Keep the WAL from lingering at the size of the first (backfill) transaction.
@@ -1518,20 +1520,6 @@ function internAccounts(db: Database, refs: readonly AccountRef[]): Map<string, 
       .all()
       .map((a) => [accountKey(a), Number(a.id)]),
   );
-}
-
-/** Orders strings by code point, as Python sorts str (not by UTF-16 code unit). */
-export function byCodePoint(a: string, b: string): number {
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    const x = a.codePointAt(i) ?? 0;
-    const y = b.codePointAt(j) ?? 0;
-    if (x !== y) return x - y;
-    i += x > 0xffff ? 2 : 1;
-    j += y > 0xffff ? 2 : 1;
-  }
-  return a.length - i - (b.length - j);
 }
 
 /**

@@ -1,8 +1,22 @@
+import { alertStatus, watched } from "../alerts/match.ts";
+import {
+  ALERT_WINDOWS,
+  type Alert,
+  type AlertWindow,
+  cleanNote,
+  editAlerts,
+  expired,
+  loadAlerts,
+  NOTE_MAX,
+  prune,
+  type ServerPlace,
+  sessionActivity,
+} from "../alerts/store.ts";
 import { BadArgument, parseBound } from "../commands/json.ts";
 import { loadLimitsCache } from "../limits/cache.ts";
 import { spendFromQueries } from "../limits/derive.ts";
 import type { ManualLinks } from "../limits/groups.ts";
-import { type AccountLimits, Limits } from "../limits/index.ts";
+import { type AccountLimits, Limits, type LimitWindow } from "../limits/index.ts";
 import type { CodexSnapshots } from "../limits/snapshots.ts";
 import type { DocumentRequest } from "../query/json.ts";
 import { usageDocument } from "../query/json.ts";
@@ -12,6 +26,16 @@ import { isTimeZone, Zone } from "../query/tz.ts";
 import type { Provider, Root } from "../sources/roots.ts";
 import { StoreError } from "../store/errors.ts";
 import { type Resolved, type ResolveRequest, resolveAccount } from "./accounts.ts";
+import {
+  type AlertView,
+  type AlertWindowView,
+  alertView,
+  delivery,
+  type HookDelivery,
+  MAX_ALERTS,
+  setMessage,
+  windowViews,
+} from "./alerts.ts";
 import {
   type LimitsView,
   limitsView,
@@ -26,9 +50,10 @@ import type { StoreHandle } from "./store.ts";
 import { type WaitArgs, type WaitClock, type WaitResult, waitForReset } from "./wait.ts";
 
 /**
- * The five MCP tools, independent of the protocol: `server.ts` registers them. Every
- * answer comes from T8 (limits, through `Limits` and an on-demand `refresh`) and T6 (usage,
+ * The MCP tools, independent of the protocol: `server.ts` registers them. Every answer
+ * comes from T8 (limits, through `Limits` and an on-demand `refresh`) and T6 (usage,
  * through the shared query and JSON modules), so they match `tokenhud json` and the TUI.
+ * The alert tools keep alerts.json (src/alerts/store.ts), which `tokenhud hook` delivers.
  *
  * Limits live in limits.json, not in the usage store, which only adds the spend pace,
  * projections and last-seen times. So `limits`, `should_wait`, `wait_for_reset` and
@@ -67,6 +92,13 @@ export interface ToolsDeps {
   clock: WaitClock;
   /** Called once per tool call, with the account label it was about (heartbeat). */
   record?: (tool: string, account: string | null) => void;
+  /** alerts.json, and the MCP heartbeat dir, where `tokenhud hook` records its sessions. */
+  alertsPath: string;
+  mcpDir: string;
+  /** The Claude Code session this server serves now, or null when it can't tell. */
+  session: () => string | null;
+  /** Its Claude Code process and config dir, to tell a stale session id from a missing hook. */
+  place: ServerPlace;
   /** Detail of a failure the answer works around (stderr). */
   log?: (message: string) => void;
 }
@@ -84,6 +116,35 @@ export interface UsageArgs {
   account?: string | undefined;
   provider?: Provider | undefined;
   tz?: string | undefined;
+}
+
+export interface SetAlertArgs {
+  window: AlertWindow;
+  /** Percent used, 1-100. */
+  at: number;
+  scope?: "session" | "persistent" | undefined;
+  note?: string | undefined;
+}
+
+export interface ClearAlertArgs {
+  id?: string | undefined;
+  all?: boolean | undefined;
+  persistent?: boolean | undefined;
+}
+
+export interface SetAlertResult {
+  id: string;
+  scope: "session" | "persistent";
+  window: AlertWindow;
+  at: number;
+  note: string | null;
+  account: { label: string; provider: string; group: string | null; shared_with: string[] };
+  /** The windows it watches now, each armed or already reached. */
+  windows: AlertWindowView[];
+  as_of: string | null;
+  message: string;
+  delivery: HookDelivery;
+  warnings: string[];
 }
 
 export interface AccountEntry {
@@ -423,4 +484,239 @@ export class Tools {
       }),
     };
   }
+
+  // ── alerts (T29) ──────────────────────────────────────────────────────────────
+
+  /** Re-reads alerts.json and changes it under its lock; a busy or unwritable file is a plain error. */
+  #editAlerts(edit: (alerts: Alert[]) => boolean): Alert[] {
+    try {
+      const log = this.#d.log;
+      return editAlerts(this.#d.alertsPath, edit, {
+        now: this.#d.now(),
+        ...(log !== undefined && { log }),
+      });
+    } catch (error) {
+      if (error instanceof ToolError) throw error;
+      const code = (error as NodeJS.ErrnoException).code ?? (error as Error).name;
+      this.#d.log?.(`alerts: cannot save alerts.json (${code})`);
+      throw new ToolError(
+        "internal",
+        `the alerts file is busy or can't be written (${code}); try again`,
+      );
+    }
+  }
+
+  /** The windows of an alert's account as the cache has them (no request); none when it is gone. */
+  #alertWindows(alert: Alert): readonly LimitWindow[] {
+    return this.#limits(null).getLimits(alert.account.id)?.windows ?? [];
+  }
+
+  /** The account this session runs on, or null when none is known (no request). */
+  #sessionRoot(): Root | null {
+    try {
+      return this.#resolve({}, null, this.#roots()).root;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The alerts that concern this session: its own, and the persistent ones on the account it
+   * runs on or another root of that subscription account (T16), as `tokenhud hook` tells them.
+   */
+  #concerning(alerts: readonly Alert[], session: string | null): Alert[] {
+    let root: Root | null | undefined;
+    let members: string[] = [];
+    const covers = (alert: Alert) => {
+      if (root === undefined) {
+        root = this.#sessionRoot();
+        const group = root === null ? undefined : this.#limits(null).groups().get(root.identity);
+        members = group?.members.map((m) => m.identity) ?? (root === null ? [] : [root.identity]);
+      }
+      return (
+        root !== null &&
+        (members.includes(alert.account.id) || alert.account.members.includes(root.identity))
+      );
+    };
+    return alerts.filter((a) =>
+      a.session === null ? covers(a) : session !== null && a.session === session,
+    );
+  }
+
+  /** The accounts (root identities) with an alert armed for this session: the alert watch's. */
+  armedAccounts(): string[] {
+    const alerts = loadAlerts(this.#d.alertsPath);
+    if (alerts.length === 0) return [];
+    const now = this.#d.now();
+    const limits = this.#limits(null);
+    const out = new Set<string>();
+    for (const alert of this.#concerning(alerts, this.#d.session())) {
+      const l = limits.getLimits(alert.account.id);
+      if (l === null || !l.account.signed_in) continue;
+      if (alertStatus(alert, l.windows, now).status === "armed") out.add(alert.account.id);
+    }
+    return [...out];
+  }
+
+  async setAlert(args: AccountArgs & SetAlertArgs): Promise<SetAlertResult> {
+    const window = ALERT_WINDOWS.find((w) => w === args.window);
+    if (window === undefined) {
+      throw new ToolError("bad_argument", `window must be one of ${ALERT_WINDOWS.join(", ")}`);
+    }
+    if (typeof args.at !== "number" || !(args.at >= 1 && args.at <= 100)) {
+      throw new ToolError("bad_argument", "at is a percent from 1 to 100");
+    }
+    const scope = args.scope ?? "session";
+    if (scope !== "session" && scope !== "persistent") {
+      throw new ToolError("bad_argument", "scope is session or persistent");
+    }
+    if (args.note !== undefined && args.note.length > NOTE_MAX) {
+      throw new ToolError("bad_argument", `note is at most ${NOTE_MAX} characters`);
+    }
+    const session = this.#d.session();
+    if (scope === "session" && session === null) {
+      throw new ToolError(
+        "bad_argument",
+        "this session's id is unknown (Claude Code passes it as CLAUDE_CODE_SESSION_ID), so a session alert could never be told to it: pass scope persistent",
+      );
+    }
+    const resolved = this.#resolve(args, this.#optionalStore(), this.#roots());
+    const root = resolved.root;
+    this.#d.record?.("set_alert", root.label);
+    const { limits } = await this.#accountLimits(root, true);
+    const now = this.#d.now();
+    const alert: Alert = {
+      id: newAlertId(),
+      created_at: now,
+      session: scope === "session" ? session : null,
+      account: {
+        id: root.identity,
+        label: root.label,
+        provider: root.provider,
+        group: limits.group?.id ?? null,
+        members: limits.group?.members.map((m) => m.id) ?? [root.identity],
+      },
+      window,
+      at: args.at,
+      note: cleanNote(args.note),
+      delivered: [],
+    };
+    // A window already over the line counts as told for its current instance.
+    alert.delivered = watched(alert, limits.windows, now)
+      .filter((w) => w.fires)
+      .map((w) => ({ kind: w.window.kind, resets_at: w.window.resets_at, at: now, on_set: true }));
+    const activity = sessionActivity(this.#d.mcpDir);
+    this.#editAlerts((alerts) => {
+      prune(alerts, now, activity);
+      if (alerts.length >= MAX_ALERTS) {
+        throw new ToolError(
+          "bad_argument",
+          `there are already ${MAX_ALERTS} alerts; clear some with clear_alert first`,
+        );
+      }
+      while (alerts.some((a) => a.id === alert.id)) alert.id = newAlertId();
+      alerts.push(alert);
+      return true;
+    });
+    const warnings: string[] = [];
+    if (!limits.account.signed_in) {
+      warnings.push(
+        "this account is not signed in on this machine: its limits are not refreshed here, so the alert may never fire",
+      );
+    }
+    if (scope === "persistent" && root.provider === "codex") {
+      warnings.push(
+        "only Claude Code sessions run the tokenhud hook, so a persistent alert on a Codex account is never told: use scope session",
+      );
+    }
+    const zone = this.#d.zone;
+    return {
+      id: alert.id,
+      scope,
+      window,
+      at: alert.at,
+      note: alert.note,
+      account: {
+        label: root.label,
+        provider: root.provider,
+        group: alert.account.group,
+        shared_with: (limits.group?.members ?? [])
+          .filter((m) => m.id !== root.identity)
+          .map((m) => m.label),
+      },
+      windows: windowViews(alert, limits.windows, zone, now),
+      as_of: limits.as_of === null ? null : zone.iso(limits.as_of),
+      message: setMessage(alert, limits.windows, limits.as_of !== null, zone, now),
+      delivery: delivery(this.#d.mcpDir, session, this.#d.place, zone),
+      warnings,
+    };
+  }
+
+  /** This session's alerts and every persistent one, from the cache (no request). */
+  async listAlerts(): Promise<{ alerts: AlertView[]; delivery: HookDelivery }> {
+    this.#d.record?.("list_alerts", null);
+    const session = this.#d.session();
+    const now = this.#d.now();
+    const activity = sessionActivity(this.#d.mcpDir);
+    const shown = loadAlerts(this.#d.alertsPath).filter(
+      (a) => !expired(a, now, activity) && (a.session === null || a.session === session),
+    );
+    return {
+      alerts: shown.map((a) => alertView(a, this.#alertWindows(a), session, this.#d.zone, now)),
+      delivery: delivery(this.#d.mcpDir, session, this.#d.place, this.#d.zone),
+    };
+  }
+
+  /** Clears one alert by id, or all of this session's (with persistent ones too, when asked). */
+  async clearAlert(args: ClearAlertArgs): Promise<{
+    cleared: Array<Pick<AlertView, "id" | "scope" | "window" | "at" | "account">>;
+    remaining: number;
+  }> {
+    const all = args.all === true;
+    if ((args.id === undefined) === !all) {
+      throw new ToolError("bad_argument", "pass id (from list_alerts), or all: true");
+    }
+    if (args.persistent === true && !all) {
+      throw new ToolError("bad_argument", "persistent goes with all: true");
+    }
+    this.#d.record?.("clear_alert", null);
+    const session = this.#d.session();
+    const now = this.#d.now();
+    const activity = sessionActivity(this.#d.mcpDir);
+    const visible = (a: Alert) => a.session === null || a.session === session;
+    const cleared: Alert[] = [];
+    const after = this.#editAlerts((alerts) => {
+      const pruned = prune(alerts, now, activity);
+      for (let i = alerts.length - 1; i >= 0; i--) {
+        const a = alerts[i] as Alert;
+        const hit = all
+          ? (a.session !== null && a.session === session) ||
+            (a.session === null && args.persistent === true)
+          : a.id === args.id && visible(a);
+        if (hit) cleared.unshift(...alerts.splice(i, 1));
+      }
+      if (!all && cleared.length === 0) {
+        throw new ToolError(
+          "bad_argument",
+          `no alert '${String(args.id).slice(0, 40)}' in this session or among the persistent ones (list_alerts lists them)`,
+        );
+      }
+      return pruned || cleared.length > 0;
+    });
+    return {
+      cleared: cleared.map((a) => ({
+        id: a.id,
+        scope: a.session === null ? "persistent" : "session",
+        window: a.window,
+        at: a.at,
+        account: { label: a.account.label, provider: a.account.provider },
+      })),
+      remaining: after.filter(visible).length,
+    };
+  }
+}
+
+/** A short id an agent can pass back: 8 hex digits. */
+function newAlertId(): string {
+  return crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 }

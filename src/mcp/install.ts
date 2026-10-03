@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { hooksInstalled } from "../alerts/install.ts";
 import type { Root } from "../sources/roots.ts";
 
 /**
@@ -10,7 +11,9 @@ import type { Root } from "../sources/roots.ts";
  *   `<dir>/plugins/installed_plugins.json` for one installed but switched off;
  * - an MCP server added with `claude mcp add -s user`: the `mcpServers` of Claude Code's
  *   global config, `~/.claude.json` for the default `~/.claude` and `<dir>/.claude.json`
- *   for a dir used through CLAUDE_CONFIG_DIR.
+ *   for a dir used through CLAUDE_CONFIG_DIR;
+ * - the hook that delivers limit alerts (T29): from the plugin when it is enabled, and in
+ *   `<dir>/settings.json` `hooks` as `tokenhud mcp install --hooks` writes it.
  */
 
 export interface ClaudeInstall {
@@ -18,6 +21,11 @@ export interface ClaudeInstall {
   plugin: "enabled" | "installed" | null;
   /** A user-scope MCP server that runs `tokenhud mcp`. */
   mcp: boolean;
+  /**
+   * Where the alert hook (`tokenhud hook`) comes from: the enabled plugin, the settings
+   * file, both (it then runs twice), or nowhere.
+   */
+  hook: "plugin" | "settings" | "both" | null;
 }
 
 const PLUGIN = /^tokenhud@/;
@@ -52,7 +60,8 @@ function globalConfigs(dir: string): string[] {
 }
 
 export function detectInstall(root: Pick<Root, "path">): ClaudeInstall {
-  const enabled = readJson(join(root.path, "settings.json"))?.enabledPlugins;
+  const settings = readJson(join(root.path, "settings.json"));
+  const enabled = settings?.enabledPlugins;
   const installed = readJson(join(root.path, "plugins", "installed_plugins.json"))?.plugins;
   let plugin: ClaudeInstall["plugin"] = null;
   if (isRecord(enabled) && Object.entries(enabled).some(([k, v]) => PLUGIN.test(k) && v === true)) {
@@ -67,5 +76,9 @@ export function detectInstall(root: Pick<Root, "path">): ClaudeInstall {
     const servers = readJson(path)?.mcpServers;
     return isRecord(servers) && Object.entries(servers).some(([k, v]) => runsTokenhud(k, v));
   });
-  return { plugin, mcp };
+  const inSettings = hooksInstalled(settings);
+  const fromPlugin = plugin === "enabled";
+  const hook =
+    fromPlugin && inSettings ? "both" : fromPlugin ? "plugin" : inSettings ? "settings" : null;
+  return { plugin, mcp, hook };
 }

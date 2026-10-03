@@ -155,10 +155,37 @@ as `codex-auto-review`); that model's cost is then all in `estimated_cost_usd`.
       "last_ingest"                        // when a pass last covered the root, or null
     }]
   },
-  "claude_code": { … }                     // the tokenhud plugin or MCP server, per account
+  "claude_code": {
+    "tokenhud_on_path", "npm_shim",        // npm_shim: a Windows .cmd Claude Code can't start
+    "accounts": [{
+      "label",
+      "plugin",                            // "enabled", "installed" (switched off) or null
+      "mcp",                               // a user-scope MCP server running tokenhud mcp
+      "hook"                               // the alert hook: "plugin", "settings" (settings.json),
+    }]                                     //   "both" (it runs twice) or null
+  }
 }
 ```
 
 Doctor prints config paths only (the store and its backup, the overrides file, the cursor
 cache, cc-usage's directory); never transcript, prompt or credential paths. Roots go by
 their labels.
+
+## `tokenhud hook`
+
+The Claude Code hook that delivers the limit alerts agents set with the MCP server's
+`set_alert` tool. Claude Code runs it on `PostToolBatch`, `UserPromptSubmit` and
+`SessionEnd` with its hook event on stdin (`session_id`, `transcript_path`,
+`hook_event_name`, …; see Claude Code's hooks reference). When one or more alerts fire, it
+prints Claude Code's hook reply, one line per alert:
+
+```json
+{"hookSpecificOutput":{"hookEventName":"PostToolBatch","additionalContext":"[tokenhud alert] 5-hour limit (personal) is at 82% (alert at 80%), resets in 1h12m. Note: pause the refactor and commit. Call should_wait before long tasks."}}
+```
+
+`hookEventName` is the event it ran for. Otherwise, and on `SessionEnd` (which removes the
+session's alerts), it prints nothing. It always exits 0: a failure (unreadable input, say)
+is written once to `logs/hook.log` and never reaches the agent. The command line the plugin
+registers is `tokenhud hook; exit 0`, and `tokenhud mcp install --hooks` writes the same
+with the binary's full path, so a tokenhud without `hook` exits 0 with nothing on stdout
+too.

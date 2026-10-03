@@ -26,15 +26,21 @@ describe("the MCP heartbeat file", () => {
     expect(mcpDir({ XDG_CONFIG_HOME: "/x" }, "/home/u")).toBe(join("/x", "tokenhud", "mcp"));
   });
 
-  test("written on start with T10's fields, removed on stop", () => {
+  test("written on start with T10's fields and the session (T29), removed on stop", () => {
     const dir = join(tempDir(), "mcp");
-    const beat = new Heartbeat(dir, { pid: 4242, cwd: cwd("demo-app"), now: () => NOW });
+    const beat = new Heartbeat(dir, {
+      pid: 4242,
+      cwd: cwd("demo-app"),
+      now: () => NOW,
+      session: () => "00000000-0000-4000-8000-000000000001",
+    });
     beat.start();
     expect(readdirSync(dir)).toEqual(["4242.json"]);
     expect(read(beat.path)).toEqual({
       pid: 4242,
       host: hostname(),
       project: "demo-app",
+      session: "00000000-0000-4000-8000-000000000001",
       started_at: NOW,
       updated_at: NOW,
       calls: [],

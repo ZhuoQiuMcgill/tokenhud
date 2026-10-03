@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { SESSION_ID } from "../alerts/store.ts";
 import { type Provider, type Root, rootIdentity } from "../sources/roots.ts";
 import { ToolError } from "./errors.ts";
 
@@ -39,10 +40,6 @@ export interface ResolveContext {
   /** Epoch ms of the root's newest usage in the store, or null. */
   lastSeen: (root: Root) => number | null;
 }
-
-// Session ids are UUIDs. Anything else (a dot, a slash) is ignored rather than joined into
-// a path.
-const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 /** Whether `<root>/projects/<any project>/<sessionId>.jsonl` exists. Reads directory names only. */
 export function transcriptExists(root: Root, sessionId: string): boolean {

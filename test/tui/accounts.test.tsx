@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type RGBA, rgbToHex } from "@opentui/core";
+import type { Alert } from "../../src/alerts/store.ts";
 import type { Config } from "../../src/config.ts";
 import { countdownTo } from "../../src/limits/derive.ts";
 import type { LimitEvent, LimitWindow } from "../../src/limits/index.ts";
@@ -741,6 +742,100 @@ describe("zero on the baseline (T25)", () => {
     expect(text(above).slice(now, now + 6)).toBe(" ".repeat(6));
     expect(values.slice(first, first + 6)).toBe("—     ");
     expect(text(foot).slice(first, first + 6)).toBe(" ".repeat(6));
+  });
+});
+
+describe("limit alerts agents set (T29)", () => {
+  const alert = (over: Partial<Alert>): Alert => ({
+    id: "a1",
+    created_at: NOW - HOUR,
+    session: "00000000-0000-4000-8000-000000000001",
+    account: {
+      id: "fixture-identity-personal",
+      label: "personal",
+      provider: "claude",
+      group: null,
+      members: ["fixture-identity-personal"],
+    },
+    window: "5h",
+    at: 80,
+    note: "pause the refactor and commit",
+    delivered: [],
+    ...over,
+  });
+  const ALERTS: Alert[] = [
+    alert({
+      id: "a2",
+      created_at: NOW - 30 * MIN,
+      session: null,
+      window: "weekly",
+      at: 90,
+      note: null,
+      delivered: [{ kind: "weekly_all", resets_at: NOW + DAY, at: NOW - 40 * MIN, on_set: true }],
+    }),
+    alert({ delivered: [{ kind: "session", resets_at: NOW + HOUR, at: NOW - 22 * MIN }] }),
+    // Another provider's root by the same id is someone else.
+    alert({ id: "a3", account: { ...alert({}).account, provider: "codex" } }),
+  ];
+  const alertViews = () => t13Views(fx, fixtureConfig(), null, MCP, ALERTS).views;
+
+  test("the view model: each account's alerts, oldest first, with when each last fired", () => {
+    const rows = (alertViews().accounts as AccountsVM).rows;
+    const personal = rows.find((r) => r.label === "personal") as AccountRow;
+    expect(personal.alerts).toEqual([
+      {
+        window: "5h",
+        at: 80,
+        scope: "session",
+        note: "pause the refactor and commit",
+        lastFired: NOW - 22 * MIN,
+      },
+      // Set over the line: counted as told, but it never fired.
+      { window: "weekly", at: 90, scope: "persistent", note: null, lastFired: null },
+    ]);
+    for (const r of rows.filter((r) => r.label !== "personal")) expect(r.alerts).toEqual([]);
+    expect(byLabel("personal").alerts).toEqual([]);
+  });
+
+  test("listed under the meters, dim: window, threshold, scope, last fired, note", async () => {
+    const v = alertViews();
+    const frame = await frameAt(105, 50, "personal", v);
+    const lines = frame.split("\n");
+    const first = lines.findIndex((l) => l.includes(" alerts "));
+    // The note gives way first: whole at 160 columns, cut at 105.
+    expect(lines[first]).toContain(
+      "│  alerts    5-hour at 80% · session · fired 11:18 · pause the refact… ",
+    );
+    expect(lines[first + 1]).toContain("│            weekly at 90% · persistent · not fired yet ");
+    expect(await frameAt(160, 50, "personal", v)).toContain(
+      " alerts    5-hour at 80% · session · fired 11:18 · pause the refactor and commit ",
+    );
+    // Under the limits, above the weekly history.
+    expect(first).toBeGreaterThan(lines.findIndex((l) => l.includes(" WEEKLY  ")));
+    expect(first).toBeLessThan(lines.findIndex((l) => l.includes("weekly usage when it reset")));
+    const c = controller(fixtureConfig(), v);
+    const setup = await render(<Frame controller={c} width={105} height={50} />, 105, 50);
+    await settle(setup, () => select(c, "personal", v.accounts as AccountsVM));
+    const dark = theme("dark");
+    const spans = setup.captureSpans().lines.flatMap((l) => l.spans);
+    const span = spans.find((s) => s.text.includes("5-hour at 80%"));
+    expect(dark.hex.dim).toBe(rgbToHex(span?.fg as RGBA).toLowerCase());
+  });
+
+  test("at 80×24 they show before the weekly history; short of rows, one line says how many (critique N4)", async () => {
+    const two = await frameAt(80, 24, "personal", alertViews());
+    noCutNumbers(two);
+    for (const line of two.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+    expect(two).toContain(" alerts    5-hour at 80% · session · fired 11:18 ");
+    expect(two).toContain("            weekly at 90% · persistent · not fired");
+    // Six alerts don't fit at 80×24: one line says so, and the meters and spend stay.
+    const six = Array.from({ length: 6 }, (_, i) => alert({ id: `b${i}`, at: 50 + i }));
+    const many = t13Views(fx, fixtureConfig(), null, MCP, six).views;
+    const frame = await frameAt(80, 24, "personal", many);
+    expect(frame).toContain(" alerts    6 alerts armed ");
+    expect(frame).not.toContain("5-hour at 50%");
+    expect(frame).toContain("spend 30d");
+    expect(frame).toContain(" WEEKLY ");
   });
 });
 

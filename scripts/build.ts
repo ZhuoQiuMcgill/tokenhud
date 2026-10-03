@@ -12,7 +12,8 @@
 // with `bun install --os="*" --cpu="*"` first.
 //
 // --smoke runs each release binary in dist/ that can run here with --version, with a
-// headless `--once --width 100` against a fixture store, and as `tokenhud mcp`
+// headless `--once --width 100` against a fixture store, as `tokenhud hook` (silent, then
+// telling a fixture alert), and as `tokenhud mcp`
 // (scripts/mcp-smoke.ts), from a temp copy that is deleted afterwards. Ids (`linux-x64-musl`)
 // name the binaries that must run; without ids, every binary that can run here does, and
 // the others are listed as skipped. Beyond the native ones: musl binaries run in an Alpine
@@ -100,6 +101,11 @@ async function compile(target: ReleaseTarget, bun: string | undefined, outfile: 
     // `main` into `f` in every crash report. Mangling saves about a fifth of our own JS (420
     // bytes at T1), which is noise next to the ~80 MB Bun runtime in the binary.
     minify: { whitespace: true, syntax: true, identifiers: false },
+    // Each command's modules go in chunks of their own, loaded when the command runs: one
+    // bundle made every start parse all of tokenhud (the TUI, the MCP SDK), about 50 ms on
+    // Linux, which `tokenhud hook`, run by Claude Code after every batch of tool calls,
+    // can't afford (T29: under 60 ms in all). With chunks, `--version` takes about 15 ms.
+    splitting: true,
     // With `compile`, this embeds a zstd-compressed sourcemap in the binary (the API form of
     // `--compile --sourcemap`), so stack frames point at src/*.ts lines, not the bundle.
     sourcemap: "linked",
@@ -275,9 +281,16 @@ function writeFixtureStore(xdg: string): void {
   store.close();
 }
 
-async function run(wrap: Wrap, bin: string, args: string[], env: Record<string, string>) {
+async function run(
+  wrap: Wrap,
+  bin: string,
+  args: string[],
+  env: Record<string, string>,
+  input?: string,
+) {
   const { cmd, env: full } = wrap(bin, args, env);
-  const proc = Bun.spawn(cmd, { env: full, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const stdin = input === undefined ? "ignore" : Buffer.from(input);
+  const proc = Bun.spawn(cmd, { env: full, stdin, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => proc.kill(), 60_000);
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -306,6 +319,90 @@ async function removeDir(dir: string): Promise<void> {
 }
 
 const firstLines = (text: string) => text.trim().split("\n").slice(0, 5).join("\n");
+
+const HOOK_SESSION = "00000000-0000-4000-8000-000000000001";
+
+/**
+ * `tokenhud hook` as Claude Code runs it, the command code splitting exists for: a
+ * PostToolBatch event on stdin, first with no alerts (silence), then with a session alert
+ * whose 5-hour window is over the line (its line in a hook reply).
+ */
+async function smokeHook(
+  wrap: Wrap,
+  bin: string,
+  env: Record<string, string>,
+  home: string,
+  xdg: string,
+): Promise<string[]> {
+  const event = JSON.stringify({
+    session_id: HOOK_SESSION,
+    transcript_path: join(home, ".claude", "projects", "-smoke", `${HOOK_SESSION}.jsonl`),
+    cwd: home,
+    hook_event_name: "PostToolBatch",
+    tool_calls: [],
+    tool_results: [],
+  });
+  // Made here, not by the binary: in the musl container it runs as root, and a directory
+  // root makes could not be emptied afterwards.
+  await mkdir(join(xdg, "tokenhud", "mcp"), { recursive: true });
+  await mkdir(join(xdg, "tokenhud", "logs"), { recursive: true });
+  const silent = await run(wrap, bin, ["hook"], env, event);
+  if (silent.code !== 0 || silent.stdout !== "") {
+    return [`hook, no alerts: exit ${silent.code}, printed ${JSON.stringify(silent.stdout)}`];
+  }
+  const now = Date.now();
+  const id = "smoke-identity-claude";
+  const config = join(xdg, "tokenhud");
+  await writeFile(
+    join(config, "limits.json"),
+    JSON.stringify({
+      providers: {
+        [id]: {
+          captured_at: now / 1000 - 30,
+          source: "claude",
+          via: "api",
+          rate_limits: {
+            session: { label: "5-HOUR", used_percentage: 82, resets_at: now / 1000 + 3600 },
+          },
+        },
+      },
+      status: {},
+    }),
+  );
+  await writeFile(
+    join(config, "alerts.json"),
+    JSON.stringify({
+      alerts: [
+        {
+          id: "smoke001",
+          created_at: now,
+          session: HOOK_SESSION,
+          account: { id, label: "smoke-claude", provider: "claude", group: null, members: [id] },
+          window: "5h",
+          at: 80,
+          note: null,
+          delivered: [],
+        },
+      ],
+    }),
+  );
+  const told = await run(wrap, bin, ["hook"], env, event);
+  let context = "";
+  try {
+    context = JSON.parse(told.stdout).hookSpecificOutput.additionalContext;
+  } catch {
+    // reported below
+  }
+  if (
+    told.code !== 0 ||
+    !context.startsWith("[tokenhud alert] 5-hour limit (smoke-claude) is at 82%")
+  ) {
+    return [
+      `hook, an alert over the line: exit ${told.code}, printed ${JSON.stringify(told.stdout)}`,
+    ];
+  }
+  return [];
+}
 
 /** Smoke-tests one binary from a copy in `dir`; returns the problems found. */
 async function smokeOne(t: ReleaseTarget, wrap: Wrap, dir: string): Promise<string[]> {
@@ -341,6 +438,7 @@ async function smokeOne(t: ReleaseTarget, wrap: Wrap, dir: string): Promise<stri
     problems.push("--once: the fixture store's usage is not on screen");
   }
   if (problems.length > 0) problems.push(firstLines(once.stderr));
+  problems.push(...(await smokeHook(wrap, bin, env, home, xdg)));
   const mcp = wrap(bin, ["mcp"], await mcpMachine(dir));
   problems.push(...(await smokeMcp(mcp.cmd, mcp.env)).map((p) => `mcp: ${p}`));
   return problems;
@@ -374,7 +472,8 @@ async function smoke(ids: string[], workdir: string): Promise<boolean> {
       }
       const problems = (await smokeOne(t, wrap, work)).filter(Boolean);
       ran++;
-      if (problems.length === 0) console.log(`ok   ${name}: --version, --once --width 100, mcp`);
+      if (problems.length === 0)
+        console.log(`ok   ${name}: --version, --once --width 100, hook, mcp`);
       else {
         ok = false;
         console.log(`FAIL ${name}\n${problems.map((p) => `     ${p}`).join("\n")}`);

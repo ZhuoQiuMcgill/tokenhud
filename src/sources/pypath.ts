@@ -1,5 +1,5 @@
 import { lstatSync, readlinkSync } from "node:fs";
-import { byCodePoint } from "../store/store.ts";
+import { byCodePoint } from "./order.ts";
 
 /**
  * The parts of Python's POSIX path handling that decide cc-usage's account identities

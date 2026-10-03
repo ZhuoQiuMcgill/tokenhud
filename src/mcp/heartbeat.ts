@@ -2,26 +2,28 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { homedir, hostname } from "node:os";
 import { basename, join, relative } from "node:path";
 import { processAlive } from "../lock.ts";
-import { configDir } from "../paths.ts";
+import { MCP_DIR_NAME, mcpDir } from "../paths.ts";
+
+export { MCP_DIR_NAME, mcpDir };
 
 /**
  * The MCP heartbeat file the TUI reads for its footer ("MCP ● 2 agents") and the Overview's
  * agents card. Each running `tokenhud mcp` (one per Claude Code session) keeps
  * `<config dir>/mcp/<pid>.json`:
  *
- *     {"pid", "host", "project", "started_at", "updated_at",
+ *     {"pid", "host", "project", "session", "started_at", "updated_at",
  *      "calls": [{"at", "tool", "account"}]}
  *
  * Times are epoch ms; `account` is the label a call resolved to, or null. `project` is the
  * name of the directory the server runs in, as Claude Code starts it in its session's
- * project (`projectOf`), or null. The file is rewritten atomically on start, after each
- * tool call and at least every minute; it keeps only the calls of the last 10 minutes (at
- * most 20) and is removed on exit. It holds tool names, account labels and that one
- * directory name, never a path. The TUI reads it with `readMcpActivity` below;
- * `tokenhud json` never does.
+ * project (`projectOf`), or null. `session` is the Claude Code session it serves, or null:
+ * a session alert (src/alerts/store.ts) lives while its session shows activity. The file
+ * is rewritten atomically on start, after each tool call and at least every minute; it
+ * keeps only the calls of the last 10 minutes (at most 20) and is removed on exit. It
+ * holds tool names, account labels, that one directory name and the session id, never a
+ * path. The TUI reads it with `readMcpActivity` below; `tokenhud json` never does.
  */
 
-export const MCP_DIR_NAME = "mcp";
 export const MCP_BEAT_MS = 60_000;
 export const AGENT_WINDOW_MS = 10 * 60_000;
 const MAX_CALLS = 20;
@@ -43,13 +45,6 @@ export function projectOf(cwd: string, home: string): string | null {
   return name === "" ? null : name;
 }
 
-export function mcpDir(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-  home: string = homedir(),
-): string {
-  return join(configDir(env, home), MCP_DIR_NAME);
-}
-
 export class Heartbeat {
   readonly #path: string;
   readonly #dir: string;
@@ -59,6 +54,7 @@ export class Heartbeat {
   readonly #now: () => number;
   readonly #startedAt: number;
   readonly #log: (message: string) => void;
+  readonly #session: () => string | null;
   #calls: McpCall[] = [];
   #timer: ReturnType<typeof setInterval> | null = null;
   #failed = false;
@@ -71,6 +67,8 @@ export class Heartbeat {
       cwd?: string;
       now?: () => number;
       log?: (message: string) => void;
+      /** The Claude Code session the server serves now. */
+      session?: () => string | null;
     } = {},
   ) {
     this.#dir = dir;
@@ -81,6 +79,7 @@ export class Heartbeat {
     this.#now = options.now ?? Date.now;
     this.#startedAt = this.#now();
     this.#log = options.log ?? (() => {});
+    this.#session = options.session ?? (() => null);
   }
 
   get path(): string {
@@ -111,6 +110,7 @@ export class Heartbeat {
           pid: this.#pid,
           host: this.#host,
           project: this.#project,
+          session: this.#session(),
           started_at: this.#startedAt,
           updated_at: now,
           calls: this.#calls,

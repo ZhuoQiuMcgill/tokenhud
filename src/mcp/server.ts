@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
   type CallToolResult,
@@ -12,6 +13,16 @@ import {
   StdioServerTransport,
   serveStdio,
 } from "@modelcontextprotocol/server/stdio";
+import { claudeProcess, type ProcId, procReader } from "../alerts/proc.ts";
+import {
+  ALERT_WINDOWS,
+  alertsPath,
+  currentSession,
+  NOTE_MAX,
+  type ServerPlace,
+  sweepHookSeen,
+} from "../alerts/store.ts";
+import { AlertWatch } from "../alerts/watch.ts";
 import { type Config, configPath, liveConfig } from "../config.ts";
 import { cachePath } from "../ingest/cursors.ts";
 import { IngestEngine } from "../ingest/engine.ts";
@@ -26,7 +37,12 @@ import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import { PERIOD_NAMES } from "../query/periods.ts";
 import { Zone } from "../query/tz.ts";
-import { discoverClaudeRoots, discoverCodexRoots, type Root } from "../sources/roots.ts";
+import {
+  discoverClaudeRoots,
+  discoverCodexRoots,
+  type Root,
+  rootIdentity,
+} from "../sources/roots.ts";
 import { VERSION } from "../version.ts";
 import { transcriptExists } from "./accounts.ts";
 import { asToolError } from "./errors.ts";
@@ -35,7 +51,9 @@ import { Heartbeat, mcpDir } from "./heartbeat.ts";
 import { newestUsage, StoreSource } from "./store.ts";
 import {
   type AccountArgs,
+  type ClearAlertArgs,
   MAX_USAGE_GROUPS,
+  type SetAlertArgs,
   Tools,
   type ToolsDeps,
   type UsageArgs,
@@ -154,6 +172,47 @@ const USAGE_INPUT = schema<UsageArgs>(
 
 const NO_INPUT = schema<Record<string, never>>({});
 
+const SET_ALERT_INPUT = schema<AccountArgs & SetAlertArgs>(
+  {
+    window: {
+      type: "string",
+      enum: [...ALERT_WINDOWS],
+      description:
+        "Which limit window: 5h (the 5-hour window), weekly, weekly_scoped (a model's own weekly limit, e.g. FABLE WEEKLY) or any.",
+    },
+    at: {
+      type: "number",
+      minimum: 1,
+      maximum: 100,
+      description: "Percent used at which to tell you, e.g. 80.",
+    },
+    account: ACCOUNT,
+    provider: ACCOUNT_PROVIDER,
+    scope: {
+      type: "string",
+      enum: ["session", "persistent"],
+      description:
+        "session (default): the alert ends with this Claude Code session. persistent: it stays, and is told to sessions on the account, until cleared.",
+    },
+    note: {
+      type: "string",
+      maxLength: NOTE_MAX,
+      description:
+        "Your own words to get back when it fires, e.g. 'pause the refactor and commit' (at most 200 characters).",
+    },
+  },
+  ["window", "at"],
+);
+
+const CLEAR_ALERT_INPUT = schema<ClearAlertArgs>({
+  id: { type: "string", description: "The alert's id, from set_alert or list_alerts." },
+  all: { type: "boolean", description: "Clear every alert of this session instead." },
+  persistent: {
+    type: "boolean",
+    description: "With all: the persistent alerts go too.",
+  },
+});
+
 const DESCRIPTIONS = {
   limits:
     "Usage limits of this Claude Code (or Codex) account: each rate limit window (5-hour, weekly), its utilization (0-1), when it resets, the spend pace it is projected at (pace_basis: 30m, the last 30 minutes, or window_avg, a weekly window's average since it began) and the projected exhaustion time with the seconds until it (projected_exhaustion_at, projected_exhaustion_in_s; an estimate, a weekly one coarse). Use it to see the remaining quota; should_wait decides whether to wait. Defaults to the account this session runs on.",
@@ -164,6 +223,12 @@ const DESCRIPTIONS = {
   usage: `Token usage and API-equivalent cost from this machine's Claude Code and Codex transcripts, for a period (today, this_week, this_month, all, 1h, 5h, 24h, or custom since/until), optionally grouped by model, account, day, week or month (at most ${MAX_USAGE_GROUPS} groups per call). Not the subscription quota: use limits for usage limits and resets.`,
   accounts:
     "The Claude Code and Codex accounts on this machine, from cached data (no requests): label, provider, whether usage limits can be read here (signed_in; null until first checked), last usage, and which one this session runs on (is_current). Pass a label as account to the other tools.",
+  set_alert:
+    "Set a usage limit alert: tokenhud tells you, in your context, when a rate limit window (5-hour or weekly quota) reaches a percent, e.g. 'tell me when the 5-hour window reaches 80%', so you needn't poll limits. Use it before a long autonomous task or many subagents. It fires once per window (again after the window resets); note is repeated back to you then. Returns the alert's id and the window's current state; a window already at or over the percent is said so and fires next after its reset. Alerts reach you through tokenhud's Claude Code hook: the answer warns when this session doesn't run it.",
+  list_alerts:
+    "List this session's usage limit alerts and every persistent one, each armed or fired (and when) for the window's current instance, with whether alerts reach this session (the tokenhud hook).",
+  clear_alert:
+    "Clear a usage limit alert by id, or all of this session's with all: true (persistent ones too with persistent: true). Clear an alert once the task it guarded is done.",
 } as const;
 
 function ok(value: object): CallToolResult {
@@ -236,6 +301,29 @@ export function createMcpServer(tools: Tools, log: (message: string) => void): M
     { title: "Accounts", description: DESCRIPTIONS.accounts, inputSchema: NO_INPUT },
     () => answer(() => tools.accounts()),
   );
+  server.registerTool(
+    "set_alert",
+    {
+      title: "Set a limit alert",
+      description: DESCRIPTIONS.set_alert,
+      inputSchema: SET_ALERT_INPUT,
+    },
+    (args) => answer(() => tools.setAlert(args)),
+  );
+  server.registerTool(
+    "list_alerts",
+    { title: "Limit alerts", description: DESCRIPTIONS.list_alerts, inputSchema: NO_INPUT },
+    () => answer(() => tools.listAlerts()),
+  );
+  server.registerTool(
+    "clear_alert",
+    {
+      title: "Clear a limit alert",
+      description: DESCRIPTIONS.clear_alert,
+      inputSchema: CLEAR_ALERT_INPUT,
+    },
+    (args) => answer(() => tools.clearAlert(args)),
+  );
   return server;
 }
 
@@ -275,11 +363,18 @@ export interface WiringOptions {
   zone?: Zone;
   refresh?: ToolsDeps["refresh"];
   log?: (message: string) => void;
+  /**
+   * The Claude Code process that started the server, which finds its session after /clear;
+   * by default read from `process.ppid` where the OS lets it be verified (null elsewhere).
+   */
+  claude?: ProcId | null;
 }
 
 export interface Wiring {
   tools: Tools;
   heartbeat: Heartbeat;
+  /** Refreshes the accounts of this session's armed alerts every 5 minutes (T29). */
+  watch: AlertWatch;
   /** Ends waits in flight, stops T8's fetches and closes the store. */
   close(): Promise<void>;
 }
@@ -354,9 +449,19 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     now,
     log,
   });
-  const heartbeat = new Heartbeat(mcpDir(env, home), { log });
+  const mcp = mcpDir(env, home);
+  const place: ServerPlace = {
+    claude:
+      options.claude !== undefined ? options.claude : claudeProcess(process.ppid, procReader()),
+    root: rootIdentity(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), home),
+    startedAt: now(),
+  };
+  const session = () => currentSession(env, mcp, place);
+  const heartbeat = new Heartbeat(mcp, { log, session });
   const shutdown = new AbortController();
   const clock = options.clock ?? realClock;
+  const refresh: ToolsDeps["refresh"] =
+    options.refresh ?? ((account, maxAgeS) => service.refresh(account, maxAgeS));
   const tools = new Tools({
     env,
     home,
@@ -368,7 +473,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     limitsPath: limitsPath(env, home),
     snapshots,
     links,
-    refresh: options.refresh ?? ((account, maxAgeS) => service.refresh(account, maxAgeS)),
+    refresh,
     freshen: () => freshener.ensure(),
     hasTranscript: memoTranscripts(),
     clock: {
@@ -377,12 +482,19 @@ export function wireTools(options: WiringOptions = {}): Wiring {
       sleep: (ms, signal) => clock.sleep(ms, AbortSignal.any([signal, shutdown.signal])),
     },
     record: (tool, account) => heartbeat.record(tool, account),
+    alertsPath: alertsPath(env, home),
+    mcpDir: mcp,
+    session,
+    place,
     log,
   });
+  const watch = new AlertWatch({ armed: () => tools.armedAccounts(), refresh, log });
   return {
     tools,
     heartbeat,
+    watch,
     async close() {
+      watch.stop();
       shutdown.abort();
       await service.stop();
       store.close();
@@ -421,6 +533,9 @@ export async function runMcpServer(options: WiringOptions = {}): Promise<number>
     for (const s of signals) process.on(s, stop);
   });
   wiring.heartbeat.start();
+  wiring.watch.start();
+  // Sessions that ended without SessionEnd (a crash) leave their hook's record behind.
+  sweepHookSeen(mcpDir(options.env ?? process.env, options.home ?? homedir()), Date.now());
   const handle = serveTools(wiring.tools, log);
   await closed;
   await Promise.allSettled([handle.close(), wiring.close()]);

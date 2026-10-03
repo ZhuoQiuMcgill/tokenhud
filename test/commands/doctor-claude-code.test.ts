@@ -38,10 +38,12 @@ describe("doctor: Claude Code", () => {
     const section = text.slice(text.indexOf("Claude Code"));
     expect(section).toBe(
       [
-        "Claude Code (tokenhud plugin or MCP server, per account)",
+        "Claude Code (tokenhud plugin, MCP server and alert hook, per account)",
         ...NOT_ON_PATH,
         "  personal      plugin",
-        "  work          MCP server",
+        "  work          MCP server + no alert hook",
+        "                alerts agents set reach them through a hook: `tokenhud mcp install --hooks`",
+        "                (with CLAUDE_CONFIG_DIR set to the account's dir), or the plugin",
         "",
       ].join("\n"),
     );
@@ -51,8 +53,8 @@ describe("doctor: Claude Code", () => {
       tokenhud_on_path: false,
       npm_shim: false,
       accounts: [
-        { label: "personal", plugin: "enabled", mcp: false },
-        { label: "work", plugin: null, mcp: true },
+        { label: "personal", plugin: "enabled", mcp: false, hook: "plugin" },
+        { label: "work", plugin: null, mcp: true, hook: null },
       ],
     });
   });
@@ -62,7 +64,7 @@ describe("doctor: Claude Code", () => {
     const text = doctor(m, tempDir());
     expect(text.slice(text.indexOf("Claude Code"))).toBe(
       [
-        "Claude Code (tokenhud plugin or MCP server, per account)",
+        "Claude Code (tokenhud plugin, MCP server and alert hook, per account)",
         ...NOT_ON_PATH,
         "  personal      not installed",
         "  work          not installed",
@@ -73,6 +75,41 @@ describe("doctor: Claude Code", () => {
     );
   });
 
+  test("the alert hook: in settings.json, from the plugin, or both (it then runs twice)", () => {
+    const m = machine();
+    const hook = { type: "command", command: "'/opt/tokenhud/tokenhud' hook; exit 0" };
+    const hooks = {
+      PostToolBatch: [{ hooks: [hook] }],
+      UserPromptSubmit: [{ hooks: [hook] }],
+      SessionEnd: [{ hooks: [hook] }],
+    };
+    writeFileSync(
+      join(m.claude, "settings.json"),
+      JSON.stringify({ enabledPlugins: { "tokenhud@tokenhud": true }, hooks }),
+    );
+    writeFileSync(join(m.work, "settings.json"), JSON.stringify({ hooks }));
+    writeFileSync(
+      join(m.work, ".claude.json"),
+      JSON.stringify({ mcpServers: { tokenhud: { command: "tokenhud", args: ["mcp"] } } }),
+    );
+    const bin = tempDir();
+    const text = doctor(m, bin);
+    expect(text.slice(text.indexOf("Claude Code"))).toBe(
+      [
+        "Claude Code (tokenhud plugin, MCP server and alert hook, per account)",
+        ...NOT_ON_PATH,
+        "  personal      plugin + alert hook twice (plugin and settings.json)",
+        "  work          MCP server + alert hook",
+        "                the plugin has the alert hook already: `tokenhud mcp install --hooks --remove`",
+        "",
+      ].join("\n"),
+    );
+    expect(JSON.parse(doctor(m, bin, "--json")).claude_code.accounts).toEqual([
+      { label: "personal", plugin: "enabled", mcp: false, hook: "both" },
+      { label: "work", plugin: null, mcp: true, hook: "settings" },
+    ]);
+  });
+
   test.skipIf(process.platform === "win32")("finds tokenhud on PATH", () => {
     const m = machine();
     const bin = tempDir();
@@ -80,7 +117,7 @@ describe("doctor: Claude Code", () => {
     chmodSync(join(bin, "tokenhud"), 0o755);
     const text = doctor(m, bin);
     expect(text).toContain(
-      "Claude Code (tokenhud plugin or MCP server, per account)\n  tokenhud      on PATH\n",
+      "Claude Code (tokenhud plugin, MCP server and alert hook, per account)\n  tokenhud      on PATH\n",
     );
     expect(JSON.parse(doctor(m, bin, "--json")).claude_code).toMatchObject({
       tokenhud_on_path: true,

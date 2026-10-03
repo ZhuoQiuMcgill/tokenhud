@@ -4,6 +4,8 @@
 
 import type { Database } from "bun:sqlite";
 import { statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { ALERTS_FILE, expired, loadAlerts, sessionActivity } from "../../alerts/store.ts";
 import type { Config } from "../../config.ts";
 import { type AccountGroup, Limits, manualLinks, spendFromQueries } from "../../limits/index.ts";
 import { codexSnapshotsFrom } from "../../limits/snapshots.ts";
@@ -211,6 +213,8 @@ export class VmSession {
   #activity: McpActivity | null = null;
   /** limits.json as last read: inode, mtime and size ("" while missing). */
   #limitsStamp = "";
+  /** alerts.json likewise. */
+  #alertsStamp = "";
   readonly #wsl = isWsl();
   #scopeLabel: string | null;
   #closed = false;
@@ -265,7 +269,8 @@ export class VmSession {
     });
     this.#discover(false);
     this.#pollMcp(false);
-    this.#limitsChanged();
+    this.#limitsStamp = fileStamp(this.#start.limitsPath);
+    this.#alertsStamp = fileStamp(this.#alertsPath);
     this.#recompute();
     // Whatever the reads above marked has just been computed.
     this.#coalescer.cancel();
@@ -303,7 +308,7 @@ export class VmSession {
       case "limits":
         // Our ingest Worker fetched: the cards (Overview), the meters (Accounts), and the
         // limit events it may have recorded (History, and the Overview's list).
-        this.#limitsChanged();
+        this.#limitsStamp = fileStamp(this.#start.limitsPath);
         for (const id of ["overview", "accounts", "history"] as const) this.#mark(id);
         break;
       case "roots":
@@ -506,30 +511,29 @@ export class VmSession {
     this.#expire();
     this.#pollMcp();
     this.#pollLimits();
+    this.#pollAlerts();
   }
 
   /** The limits fetcher (the ingest Worker, an MCP server) rewrote limits.json. */
   #pollLimits(): void {
-    if (!this.#limitsChanged()) return;
+    const stamp = fileStamp(this.#start.limitsPath);
+    if (stamp === this.#limitsStamp) return;
+    this.#limitsStamp = stamp;
     this.#mark("overview");
     this.#mark("accounts");
   }
 
-  /**
-   * Whether limits.json changed since last read. It is always rewritten as a new file renamed
-   * into place, so the inode tells even two writes in one millisecond apart.
-   */
-  #limitsChanged(): boolean {
-    let stamp = "";
-    try {
-      const st = statSync(this.#start.limitsPath);
-      stamp = `${st.ino}:${st.mtimeMs}:${st.size}`;
-    } catch {
-      // not there (yet)
-    }
-    if (stamp === this.#limitsStamp) return false;
-    this.#limitsStamp = stamp;
-    return true;
+  /** alerts.json beside limits.json, in tokenhud's config dir. */
+  get #alertsPath(): string {
+    return join(dirname(this.#start.limitsPath), ALERTS_FILE);
+  }
+
+  /** An agent set, cleared or was told an alert: the Accounts view lists them. */
+  #pollAlerts(): void {
+    const stamp = fileStamp(this.#alertsPath);
+    if (stamp === this.#alertsStamp) return;
+    this.#alertsStamp = stamp;
+    this.#mark("accounts");
   }
 
   #pollMcp(post = true): void {
@@ -600,7 +604,16 @@ export class VmSession {
       mcp: this.#activity,
       wsl: this.#wsl,
       home: this.#start.discover.home,
+      alerts: this.#alerts(now),
     };
+  }
+
+  /** The alerts agents set, without session ones whose session has long gone quiet. */
+  #alerts(now: number) {
+    const alerts = loadAlerts(this.#alertsPath);
+    if (alerts.length === 0) return alerts;
+    const activity = sessionActivity(this.#start.mcpDir);
+    return alerts.filter((a) => !expired(a, now, activity));
   }
 
   #context(): ComputeContext {
@@ -643,5 +656,19 @@ export class VmSession {
       scope: this.#settings.scope,
       ms: performance.now() - t0,
     });
+  }
+}
+
+/**
+ * A file's inode, mtime and size ("" while it is missing). limits.json and alerts.json are
+ * always rewritten as a new file renamed into place, so the inode tells even two writes in
+ * one millisecond apart.
+ */
+function fileStamp(path: string): string {
+  try {
+    const st = statSync(path);
+    return `${st.ino}:${st.mtimeMs}:${st.size}`;
+  } catch {
+    return "";
   }
 }
