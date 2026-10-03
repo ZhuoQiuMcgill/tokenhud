@@ -68,6 +68,9 @@ describe("tokenhud mcp", () => {
       "wait_for_reset",
       "usage",
       "accounts",
+      "set_alert",
+      "list_alerts",
+      "clear_alert",
     ]);
     // No credentials in the fake ~/.claude: answered without any request.
     send({ id: 3, method: "tools/call", params: { name: "should_wait", arguments: {} } });

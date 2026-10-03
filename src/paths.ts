@@ -14,6 +14,17 @@ export function configDir(env: Env = process.env, home: string = homedir()): str
   return join(base, "tokenhud");
 }
 
+export const MCP_DIR_NAME = "mcp";
+
+/**
+ * The MCP heartbeat dir, `<config dir>/mcp`: each `tokenhud mcp` keeps its heartbeat there
+ * (src/mcp/heartbeat.ts), and each `tokenhud hook` run when it last saw its session
+ * (src/alerts/store.ts).
+ */
+export function mcpDir(env: Env = process.env, home: string = homedir()): string {
+  return join(configDir(env, home), MCP_DIR_NAME);
+}
+
 export function pricingOverridesPath(env: Env = process.env, home: string = homedir()): string {
   return join(configDir(env, home), "pricing.overrides.json");
 }

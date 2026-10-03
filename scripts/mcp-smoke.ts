@@ -1,5 +1,5 @@
 // Smoke-tests `tokenhud mcp` over stdio, as Claude Code drives it: `initialize`,
-// `notifications/initialized` and `tools/list`, which must name the five tools; a call to
+// `notifications/initialized` and `tools/list`, which must name the eight tools; a call to
 // `accounts`, which answers from cached data alone; then stdin closed, after which the server
 // must exit 0 within 5 s. A reply that takes over 10 s fails it as a hang.
 //
@@ -14,7 +14,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** The tools `tokenhud mcp` serves (src/mcp/server.ts). */
-export const MCP_TOOLS = ["limits", "should_wait", "wait_for_reset", "usage", "accounts"];
+export const MCP_TOOLS = [
+  "limits",
+  "should_wait",
+  "wait_for_reset",
+  "usage",
+  "accounts",
+  "set_alert",
+  "list_alerts",
+  "clear_alert",
+];
 /** The longest wait for any one reply: a server silent for longer hangs. */
 export const REPLY_TIMEOUT_MS = 10_000;
 /** How soon the server must exit once stdin closes, as when a Claude Code session ends. */

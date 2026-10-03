@@ -6,8 +6,10 @@
 //   limits.json captures (one account near its 5-hour limit, one with a failed fetch),
 //   limit events over the last weeks, and an MCP call.
 // Paths, identities and labels are obviously fake; nothing is read from the user's files.
+
 import { writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
+import type { Alert } from "../../src/alerts/store.ts";
 import type { Config } from "../../src/config.ts";
 import { Limits, spendFromQueries } from "../../src/limits/index.ts";
 import type { McpActivity } from "../../src/mcp/heartbeat.ts";
@@ -207,12 +209,13 @@ export function makeT13Fixture(limits: unknown = limitsFile()): T13Fixture {
   return { ...fx, limitsPath };
 }
 
-/** Every view model of the T13 fixture at NOW, with roots, limits and MCP activity. */
+/** Every view model of the T13 fixture at NOW, with roots, limits, MCP activity and alerts. */
 export function t13Views(
   fx: T13Fixture,
   config: Config = fixtureConfig(),
   scope: number | null = null,
   mcp: McpActivity | null = MCP,
+  alerts: readonly Alert[] = [],
 ): ReturnType<typeof fixtureViews> {
   const roots = fixtureRoots();
   return fixtureViews(fx.storePath, config, scope, (db, q) => {
@@ -228,6 +231,7 @@ export function t13Views(
       mcp,
       wsl: true,
       home: HOME,
+      alerts,
     };
     return sources;
   });

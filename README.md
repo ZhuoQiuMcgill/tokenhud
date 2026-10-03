@@ -348,7 +348,7 @@ its last 30 days.
 1. 🟥 **Accounts.** Every account tokenhud has usage for: those active on this machine first, then by all-time cost. The dot and the percentage show the account's most-used limit among its windows that haven't reset yet: blue below 50 %, amber from 50 %, red-orange from 80 %. `○` and a grey label: inactive here (history only, not signed in, turned off, or its config directory isn't on this machine). `+ add a root…` opens the account settings. Under the list, the keys: `w`/`s` select an account, and `enter` opens its menu: show only this account, enable or disable it, rename it, history only, and linking it to another directory on the same subscription account.
 2. 🟧 **Account.** The selected account, its provider, and when its limits were last fetched.
 3. 🟨 **Where it comes from.** `root` is the config directory its transcripts are read from, and how: `watched` (read as they are written), `polled` (checked at intervals, for a Windows drive under WSL) or `disabled`. `history`: how many requests tokenhud has stored for it, and the day of the first.
-4. 🟩 **Limits.** Every limit window of the account: 5-hour, weekly, then any of a model's own. The bar and the percentage are how much is used (colours as on the cards), then when the window resets: a time today, a weekday and a time within a week, else a date. A window projected to fill before it resets says so under its bar, as the cards do: `→ 100% in <45m (12:13)`, and for a weekly window `→ 100% in ~2d (~tomorrow night)`. A window that has reset since the last fetch shows an empty bar, `—`, and how long ago it reset. A failed fetch is noted under the meters.
+4. 🟩 **Limits.** Every limit window of the account: 5-hour, weekly, then any of a model's own. The bar and the percentage are how much is used (colours as on the cards), then when the window resets: a time today, a weekday and a time within a week, else a date. A window projected to fill before it resets says so under its bar, as the cards do: `→ 100% in <45m (12:13)`, and for a weekly window `→ 100% in ~2d (~tomorrow night)`. A window that has reset since the last fetch shows an empty bar, `—`, and how long ago it reset. A failed fetch is noted under the meters. Under them, dim, any [limit alerts](#alerts) agents have set on the account: the window and its threshold, the scope, when it last fired, and the agent's note.
 5. 🟦 **Weekly history.** The weekly window over the last 8 weeks, on a 0–100 % scale, each week labelled with the day it reset. The last bar (grey) is this week so far. Earlier weeks are known only from limit events: `100%` for a week that reached its limit, `≥80%` for one that passed 80 %, `—` for no record: under 80 %, or not seen by tokenhud.
 6. 🟪 **Last 30 days.** `spend 30d`: one bar per day for the last 30 days, today last, each against the busiest of them; then their total cost. `models`: the account's models over those 30 days, by share of cost. `agents`: its latest MCP tool call in the last 10 minutes, and how many calls it made.
 <!-- /shots:accounts -->
@@ -437,10 +437,10 @@ kept apart.
 ## Use with Claude Code
 
 tokenhud's MCP server lets a Claude Code agent check the limits of the account it runs
-on, decide whether to pause, and wait for a reset. That matters most for sessions that
-can't resume on their own: `claude -p`, background tasks and teammates. Interactive
-Claude Code resumes by itself after a reset, so there an agent should tell you instead of
-waiting.
+on, decide whether to pause, wait for a reset, and set [alerts](#alerts) that tell it when
+a limit reaches a percent. That matters most for sessions that can't resume on their own:
+`claude -p`, background tasks and teammates. Interactive Claude Code resumes by itself
+after a reset, so there an agent should tell you instead of waiting.
 
 ### Install
 
@@ -452,7 +452,8 @@ Plugins and user-scope MCP servers belong to one Claude config dir, so install o
 account: once for `~/.claude`, and once more for each `CLAUDE_CONFIG_DIR` you use.
 `tokenhud doctor` shows which accounts have it, and whether `tokenhud` is on the PATH.
 
-**The plugin** adds the MCP server and a skill that tells agents when to use it:
+**The plugin** adds the MCP server, a skill that tells agents when to use it, and the hooks
+that deliver [alerts](#alerts):
 
 ```sh
 claude plugin marketplace add ZhuoQiuMcgill/tokenhud
@@ -470,6 +471,13 @@ claude mcp add -s user tokenhud -- tokenhud mcp
 CLAUDE_CONFIG_DIR=~/.claude-work claude mcp add -s user tokenhud -- tokenhud mcp
 ```
 
+Then add the alert hooks the plugin would have brought, once per account:
+
+```sh
+tokenhud mcp install --hooks
+tokenhud mcp install --hooks --config-dir ~/.claude-work
+```
+
 **Native Windows:** an npm install puts a `tokenhud.cmd` shim on the PATH, which Claude
 Code can't start directly. Register the server through `cmd` instead of installing the
 plugin: `claude mcp add -s user tokenhud -- cmd /c tokenhud mcp`. The standalone
@@ -484,12 +492,49 @@ plugin: `claude mcp add -s user tokenhud -- cmd /c tokenhud mcp`. The standalone
 | `wait_for_reset` | Waits until the window `should_wait` binds on (for the same `model`) resets, or its utilization drops under `until_utilization_below`, for at most `max_wait_s` (5 hours or less). Sends progress every 30 s, re-checks the limits every 5 minutes, and stops at once when the call is cancelled. |
 | `usage` | Tokens and API-equivalent cost for a period, optionally by model, account, day, week or month (at most 500 groups per call), as `tokenhud json usage` prints them ([schema](docs-public/JSON.md)), plus `stale_s`, the age of the store's data. |
 | `accounts` | The accounts on this machine, from cached data only: whether their limits can be read here (`signed_in`, null until first checked), their last usage, which one this session runs on, and `group`, the same id for every directory on one subscription account. |
+| `set_alert` | Sets an [alert](#alerts): `window` (`5h`, `weekly`, `weekly_scoped` for a model's own weekly limit, or `any`), `at` (a percent, 1 to 100), and optionally `account`, `scope` (`session`, the default, or `persistent`) and a `note` of up to 200 characters to get back when it fires. Returns the alert's `id` and the window's state now; a window already at or over `at` is said so, and fires next after its reset. Warns when this session doesn't run tokenhud's hook. |
+| `list_alerts` | This session's alerts and every persistent one: each `armed`, or `fired` (and when) for the window's current instance, and whether alerts reach this session. |
+| `clear_alert` | Clears one alert by `id`, or all of this session's with `all: true` (persistent ones too with `persistent: true`). |
 
 Every tool answers for the account the session runs on: `CLAUDE_CONFIG_DIR`, else
 `~/.claude`, confirmed by finding the session's transcript. `limits` reports how it was
 found (`detected_via`). Pass `account` (a label from `accounts`) for another account, or
 `provider: "codex"` for Codex. An account that isn't signed in on this machine reports
 `signed_in: false`, and `should_wait` doesn't make agents wait on it.
+
+### Alerts
+
+An agent can ask to be told when a limit fills: "tell me when the 5-hour window reaches
+80%", or "when the weekly reaches 90%". It calls `set_alert`, carries on, and once the
+window gets there a line appears in its context, on its next batch of tool calls or your
+next prompt:
+
+```
+[tokenhud alert] 5-hour limit (personal) is at 82% (alert at 80%), resets in 1h12m. Note: pause the refactor and commit. Call should_wait before long tasks.
+```
+
+- **Once per window.** An alert fires once for each window instance, and again after the
+  window resets and climbs back. One set while the window is already over the line is
+  told so at once, and fires next after the reset. When the limits it read are over two
+  minutes old, the line says how old (`limits as of 6m ago`).
+- **Scope.** A `session` alert (the default) ends with its Claude Code session: tokenhud
+  removes it when the session ends, or after 24 hours without any activity from it. A
+  `persistent` one stays until cleared, and is told to any session on that account, or on
+  another directory of the same subscription account. Alerts go to the session's main
+  agent, not to subagents.
+- **Delivery.** A Claude Code hook, `tokenhud hook`, runs after each batch of tool calls
+  and on each prompt; it reads only `limits.json` and `alerts.json`, never the network,
+  and takes about 20 ms. The plugin installs it. With the MCP server added by hand,
+  `tokenhud mcp install --hooks` adds it to the account's `settings.json` (by the
+  installed tokenhud's full path, keeping every other hook, after a backup copy), and
+  `tokenhud mcp install --hooks --remove` takes it out. `tokenhud doctor` shows which
+  accounts have it; `set_alert` warns an agent whose session doesn't run it.
+- **Fresh limits.** While one of its session's alerts is armed, the MCP server fetches
+  that account's limits every 5 minutes. A fetch by the TUI or by an agent's own call in
+  between counts, so with the TUI running there are no extra requests, and with no alert
+  armed the server asks for nothing.
+- **Where you see them.** The Accounts view lists each account's alerts, dim. There is no
+  desktop notification: alerts are for agents.
 
 ## Scripts: `tokenhud json`
 
@@ -567,9 +612,12 @@ cache.db                  how far each transcript has been read (safe to delete:
 config.json               settings
 pricing.overrides.json    your prices, if any
 limits.json               the last limits fetched
+alerts.json               the limit alerts agents set: windows, thresholds and their notes
 update-check.json         when GitHub was last asked about a newer release, and its answer
 logs/tokenhud.log         errors, for tokenhud doctor and bug reports
-mcp/                      which MCP servers are running, and their projects' names, for the Overview
+logs/hook.log             errors of tokenhud hook, which never shows them to the agent
+mcp/                      which MCP servers are running, their projects' names and sessions, and
+                          when tokenhud hook last ran for each session
 ingest.lock.db            which tokenhud process writes the store
 ```
 

@@ -87,7 +87,7 @@ async function serve(f: Fixture, env: Record<string, string> = {}, clock?: FakeC
 }
 
 describe("tools/list", () => {
-  test("five tools, findable: each limits tool names usage limit, rate limit, quota, reset, wait", async () => {
+  test("eight tools, findable: each limits tool names usage limit, rate limit, quota, reset, wait", async () => {
     const { pipe } = await serve(fixture());
     const reply = await pipe.request("tools/list");
     const tools = (
@@ -101,13 +101,23 @@ describe("tools/list", () => {
       "wait_for_reset",
       "usage",
       "accounts",
+      "set_alert",
+      "list_alerts",
+      "clear_alert",
     ]);
     for (const tool of tools.slice(0, 3)) {
       for (const phrase of ["usage limit", "rate limit", "quota", "reset", "wait"]) {
         expect(tool.description.toLowerCase()).toContain(phrase);
       }
     }
-    for (const tool of tools.slice(3)) expect(tool.description).toContain("usage limits");
+    for (const tool of tools.slice(3, 5)) expect(tool.description).toContain("usage limits");
+    for (const tool of tools.slice(5)) expect(tool.description).toContain("usage limit alert");
+    // set_alert says when to use it, and what it watches.
+    const setAlert = tools.find((t) => t.name === "set_alert");
+    for (const phrase of ["before a long autonomous task", "rate limit", "quota", "5-hour"]) {
+      expect(setAlert?.description).toContain(phrase);
+    }
+    expect(setAlert?.inputSchema.required).toEqual(["window", "at"]);
     expect(tools.find((t) => t.name === "wait_for_reset")?.inputSchema.required).toEqual([
       "max_wait_s",
     ]);
@@ -615,6 +625,7 @@ describe("the heartbeat file", () => {
       "pid",
       "host",
       "project",
+      "session",
       "started_at",
       "updated_at",
       "calls",

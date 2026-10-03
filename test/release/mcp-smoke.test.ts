@@ -78,7 +78,7 @@ describe("scripts/mcp-smoke.ts", () => {
     expect(run.code).toBe(1);
     expect(run.stderr).toContain("FAIL ");
     expect(run.stderr).toContain(
-      "tools/list is missing wait_for_reset (it lists limits, should_wait, usage, accounts)",
+      "tools/list is missing wait_for_reset (it lists limits, should_wait, usage, accounts, set_alert, list_alerts, clear_alert)",
     );
   }, 30_000);
 

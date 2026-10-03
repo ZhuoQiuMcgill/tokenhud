@@ -6,6 +6,7 @@ const COMMAND_HELP: ReadonlyArray<readonly [usage: string, summary: string]> = [
   ["tokenhud --once", "one static frame to stdout"],
   ["tokenhud json <query>", "output for scripts and agents"],
   ["tokenhud mcp", "MCP server for Claude Code"],
+  ["tokenhud hook", "Claude Code hook for limit alerts"],
   ["tokenhud import-cc-usage", "one-time import from cc-usage"],
   ["tokenhud doctor", "store health and data coverage"],
   ["tokenhud update", "update (bun, npm or a binary)"],
@@ -25,6 +26,7 @@ const COMMANDS: ReadonlyMap<string, () => Promise<Command>> = new Map<
 >([
   ["json", async () => (await import("./commands/json.ts")).runJson],
   ["mcp", async () => (await import("./commands/mcp.ts")).runMcp],
+  ["hook", async () => (await import("./commands/hook.ts")).runHookCommand],
   ["import-cc-usage", async () => (await import("./commands/import-cc-usage.ts")).runImportCcUsage],
   ["doctor", async () => (await import("./commands/doctor.ts")).runDoctor],
   ["update", async () => (await import("./commands/update.ts")).runUpdate],

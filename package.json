@@ -18,6 +18,7 @@
     "bench:store": "bun test/store/bench.ts",
     "bench:query": "bun test/query/bench.ts",
     "bench:tui": "bun test/tui/bench.tsx",
+    "bench:hook": "bun test/alerts/bench.ts",
     "parity": "bun scripts/parity.ts",
     "shots": "bun scripts/readme-shots.ts"
   },

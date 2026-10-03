@@ -5,7 +5,16 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const mode = Bun.argv[2] ?? "ok";
-const TOOLS = ["limits", "should_wait", "wait_for_reset", "usage", "accounts"];
+const TOOLS = [
+  "limits",
+  "should_wait",
+  "wait_for_reset",
+  "usage",
+  "accounts",
+  "set_alert",
+  "list_alerts",
+  "clear_alert",
+];
 
 writeFileSync(join(process.env.HOME ?? ".", "fake-mcp.pid"), String(process.pid));
 

@@ -80,7 +80,7 @@ Reports on the store (rows, accounts, imports, rollup health, backup age, recove
 pricing (overrides, unpriced models, priced coverage), cc-usage (rows not imported yet),
 the transcript roots tokenhud follows, the roots that share one subscription account, every
 tokenhud on PATH with how it was installed (and how to remove an extra one) and, per Claude
-account, whether the tokenhud plugin or MCP server is installed. Read-only.`;
+account, whether the tokenhud plugin, MCP server and alert hook are installed. Read-only.`;
 
 export interface DoctorAccount {
   id: number;
@@ -218,7 +218,13 @@ export interface DoctorReport {
     tokenhud_on_path: boolean;
     /** Native Windows found an npm `.cmd` shim, which Claude Code can't start directly. */
     npm_shim: boolean;
-    accounts: Array<{ label: string; plugin: "enabled" | "installed" | null; mcp: boolean }>;
+    accounts: Array<{
+      label: string;
+      plugin: "enabled" | "installed" | null;
+      mcp: boolean;
+      /** Where the hook that delivers limit alerts comes from (T29); null: nowhere. */
+      hook: "plugin" | "settings" | "both" | null;
+    }>;
   };
 }
 
@@ -986,7 +992,7 @@ export function renderDoctor(r: DoctorReport, home: string = homedir()): string 
 
   renderInstall(r.install, home, line, more, out);
 
-  out.push("", "Claude Code (tokenhud plugin or MCP server, per account)");
+  out.push("", "Claude Code (tokenhud plugin, MCP server and alert hook, per account)");
   const cc = r.claude_code;
   if (!cc.tokenhud_on_path) {
     line("tokenhud", "not on PATH: the plugin and the MCP server run `tokenhud mcp`");
@@ -998,16 +1004,28 @@ export function renderDoctor(r: DoctorReport, home: string = homedir()): string 
     line("tokenhud", "on PATH");
   }
   const missing = r.claude_code.accounts.filter((a) => a.plugin !== "enabled" && !a.mcp);
+  const noHook = r.claude_code.accounts.filter((a) => a.mcp && a.hook === null);
+  const twice = r.claude_code.accounts.filter((a) => a.hook === "both");
   for (const a of r.claude_code.accounts) {
     const parts: string[] = [];
     if (a.plugin === "enabled") parts.push("plugin");
     if (a.plugin === "installed") parts.push("plugin installed but disabled");
     if (a.mcp) parts.push("MCP server");
+    if (a.hook === "settings") parts.push("alert hook");
+    if (a.hook === "both") parts.push("alert hook twice (plugin and settings.json)");
+    if (a.mcp && a.hook === null) parts.push("no alert hook");
     line(a.label, parts.length === 0 ? "not installed" : parts.join(" + "));
   }
   if (missing.length > 0) {
     more("install once per account (each CLAUDE_CONFIG_DIR); see the README,");
     more('"Use with Claude Code"');
+  }
+  if (noHook.length > 0) {
+    more("alerts agents set reach them through a hook: `tokenhud mcp install --hooks`");
+    more("(with CLAUDE_CONFIG_DIR set to the account's dir), or the plugin");
+  }
+  if (twice.length > 0) {
+    more("the plugin has the alert hook already: `tokenhud mcp install --hooks --remove`");
   }
   return out.join("\n");
 }

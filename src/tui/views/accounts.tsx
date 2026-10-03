@@ -1,9 +1,9 @@
 // Accounts: list + detail (T13, gen.py `accounts_a`). Left, every account with its status
 // and highest current utilisation; right, the selected one's root and history, its limit
-// meters, the weekly window's last 8 weeks, its 30-day spend and models, and its last MCP
-// call. A root on a subscription account it shares (T16) says which roots it shares it
-// with and shows the account's meters and total spend. Narrow, the detail stacks under the
-// list.
+// meters and the limit alerts agents set on it (T29), the weekly window's last 8 weeks, its
+// 30-day spend and models, and its last MCP call. A root on a subscription account it
+// shares (T16) says which roots it shares it with and shows the account's meters and total
+// spend. Narrow, the detail stacks under the list.
 import { type Line, type Seg, seg, segsWidth } from "../components/base.ts";
 import type { Column } from "../components/index.ts";
 import { filledCells } from "../components/meter.ts";
@@ -14,7 +14,14 @@ import { dayLabel, fit, percent, textWidth, tokens, truncate } from "../format.t
 import { footerHints, type Keymap, MOVE_KEYS, moveKey } from "../keys.ts";
 import { fitSections, type SectionSpec } from "../layout.ts";
 import { level, type Role } from "../theme.ts";
-import type { AccountRow, AccountsVM, LimitMeter, ModelSpend, WeekSlot } from "../vm/accounts.ts";
+import type {
+  AccountRow,
+  AccountsVM,
+  AlertInfo,
+  LimitMeter,
+  ModelSpend,
+  WeekSlot,
+} from "../vm/accounts.ts";
 import type { Priced } from "../vm/types.ts";
 import { costText } from "./cells.ts";
 import { projectedForms } from "./projection.ts";
@@ -472,6 +479,39 @@ function limitsPart(a: AccountRow, vm: AccountsVM, width: number): Part {
   };
 }
 
+const ALERT_WINDOWS: Readonly<Record<AlertInfo["window"], string>> = {
+  "5h": "5-hour",
+  weekly: "weekly",
+  weekly_scoped: "model weekly",
+  any: "any window",
+};
+
+/**
+ * The limit alerts agents set on the account (T29), dim, one a line: the window and its
+ * threshold, the scope, when it last fired, then the agent's note as far as it fits.
+ */
+function alertsPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
+  if (a.alerts.length === 0) return null;
+  const lines = a.alerts.map((alert, i): Line => {
+    const fired =
+      alert.lastFired === null
+        ? "not fired yet"
+        : `fired ${whenText(alert.lastFired, vm.asOf, vm.tz)}`;
+    const head = `${ALERT_WINDOWS[alert.window]} at ${alert.at}% · ${alert.scope} · ${fired}`;
+    const text = alert.note === null ? head : `${head} · ${alert.note}`;
+    return {
+      left: [label(i === 0 ? "alerts" : ""), seg(truncate(text, width - FIELD - 1), "dim")],
+    };
+  });
+  return {
+    id: "alerts",
+    priority: 8,
+    height: lines.length,
+    minHeight: 1,
+    lines: (h) => lines.slice(0, Math.max(1, h)),
+  };
+}
+
 /** A week's value under its bar: `62%`, `100%`, `≥80%`, or `—` when nothing recorded it. */
 function slotText(s: WeekSlot): string {
   if (s.source === "passed_80") return "≥80%";
@@ -689,6 +729,7 @@ function detailParts(a: AccountRow, vm: AccountsVM, ctx: ViewContext, width: num
     headPart(a, vm, width),
     wherePart(a, vm, width),
     limitsPart(a, vm, width),
+    alertsPart(a, vm, width),
     weeklyPart(a, vm, width),
     spendPart(a, ctx, width),
     modelsPart(a, ctx, width),

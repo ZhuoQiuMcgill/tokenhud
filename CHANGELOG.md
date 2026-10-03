@@ -8,6 +8,25 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+### Added
+
+- **Limit alerts for agents.** Three MCP tools: `set_alert` ("tell me when the 5-hour
+  window reaches 80%", with an optional note to get back), `list_alerts` and
+  `clear_alert`. A new Claude Code hook, `tokenhud hook`, tells the agent in its context
+  when an alert fires: once per window instance, from `limits.json` alone, in about 20 ms.
+  Alerts last for their session or, with `scope: "persistent"`, until cleared. While one
+  is armed, the MCP server refreshes that account's limits every 5 minutes, which a TUI's
+  own fetches cover. The plugin brings the hook; `tokenhud mcp install --hooks` adds it to
+  an account's `settings.json` for a server added by hand (`--remove` takes it out).
+  `tokenhud doctor` reports it per account, and the Accounts view lists each account's
+  alerts. See the README, "Alerts".
+
+### Changed
+
+- **Every command starts faster.** The binary now loads each command's code when it runs
+  instead of all of it at start: `tokenhud --version` takes about 15 ms instead of 60 ms
+  on Linux.
+
 ## [0.1.3] - 2026-10-03
 
 ### Changed

@@ -5,6 +5,8 @@
 // formats it.
 
 import { sep } from "node:path";
+import { lastFired } from "../../alerts/match.ts";
+import type { Alert, AlertWindow } from "../../alerts/store.ts";
 import { isWeekly, roughly } from "../../limits/derive.ts";
 import type { AccountLimits, LimitEvent, Limits, LimitWindow } from "../../limits/index.ts";
 import type { McpActivity } from "../../mcp/heartbeat.ts";
@@ -37,6 +39,19 @@ export interface AccountSources {
   readonly wsl: boolean;
   /** Shown as `~` in root paths. */
   readonly home: string;
+  /** The limit alerts agents set (T29), expired session ones left out; none when absent. */
+  readonly alerts?: readonly Alert[];
+}
+
+/** A limit alert on the account, as the Accounts view lists it. */
+export interface AlertInfo {
+  readonly window: AlertWindow;
+  /** Percent used, 1-100. */
+  readonly at: number;
+  readonly scope: "session" | "persistent";
+  readonly note: string | null;
+  /** When it last fired; null when it hasn't. */
+  readonly lastFired: number | null;
 }
 
 export interface LimitMeter {
@@ -126,6 +141,8 @@ export interface AccountRow extends AccountInfo, Priced {
   readonly weekly: readonly WeekSlot[] | null;
   /** Its newest MCP tool call in the last 10 minutes. */
   readonly agent: { readonly at: number; readonly tool: string; readonly calls: number } | null;
+  /** The limit alerts on it, or on another root of its subscription account, oldest first. */
+  readonly alerts: readonly AlertInfo[];
 }
 
 export interface AccountsVM {
@@ -285,6 +302,24 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
         stored: ctx.accounts.find((x) => x.provider === a.provider && x.identity === m.id),
       }));
     const shared = [a.id, ...others.flatMap((o) => (o.stored === undefined ? [] : [o.stored.id]))];
+    // An alert on any root of the subscription account watches this root's limits too.
+    const members = new Set([a.identity, ...(l?.group?.members ?? []).map((m) => m.id)]);
+    const alerts = (sources?.alerts ?? [])
+      .filter(
+        (x) =>
+          x.account.provider === a.provider &&
+          (members.has(x.account.id) || x.account.members.includes(a.identity)),
+      )
+      .sort((x, y) => x.created_at - y.created_at)
+      .map(
+        (x): AlertInfo => ({
+          window: x.window,
+          at: x.at,
+          scope: x.session === null ? "persistent" : "session",
+          note: x.note,
+          lastFired: lastFired(x),
+        }),
+      );
     return {
       ...a,
       ...(u === undefined
@@ -313,6 +348,7 @@ export function computeAccounts(ctx: ComputeContext): Computed<AccountsVM> {
       sharedDiffers: l?.group?.differs ?? false,
       weekly,
       agent: call === undefined ? null : { at: call.at, tool: call.tool, calls: calls.length },
+      alerts,
     };
   });
   // Accounts active here first (signed in, enabled), then the rest; most cost first in each.
