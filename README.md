@@ -83,16 +83,16 @@ for switching).
 
 | Variable | Effect |
 |---|---|
-| `TOKENHUD_VERSION` | Install this release, e.g. `0.1.0` or `0.1.0-rc.2`. Default: the latest stable release; until there is one, name a release candidate here |
+| `TOKENHUD_VERSION` | Install this release, e.g. `0.1.0` or a release candidate such as `0.2.0-rc.1`. Default: the latest stable release |
 | `TOKENHUD_INSTALL` | Install into this directory instead |
 | `TOKENHUD_NO_MODIFY_PATH` | `1`: `install.ps1` leaves your PATH alone |
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ZhuoQiuMcgill/tokenhud/main/install.sh | TOKENHUD_VERSION=0.1.0-rc.2 sh
+curl -fsSL https://raw.githubusercontent.com/ZhuoQiuMcgill/tokenhud/main/install.sh | TOKENHUD_VERSION=0.1.0 sh
 ```
 
 ```powershell
-$env:TOKENHUD_VERSION = '0.1.0-rc.2'; irm https://raw.githubusercontent.com/ZhuoQiuMcgill/tokenhud/main/install.ps1 | iex
+$env:TOKENHUD_VERSION = '0.1.0'; irm https://raw.githubusercontent.com/ZhuoQiuMcgill/tokenhud/main/install.ps1 | iex
 ```
 
 **Alpine and other musl-based Linux** need the C++ runtime the binary links against:
