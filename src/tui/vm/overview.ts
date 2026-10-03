@@ -1,7 +1,7 @@
 // The Overview's view model ("limits first", T11): a limits card per enabled account (one per
-// subscription account, for roots that share one: T16), the MCP agents, spend, activity over
-// 5 h / 24 h / 7 d, the day's top models and the week's limit events. Computed in the
-// view-model Worker (and by `--once`), never on the UI thread.
+// subscription account, for roots that share one: T16), the MCP agents, spend, activity and
+// top models over 5 h / 24 h / 7 d, and the week's limit events. Computed in the view-model
+// Worker (and by `--once`), never on the UI thread.
 
 import {
   isWeekly,
@@ -36,6 +36,7 @@ import type {
   OverviewVM,
   SpendColumn,
   TopModel,
+  TopModels,
   Verdict,
 } from "./types.ts";
 
@@ -206,8 +207,13 @@ export function limitCard(
   };
 }
 
-function topModels(ctx: ComputeContext, day: Range, dayTokens: number) {
-  const models = ctx.q.byModel({ range: day, ...scoped(ctx) }).map(
+/**
+ * A window's top models over its chart's range (T27): all three are worked out here, each a
+ * small aggregate, so `a`/`d` switch the list as they do the chart, without a query.
+ */
+function topModels(ctx: ComputeContext, window: ActivityWindow): TopModels {
+  const range = activityRange(ctx.now, window);
+  const models = ctx.q.byModel({ range, ...scoped(ctx) }).map(
     (m): TopModel => ({
       ...amount(m.usage),
       model: m.model,
@@ -217,10 +223,11 @@ function topModels(ctx: ComputeContext, day: Range, dayTokens: number) {
       status: m.status,
     }),
   );
+  const tokens = models.reduce((n, m) => n + m.tokens, 0);
   const byTokens = [...models]
     .sort((a, b) => b.tokens - a.tokens || b.cost - a.cost)
     .slice(0, TOP_MODELS)
-    .map((m) => ({ ...m, share: dayTokens > 0 ? m.tokens / dayTokens : 0 }));
+    .map((m) => ({ ...m, share: tokens > 0 ? m.tokens / tokens : 0 }));
   return { byCost: models.slice(0, TOP_MODELS), byTokens };
 }
 
@@ -239,9 +246,11 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
     "24h": series(ctx, "24h"),
     "7d": series(ctx, "7d"),
   };
-  const day = activityRange(ctx.now, "24h");
-  const dayTokens = activity["24h"].tokens.reduce((a, b) => a + b, 0);
-  const top = topModels(ctx, day, dayTokens);
+  const top = {
+    "5h": topModels(ctx, "5h"),
+    "24h": topModels(ctx, "24h"),
+    "7d": topModels(ctx, "7d"),
+  };
 
   const byIdentity = new Map(ctx.accounts.map((a) => [a.identity, a]));
   const byId = new Map(ctx.accounts.map((a) => [a.id, a]));
@@ -313,8 +322,7 @@ export function computeOverview(ctx: ComputeContext): Computed<OverviewVM> {
     agents,
     spend,
     activity,
-    topModels: top.byCost,
-    topModelsByTokens: top.byTokens,
+    topModels: top,
     events,
     pricedShare,
   };

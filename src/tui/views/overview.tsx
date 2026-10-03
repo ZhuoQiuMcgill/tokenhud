@@ -1,6 +1,6 @@
 // The Overview, "limits first" (T11; gen.py `overview_a`): a card per account with its
 // 5-hour and weekly meters, reset countdowns and what the spend pace means for them, an MCP
-// agents card, spend, activity, the day's top models and the week's limit events.
+// agents card, spend, activity and its window's top models, and the week's limit events.
 //
 // Built for half a 1080p screen (about 105×50) and the top half of a portrait one (about
 // 120×45). Sections keep their priority order and the lowest go first when rows run out;
@@ -38,12 +38,12 @@ import type {
   TopModel,
   Verdict,
 } from "../vm/types.ts";
-import { ACTIVITY_WINDOWS, SPEND_PERIODS } from "../vm/types.ts";
+import { ACTIVITY_WINDOWS, SPEND_PERIODS, VIEW_IDS } from "../vm/types.ts";
 import { costNote, costText } from "./cells.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
 export interface OverviewState {
-  /** The activity chart's span: its tab (`a`/`d`). */
+  /** The activity chart's span, and the top models' with it: its tab (`a`/`d`). */
   readonly window: ActivityWindow;
   /** Chart and rank by tokens even while costs show (`t`). */
   readonly tokens: boolean;
@@ -85,6 +85,16 @@ const X_LABELS: Readonly<Record<ActivityWindow, readonly XLabel[]>> = {
   "24h": ticks(["-24h", "-18h", "-12h", "-6h", "now"]),
   "7d": ticks(["-7d", "-6d", "-5d", "-4d", "-3d", "-2d", "-1d", "now"]),
 };
+const SPANS: Readonly<Record<ActivityWindow, string>> = {
+  "5h": "5 hours",
+  "24h": "24 hours",
+  "7d": "7 days",
+};
+/**
+ * Under the top models when a row is spare (T27): the Models view has the windows the
+ * Overview doesn't (today, this week, …). It is the header's tab for that view.
+ */
+const MODELS_HINT = `more windows: ${VIEW_IDS.indexOf("models") + 1} Models`;
 
 // ── times and amounts ──────────────────────────────────────────────────────────────
 
@@ -727,10 +737,20 @@ function topColumns(costs: boolean, labels: readonly string[], rows: readonly To
   return columns;
 }
 
-function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext): Section[] {
+/**
+ * The chart and its window's top models: beside it on wide screens, else a section below it,
+ * one row taller for the Models hint when `spare` (a row no section wants).
+ */
+function activitySections(
+  vm: OverviewVM,
+  state: OverviewState,
+  ctx: ViewContext,
+  spare: boolean,
+): Section[] {
   const costs = ctx.showCost && !state.tokens;
   const series: ActivitySeries = vm.activity[state.window];
-  const models = costs ? vm.topModels : vm.topModelsByTokens;
+  const ranked = vm.topModels[state.window];
+  const models = costs ? ranked.byCost : ranked.byTokens;
   const beside = ctx.bp === "wide";
   // Top models whole: margin, names, amount, share and bar, with a gap between each.
   const amountCells = amountWidth(models, costs);
@@ -792,13 +812,16 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
     // gen.py puts the peak under the list, a blank line apart, when it sits beside the chart.
     const showPeak =
       peakNote !== undefined && height >= topRows + 3 && textWidth(peakNote) + 1 <= width;
+    // The hint takes a row only once the list and the peak have theirs.
+    const showHint =
+      height >= topRows + 2 + (showPeak ? 2 : 0) && textWidth(MODELS_HINT) + 1 <= width;
     return (
       <box flexDirection="column" width={width} height={height} flexShrink={0}>
-        <Lines theme={ctx.theme} lines={[sectionLine("TOP MODELS · 24h")]} />
+        <Lines theme={ctx.theme} lines={[sectionLine(`TOP MODELS · ${state.window}`)]} />
         {models.length === 0 ? (
           <Lines
             theme={ctx.theme}
-            lines={[{ left: [seg("  no usage in the last 24 h", "dim")] }]}
+            lines={[{ left: [seg(`  no usage in the last ${SPANS[state.window]}`, "dim")] }]}
           />
         ) : (
           <Table
@@ -812,6 +835,9 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
             marginLeft={1}
           />
         )}
+        {showHint ? (
+          <Lines theme={ctx.theme} lines={[{ left: [seg(` ${MODELS_HINT}`, "dim")] }]} />
+        ) : null}
         {showPeak ? (
           <Lines theme={ctx.theme} lines={[{ left: [] }, { left: [seg(` ${peakNote}`, "dim")] }]} />
         ) : null}
@@ -839,7 +865,8 @@ function activitySections(vm: OverviewVM, state: OverviewState, ctx: ViewContext
     {
       id: "top",
       priority: 4,
-      height: 1 + topRows,
+      height: 1 + topRows + (spare ? 1 : 0),
+      minHeight: 1 + topRows,
       render: (height) => top(ctx.width, height),
     },
   ];
@@ -956,7 +983,7 @@ function cycle<T>(items: readonly T[], at: T, step: number): T {
 const keymap: Keymap<OverviewState, OverviewVM | undefined> = [
   moveKey("tabs", {
     label: "window",
-    does: `Switch the activity window: ${ACTIVITY_WINDOWS.join(" · ")}`,
+    does: `Switch the activity and top models window: ${ACTIVITY_WINDOWS.join(" · ")}`,
     // The chart's: with no room for it, there's nothing on screen to switch.
     section: ACTIVITY,
     act: (state, _vm, key) => ({
@@ -1005,10 +1032,22 @@ export const overview: View<OverviewVM, OverviewState> = {
   title: "Overview",
   keymap,
   initial: { window: "24h", tokens: false, card: null },
-  sections: (vm, state, ctx) => [
-    limitsSection(vm, state, ctx),
-    spendSection(vm, ctx),
-    ...activitySections(vm, state, ctx),
-    eventsSection(vm, ctx),
-  ],
+  sections: (vm, state, ctx) => {
+    const limits = limitsSection(vm, state, ctx);
+    const spend = spendSection(vm, ctx);
+    const events = eventsSection(vm, ctx);
+    const all = (spare: boolean) => [
+      limits,
+      spend,
+      ...activitySections(vm, state, ctx, spare),
+      events,
+    ];
+    const whole = all(false);
+    // A row left with every section at its full height: none of them is short of it.
+    const used = whole.reduce(
+      (n, s, i) => n + s.height + (i < whole.length - 1 ? (s.gap ?? 1) : 0),
+      0,
+    );
+    return ctx.height !== undefined && ctx.height > used ? all(true) : whole;
+  },
 };
