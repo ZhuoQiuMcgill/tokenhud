@@ -41,13 +41,13 @@ exports[`105×50 view 1 (overview) 1`] = `
  gpt-5.6-sol                 $1.42  14% ━━━━━━                                                           
  gpt-5.5                     $1.01  10% ━━━━━━                                                           
  Mystery 9                unpriced   0% ━━━━━━                                                           
+ more windows: 3 Models                                                                                  
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
   Tue 09:30  work      5-hour limit reached  —                                                           
   Mon 14:10  personal  5-hour limit reached  resumed 16:05                                               
   Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
   Sun 21:10  codex     weekly passed 80%     —                                                           
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
  a/d window   w/s card   enter open   t cost/tokens                                                      
  1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
@@ -242,9 +242,9 @@ exports[`120×45 view 1 (overview) 1`] = `
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
  $0.77                              █                     ▅         █  ██ ██       Mystery 9        unpriced   0% ━━━━━━
-                                    █                     █▆        █  ██ ██  ▁▁                                        
-                                    █                     ██        █  ██ ██  ██   peak $1.53 at Mon 21:25              
-     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██                                        
+                                    █                     █▆        █  ██ ██  ▁▁   more windows: 3 Models               
+                                    █                     ██        █  ██ ██  ██                                        
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██   peak $1.53 at Mon 21:25              
        -24h              -18h              -12h              -6h             now                                        
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
@@ -550,9 +550,9 @@ exports[`160×50 view 1 (overview) 1`] = `
                                               █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
                                               █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
  $0.73                                        █                             █               █ █ █ █       Mystery 9                unpriced   0% ━━━━━━         
-                                              █                            ▄█           ▁▃  █ █ █ █  ▁                                                          
-                                              █                            ██           ██  █ █ █ █  █▁   peak $1.47 at Mon 21:30                               
-     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██                                                         
+                                              █                            ▄█           ▁▃  █ █ █ █  ▁    more windows: 3 Models                                
+                                              █                            ██           ██  █ █ █ █  █▁                                                         
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██   peak $1.47 at Mon 21:30                               
        -24h                    -18h                    -12h                    -6h                  now                                                         
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          
@@ -958,9 +958,9 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [-/bg]       [cost|mid/bg]                             █                                  ██ ██    [-/bg]   [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
 [-/bg]       [cost|mid/bg]                             █                               ▃  ██ ██    [-/bg]   [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
 [-/bg] [dim/bg]$0.77[-/bg] [cost|mid/bg]                             █                     ▅         █  ██ ██    [-/bg]   [fg/bg]Mystery 9      [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [empty/bg]━━━━━━
-[-/bg]       [cost|mid/bg]                             █                     █▆        █  ██ ██  ▁▁[-/bg]                                        
-[-/bg]       [cost|mid/bg]                             █                     ██        █  ██ ██  ██[-/bg]  [dim/bg] peak $1.53 at Mon 21:25[-/bg]              
-[-/bg]     [dim/bg]0[-/bg] [dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]█▃[dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]██[dim/bg]▁▁▁▁▁▁▁▁[cost|mid/bg]█[dim/bg]▁▁[cost|mid/bg]██[dim/bg]▁[cost|mid/bg]██[dim/bg]▁[cost|mid/bg]▇██[-/bg]                                        
+[-/bg]       [cost|mid/bg]                             █                     █▆        █  ██ ██  ▁▁[-/bg]  [dim/bg] more windows: 3 Models[-/bg]               
+[-/bg]       [cost|mid/bg]                             █                     ██        █  ██ ██  ██[-/bg]                                        
+[-/bg]     [dim/bg]0[-/bg] [dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]█▃[dim/bg]▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁[cost|mid/bg]██[dim/bg]▁▁▁▁▁▁▁▁[cost|mid/bg]█[dim/bg]▁▁[cost|mid/bg]██[dim/bg]▁[cost|mid/bg]██[dim/bg]▁[cost|mid/bg]▇██[-/bg]  [dim/bg] peak $1.53 at Mon 21:25[-/bg]              
 [-/bg]       [dim/bg]-24h[-/bg]              [dim/bg]-18h[-/bg]              [dim/bg]-12h[-/bg]              [dim/bg]-6h[-/bg]             [dim/bg]now[-/bg]                                        
 [-/bg]                                                                                                                        
 [head/bg/b] LIMIT EVENTS · 7 days[-/bg]                                                                                                  
@@ -1021,13 +1021,13 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [-/bg] [fg/bg]gpt-5.6-sol            [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[rule|empty/bg]━━━━━[-/bg]                                                           
 [-/bg] [fg/bg]gpt-5.5                [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[rule|empty/bg]━━━━━[-/bg]                                                           
 [-/bg] [fg/bg]Mystery 9              [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [rule|empty/bg]━━━━━━[-/bg]                                                           
+[dim/bg] more windows: 3 Models[-/bg]                                                                                  
 [-/bg]                                                                                                         
 [head/bg/b] LIMIT EVENTS · 7 days[-/bg]                                                                                   
 [dim/bg]  Tue 09:30  [fg/bg]work      [high/bg/b]5-hour limit reached  [mute/bg]—[-/bg]                                                           
 [dim/bg]  Mon 14:10  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 16:05[-/bg]                                               
 [dim/bg]  Fri 11:05  [fg/bg]personal  [high/bg/b]5-hour limit reached  [mute/bg]resumed 12:57[-/bg]                                               
 [dim/bg]  Sun 21:10  [fg/bg]codex     [cost|mid/bg/b]weekly passed 80%     [mute/bg]—[-/bg]                                                           
-[-/bg]                                                                                                         
 [border/bg]─────────────────────────────────────────────────────────────────────────────────────────────────────────
 [-/bg] [head/bg/b]a/d[dim/bg] window   [head/bg/b]w/s[dim/bg] card   [head/bg/b]enter[dim/bg] open   [head/bg/b]t[dim/bg] cost/tokens   [-/bg]                                                   
 [-/bg] [head/bg/b]1-4/tab[dim/bg] views   [head/bg/b]c[dim/bg] account   [head/bg/b]x[dim/bg] settings   [head/bg/b]?[dim/bg] help   [head/bg/b]q[dim/bg] quit   [-/bg]                              [dim/bg]MCP [live/bg]●[dim/bg] 2 agents "

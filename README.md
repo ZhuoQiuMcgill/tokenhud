@@ -170,7 +170,7 @@ shows the keys of the view you are in.
 
 | Key | Does |
 |---|---|
-| `a/d` | Switch the activity chart's window: the last 5 hours, 24 hours or 7 days |
+| `a/d` | Switch the window of the activity chart and the top models: the last 5 hours, 24 hours or 7 days |
 | `w/s` | Select an account card (none is selected at first) |
 | `enter` | Open the selected card's account (the first card's when none is selected) in Accounts |
 | `esc` | Clear the card selection |

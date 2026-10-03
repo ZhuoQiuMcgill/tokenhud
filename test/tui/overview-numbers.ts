@@ -69,7 +69,7 @@ const costForms = (p: Priced) => [costText(p).text, costText(p, true).text];
 /**
  * Checks every number of every Overview section on screen. Which spend columns show is read
  * off the header row, and the chart's bucket from the same width rule the view uses; the
- * peak note, its amount and time, is `window`'s (the chart's tab).
+ * peak note, its amount and time, and the top models are `window`'s (the chart's tab).
  */
 export function expectOverviewWhole(
   text: string,
@@ -105,7 +105,9 @@ export function expectOverviewWhole(
     if (text.includes("peak ")) numbers.push(`peak ${amount} at ${at}`);
   }
   if (text.includes(" TOP MODELS")) {
-    for (const m of show ? vm.topModels : vm.topModelsByTokens) {
+    // The list is the chart's window's (T27).
+    const ranked = vm.topModels[window];
+    for (const m of show ? ranked.byCost : ranked.byTokens) {
       // Each model's name whole, and its tier (critique M1).
       numbers.push(`${m.name}${m.tier === "fast" ? " (fast)" : ""}`);
       if (show) alternatives.push(costForms(m));

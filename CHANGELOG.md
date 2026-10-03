@@ -8,6 +8,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+### Changed
+
+- **The Overview's top models follow the activity chart's window.** They always covered
+  the last 24 hours, even beside a 5-hour or 7-day chart. `a`/`d` now switch both between
+  the last 5 hours, 24 hours and 7 days, and the title names the window
+  (`TOP MODELS · 7d`). When a row is free, a dim `more windows: 3 Models` under the list
+  points to the Models view for today, this week, this month and the rest.
+
 ## [0.1.2] - 2026-10-02
 
 ### Fixed

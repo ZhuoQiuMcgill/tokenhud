@@ -133,6 +133,14 @@ export interface OverviewEvent {
 export type ActivityWindow = "5h" | "24h" | "7d";
 export const ACTIVITY_WINDOWS: readonly ActivityWindow[] = ["5h", "24h", "7d"];
 
+/** An activity window's top models, both ways the Overview ranks them (`t`). */
+export interface TopModels {
+  /** Most cost first, at most 5; `share` is of the window's cost. */
+  readonly byCost: readonly TopModel[];
+  /** Most tokens first, at most 5; `share` is of the window's tokens. Shown with a tokens chart. */
+  readonly byTokens: readonly TopModel[];
+}
+
 /** Cost and tokens in equal buckets, oldest first, the last one holding now. */
 export interface ActivitySeries {
   readonly from: number;
@@ -153,10 +161,11 @@ export interface OverviewVM {
   readonly agents: { readonly servers: number; readonly calls: readonly AgentCall[] } | null;
   readonly spend: Readonly<Record<SpendColumn, Amount>>;
   readonly activity: Readonly<Record<ActivityWindow, ActivitySeries>>;
-  /** The last 24 h (the 24 h chart's range), most cost first, at most 5. */
-  readonly topModels: readonly TopModel[];
-  /** The same 24 h, most tokens first, at most 5: the list when costs are hidden. */
-  readonly topModelsByTokens: readonly TopModel[];
+  /**
+   * Each window's top models, over its chart's range: `a`/`d` switch the chart and the list
+   * together, and never wait on a query.
+   */
+  readonly topModels: Readonly<Record<ActivityWindow, TopModels>>;
   /** Newest first. */
   readonly events: readonly OverviewEvent[];
   /** Share of all-time tokens that have a price. */

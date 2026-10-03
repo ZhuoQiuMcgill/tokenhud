@@ -333,7 +333,7 @@ const SHOTS: readonly Shot[] = [
           return split === null ? null : s.tight(Screen.cols(s.section("activity"), 0, split - 1));
         },
         name: "Activity",
-        text: "Cost over the last 24 hours, one bar per time slot. The tabs on the right switch to the last 5 hours or 7 days (`a`/`d`; the one shown is in brackets), and `t` switches to tokens. The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.",
+        text: "Cost over the last 24 hours, one bar per time slot. The tabs on the right switch the chart and the top models beside it to the last 5 hours or 7 days (`a`/`d`; the one shown is in brackets), and `t` switches both to tokens. The title gives the slot's length, which grows until the chart fits the width: 30 minutes here. On the left, the tallest slot's cost, half of it, and zero; below, hours back from now.",
       },
       {
         section: "activity",
@@ -344,7 +344,7 @@ const SHOTS: readonly Shot[] = [
             : s.tight(Screen.cols(s.section("activity"), split - 1, WIDTH));
         },
         name: "Top models",
-        text: "The five models with the most cost in the last 24 hours: the cost, its share of the 24 hours' cost, and a bar of that share. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced` and comes last. Under the list, the chart's tallest slot and when it started.",
+        text: "The five models with the most cost in the chart's window, its tab in the title (`TOP MODELS · 24h`): the cost, its share of the window's cost, and a bar of that share. `a`/`d` switch the window with the chart's, and `t` ranks by tokens. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced` and comes last. Under the list, when a row is free, `more windows: 3 Models`: the Models view (`3`) has today, this week, this month and more. Then the chart's tallest slot and when it started.",
       },
       {
         section: "events",
