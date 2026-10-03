@@ -7,6 +7,7 @@ import {
   lstatSync,
   openSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -230,12 +231,30 @@ export function backupPath(settingsPath: string, now: number): string {
   return `${settingsPath}.tokenhud-${stamp}.bak`;
 }
 
-/** The file a settings path names: a symlink's target, else the path itself. */
+/**
+ * The file a settings path names: a symlink's target, else the path itself. A link to
+ * nothing (a dotfiles checkout not there, say) is refused: writing would replace the link.
+ */
 function resolveTarget(path: string): string {
+  let link = false;
   try {
-    return lstatSync(path).isSymbolicLink() ? realpathSync(path) : path;
+    link = lstatSync(path).isSymbolicLink();
   } catch {
     return path;
+  }
+  if (!link) return path;
+  try {
+    return realpathSync(path);
+  } catch {
+    let to = "?";
+    try {
+      to = readlinkSync(path);
+    } catch {
+      // gone meanwhile
+    }
+    throw new SettingsError(
+      `it is a symlink to ${to}, which doesn't exist; create that file, or remove the link, first`,
+    );
   }
 }
 

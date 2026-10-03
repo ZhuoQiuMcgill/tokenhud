@@ -74,7 +74,6 @@ const stored = (f: Fixture) => loadAlerts(alertsPath(f.m.env, f.m.home));
 
 /** A hook run in `~/.claude` (personal), in Claude Code process `claude`. */
 const seenBy = (f: Fixture, claude: ProcId | null = null): SeenBy => ({
-  ppid: 1,
   claude: () => claude,
   root: () => f.personal.identity,
 });

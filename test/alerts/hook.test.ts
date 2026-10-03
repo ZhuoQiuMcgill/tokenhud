@@ -365,10 +365,44 @@ describe("the session's record and SessionEnd", () => {
     expect(readHookSeen(mcpDir(f.m.env, f.m.home), SESSION)).toEqual({
       session: SESSION,
       seen_at: NOW,
-      ppid: 4242,
       claude: { pid: 4000, start: "777" },
       root: f.personal,
     });
+  });
+
+  test("the record is written once a minute, though every run has a new shell for its parent", () => {
+    const f = fixture();
+    const mcp = mcpDir(f.m.env, f.m.home);
+    let reads = 0;
+    let writes = 0;
+    let last: number | null = null;
+    const table: Record<number, ProcInfo> = { 4000: PROCS[4000] as ProcInfo };
+    const runAt = (s: number, shell: number) => {
+      table[shell] = { ppid: 4000, start: String(shell), name: "sh" };
+      runHook(event(f, "PostToolBatch"), {
+        env: f.m.env,
+        home: f.m.home,
+        now: NOW + s * 1000,
+        ppid: shell,
+        readProc: (pid) => {
+          reads++;
+          return table[pid] ?? null;
+        },
+        log: (m) => f.logs.push(m),
+      });
+      // A rewrite always stamps the run's time.
+      const seen = readHookSeen(mcp, SESSION)?.seen_at ?? null;
+      if (seen !== last) writes++;
+      last = seen;
+    };
+    runAt(0, 5001);
+    // Written, after reading the shell and then Claude Code above it.
+    expect([writes, reads]).toEqual([1, 2]);
+    for (let i = 1; i <= 20; i++) runAt(i * 2, 5001 + i);
+    expect([writes, reads]).toEqual([1, 2]);
+    runAt(61, 6000);
+    expect([writes, reads]).toEqual([2, 4]);
+    expect(f.logs).toEqual([]);
   });
 
   test("SessionEnd waits at most 300 ms for a held lock, then leaves the alerts to expire", () => {

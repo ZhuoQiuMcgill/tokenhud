@@ -296,8 +296,6 @@ export function tryEditAlerts(
 export interface HookSeen {
   session: string;
   seen_at: number;
-  /** The hook's parent (the shell its command ran in), to tell when to look again. */
-  ppid: number | null;
   /** The Claude Code process the session runs in; null where it can't be verified. */
   claude: ProcId | null;
   /** The session's config dir, by root identity; null when unknown. */
@@ -329,7 +327,6 @@ function parseSeen(text: string): HookSeen | null {
     return {
       session: raw.session,
       seen_at: raw.seen_at,
-      ppid: Number.isInteger(raw.ppid) ? (raw.ppid as number) : null,
       claude: parseProc(raw.claude),
       root: typeof raw.root === "string" && raw.root !== "" ? raw.root : null,
     };
@@ -347,24 +344,25 @@ export function readHookSeen(mcpDir: string, session: string): HookSeen | null {
   }
 }
 
-/** Where a hook run is, for its session's record; read only when the record is rewritten. */
+/** Where a hook run is, for its session's record; asked only when the record is rewritten. */
 export interface SeenBy {
-  ppid: number | null;
   claude: () => ProcId | null;
   root: () => string | null;
 }
 
 /**
- * Records that the hook ran for `session`: rewrites its seen file when it is missing,
- * older than a minute, or names another parent. Throws when it can't be written.
+ * Records that the hook ran for `session`: rewrites its seen file when it is missing or a
+ * minute old, by time alone (each hook run is a new shell, so nothing else tells runs
+ * apart); only then is the Claude Code process looked up, which costs two `ps` runs on
+ * macOS. A session resumed in another Claude Code process is followed within the minute.
+ * Throws when it can't be written.
  */
 export function recordHookSeen(mcpDir: string, session: string, now: number, by: SeenBy): void {
   const seen = readHookSeen(mcpDir, session);
-  if (seen !== null && now - seen.seen_at < SEEN_EVERY_MS && seen.ppid === by.ppid) return;
+  if (seen !== null && now >= seen.seen_at && now - seen.seen_at < SEEN_EVERY_MS) return;
   const record: HookSeen = {
     session,
     seen_at: now,
-    ppid: by.ppid,
     claude: by.claude(),
     root: by.root(),
   };

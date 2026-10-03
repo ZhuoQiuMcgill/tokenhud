@@ -58,7 +58,7 @@ export interface HookOptions {
   env: Env;
   home: string;
   now: number;
-  /** The hook's parent (`process.ppid`): the shell its command runs in. */
+  /** The hook's parent (`process.ppid`): the shell its command runs in, a new one each run. */
   ppid: number | null;
   /** How processes are read here (`procReader()`), to name the Claude Code process above. */
   readProc: ReadProc | null;
@@ -151,7 +151,6 @@ function hook(input: string, o: HookOptions): string {
   };
   try {
     recordHookSeen(mcp, event.session, o.now, {
-      ppid: o.ppid,
       claude: () => (o.ppid === null ? null : claudeProcess(o.ppid, o.readProc)),
       root: sessionRoot,
     });

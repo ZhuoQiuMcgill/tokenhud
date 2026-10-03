@@ -136,8 +136,8 @@ jobs:
   # with exit 2, which Claude Code takes as "block the prompt". scripts/hook-compat.ts runs
   # the plugin's command for each event, and the one `tokenhud mcp install --hooks` writes,
   # through every shell Claude Code uses on the runner (sh; Git Bash and both PowerShells on
-  # Windows): against the released 0.1.3, checked against its release's SHA256SUMS, each run
-  # must exit 0 with nothing on stdout; against this build, a fixture alert must come out.
+  # Windows): against the released 0.1.3, checked against its pinned SHA-256, each run must
+  # exit 0 with nothing on stdout; against this build, a fixture alert must come out.
   hook-compat:
     name: hook command vs released tokenhud (${{ matrix.os }})
     strategy:
@@ -156,23 +156,28 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
 
-      - name: Download tokenhud 0.1.3 and check its checksum
+      # The hashes are pinned here, not read from the release: they are 0.1.3's SHA256SUMS
+      # entries, so a replaced asset fails the job.
+      - name: Download tokenhud 0.1.3 and check it against its pinned checksum
         run: |
           case "$RUNNER_OS" in
-            Linux) asset=tokenhud-linux-x64 name=tokenhud ;;
-            macOS) asset=tokenhud-darwin-arm64 name=tokenhud ;;
-            Windows) asset=tokenhud-windows-x64.exe name=tokenhud.exe ;;
+            Linux)
+              asset=tokenhud-linux-x64 name=tokenhud
+              sum=8017bc74db02ea17dd58ed7274f73cc22b8d682fdd5f9216022cedc530de8df1 ;;
+            macOS)
+              asset=tokenhud-darwin-arm64 name=tokenhud
+              sum=1396cd1d25a2a9dd32d07bc992039a78ff068b619ad2edccc18c47698e436ee3 ;;
+            Windows)
+              asset=tokenhud-windows-x64.exe name=tokenhud.exe
+              sum=73e98ded4f8074f66fa57a7656c6db9bb2e93e97ba8cda64165e5bb2388f09f6 ;;
           esac
-          base=https://github.com/ZhuoQiuMcgill/tokenhud/releases/download/v0.1.3
           mkdir -p old
-          curl -fsSL --retry 3 -o "old/$asset" "$base/$asset"
-          curl -fsSL --retry 3 -o old/SHA256SUMS "$base/SHA256SUMS"
-          line=$(grep -E " \*?$asset\$" old/SHA256SUMS)
-          echo "$line"
+          curl -fsSL --retry 3 -o "old/$asset" \
+            "https://github.com/ZhuoQiuMcgill/tokenhud/releases/download/v0.1.3/$asset"
           if [ "$RUNNER_OS" = macOS ]; then
-            (cd old && echo "$line" | shasum -a 256 -c -)
+            (cd old && echo "$sum  $asset" | shasum -a 256 -c -)
           else
-            (cd old && echo "$line" | sha256sum -c -)
+            (cd old && echo "$sum  $asset" | sha256sum --check --strict)
           fi
           mv "old/$asset" "old/$name"
           chmod +x "old/$name"

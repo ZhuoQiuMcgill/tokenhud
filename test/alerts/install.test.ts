@@ -228,6 +228,20 @@ describe("editHooks", () => {
     },
   );
 
+  test.if(posix)("a symlink to nothing is refused, and left a link", () => {
+    const dir = join(tempDir(), ".claude");
+    mkdirSync(dir, { recursive: true });
+    const gone = join(tempDir(), "dotfiles-not-mounted", "settings.json");
+    const link = join(dir, "settings.json");
+    symlinkSync(gone, link);
+    expect(() => editHooks(link, CMD, { remove: false, now: NOW })).toThrow(SettingsError);
+    expect(() => editHooks(link, CMD, { remove: false, now: NOW })).toThrow(
+      `it is a symlink to ${gone}, which doesn't exist; create that file, or remove the link, first`,
+    );
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readdirSync(dir)).toEqual(["settings.json"]);
+  });
+
   test("again: nothing changes and no backup is made; a new binary path replaces the old", () => {
     const path = settingsFile(THEIRS);
     editHooks(path, CMD, { remove: false, now: NOW });

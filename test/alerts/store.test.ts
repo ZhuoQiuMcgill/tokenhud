@@ -130,53 +130,52 @@ describe("alerts.json", () => {
 });
 
 /** What a hook run in Claude Code process `claude` (pid 7000) on config dir "root-a" says. */
-function by(ppid: number, claude: ProcId | null = CLAUDE, root: string | null = "root-a"): SeenBy {
-  return { ppid, claude: () => claude, root: () => root };
+function by(claude: ProcId | null = CLAUDE, root: string | null = "root-a"): SeenBy {
+  return { claude: () => claude, root: () => root };
 }
 const CLAUDE: ProcId = { pid: 7000, start: "1234567" };
 
 describe("sessions", () => {
-  test("the hook's record is rewritten at most once a minute, or when its parent changes", () => {
+  test("the hook's record is rewritten at most once a minute, by time alone", () => {
     const mcp = join(tempDir(), "mcp");
     expect(readHookSeen(mcp, SESSION)).toBeNull();
-    recordHookSeen(mcp, SESSION, NOW, by(4242));
-    expect(readHookSeen(mcp, SESSION)).toEqual({
-      session: SESSION,
-      seen_at: NOW,
-      ppid: 4242,
-      claude: CLAUDE,
-      root: "root-a",
-    });
-    recordHookSeen(mcp, SESSION, NOW + 30_000, by(4242));
-    expect(readHookSeen(mcp, SESSION)?.seen_at).toBe(NOW);
-    recordHookSeen(mcp, SESSION, NOW + 61_000, by(4242));
-    expect(readHookSeen(mcp, SESSION)?.seen_at).toBe(NOW + 61_000);
-    recordHookSeen(mcp, SESSION, NOW + 62_000, by(777, null, null));
-    expect(readHookSeen(mcp, SESSION)).toEqual({
-      session: SESSION,
-      seen_at: NOW + 62_000,
-      ppid: 777,
-      claude: null,
-      root: null,
-    });
-    // The process is looked up only when the record is rewritten (macOS asks `ps`).
-    let asked = 0;
-    recordHookSeen(mcp, SESSION, NOW + 63_000, {
-      ppid: 777,
+    let looked = 0;
+    const counting: SeenBy = {
       claude: () => {
-        asked++;
+        looked++;
         return CLAUDE;
       },
       root: () => "root-a",
+    };
+    recordHookSeen(mcp, SESSION, NOW, counting);
+    expect(readHookSeen(mcp, SESSION)).toEqual({
+      session: SESSION,
+      seen_at: NOW,
+      claude: CLAUDE,
+      root: "root-a",
     });
-    expect(asked).toBe(0);
+    // Each hook run is a new shell: within the minute nothing is rewritten, and the Claude
+    // Code process (two `ps` runs on macOS) is not looked up again.
+    for (let s = 1; s < 60; s += 7) recordHookSeen(mcp, SESSION, NOW + s * 1000, counting);
+    expect(looked).toBe(1);
+    expect(readHookSeen(mcp, SESSION)?.seen_at).toBe(NOW);
+    recordHookSeen(mcp, SESSION, NOW + 61_000, counting);
+    expect(looked).toBe(2);
+    expect(readHookSeen(mcp, SESSION)?.seen_at).toBe(NOW + 61_000);
+    recordHookSeen(mcp, SESSION, NOW + 122_000, by(null, null));
+    expect(readHookSeen(mcp, SESSION)).toEqual({
+      session: SESSION,
+      seen_at: NOW + 122_000,
+      claude: null,
+      root: null,
+    });
     // Never a path from a session id.
     expect(readHookSeen(mcp, "../alerts")).toBeNull();
   });
 
   test("activity: the hook's records and the heartbeats of MCP servers serving a session", () => {
     const mcp = join(tempDir(), "mcp");
-    recordHookSeen(mcp, SESSION, NOW - 2 * HOUR, by(1));
+    recordHookSeen(mcp, SESSION, NOW - 2 * HOUR, by());
     writeFileSync(
       join(mcp, "4242.json"),
       JSON.stringify({ pid: 4242, host: "h", session: SESSION, updated_at: NOW - MIN, calls: [] }),
@@ -186,7 +185,7 @@ describe("sessions", () => {
       JSON.stringify({ pid: 4343, host: "h", session: null, updated_at: NOW, calls: [] }),
     );
     writeFileSync(join(mcp, "4444.json"), "{ damaged");
-    recordHookSeen(mcp, OTHER, NOW - 30 * HOUR, by(1));
+    recordHookSeen(mcp, OTHER, NOW - 30 * HOUR, by());
     expect(sessionActivity(mcp)).toEqual(
       new Map([
         [SESSION, NOW - MIN],
@@ -228,8 +227,8 @@ describe("sessions", () => {
 
   test("records of sessions quiet for 24 h are swept", () => {
     const mcp = join(tempDir(), "mcp");
-    recordHookSeen(mcp, SESSION, NOW - HOUR, by(1));
-    recordHookSeen(mcp, OTHER, NOW - SESSION_TTL_MS - MIN, by(1));
+    recordHookSeen(mcp, SESSION, NOW - HOUR, by());
+    recordHookSeen(mcp, OTHER, NOW - SESSION_TTL_MS - MIN, by());
     sweepHookSeen(mcp, NOW);
     expect(existsSync(hookSeenPath(mcp, SESSION))).toBe(true);
     expect(existsSync(hookSeenPath(mcp, OTHER))).toBe(false);
@@ -246,14 +245,14 @@ describe("sessions", () => {
     const id = (n: number) => `00000000-0000-4000-8000-00000000001${n}`;
     // Not ours: another Claude Code; the same pid reused by a process started later (or in
     // another container); another config dir; a record from before the server started.
-    recordHookSeen(mcp, id(1), NOW + MIN, by(1, { pid: 8000, start: "1234567" }));
-    recordHookSeen(mcp, id(2), NOW + MIN, by(1, { pid: 7000, start: "7654321" }));
-    recordHookSeen(mcp, id(3), NOW + MIN, by(1, CLAUDE, "root-b"));
-    recordHookSeen(mcp, id(4), NOW - MIN, by(1));
-    recordHookSeen(mcp, id(5), NOW + 3 * MIN, by(1, null));
+    recordHookSeen(mcp, id(1), NOW + MIN, by({ pid: 8000, start: "1234567" }));
+    recordHookSeen(mcp, id(2), NOW + MIN, by({ pid: 7000, start: "7654321" }));
+    recordHookSeen(mcp, id(3), NOW + MIN, by(CLAUDE, "root-b"));
+    recordHookSeen(mcp, id(4), NOW - MIN, by());
+    recordHookSeen(mcp, id(5), NOW + 3 * MIN, by(null));
     expect(currentSession(env, mcp, place)).toBe(SESSION);
     // After /clear, the same Claude Code runs the hook for a new session.
-    recordHookSeen(mcp, OTHER, NOW + 2 * MIN, by(1));
+    recordHookSeen(mcp, OTHER, NOW + 2 * MIN, by());
     expect(currentSession(env, mcp, place)).toBe(OTHER);
     // Where the process can't be verified (Windows), the fallback is off.
     expect(currentSession(env, mcp, { ...place, claude: null })).toBe(SESSION);
@@ -263,13 +262,13 @@ describe("sessions", () => {
     const mcp = join(tempDir(), "mcp");
     const place: ServerPlace = { claude: null, root: "root-a", startedAt: NOW };
     expect(staleSession(mcp, SESSION, place)).toBe(false);
-    recordHookSeen(mcp, OTHER, NOW - MIN, by(1));
+    recordHookSeen(mcp, OTHER, NOW - MIN, by());
     expect(staleSession(mcp, SESSION, place)).toBe(false);
-    recordHookSeen(mcp, "00000000-0000-4000-8000-000000000013", NOW + MIN, by(1, null, "root-b"));
+    recordHookSeen(mcp, "00000000-0000-4000-8000-000000000013", NOW + MIN, by(null, "root-b"));
     expect(staleSession(mcp, SESSION, place)).toBe(false);
-    recordHookSeen(mcp, OTHER, NOW + MIN, by(2));
+    recordHookSeen(mcp, OTHER, NOW + MIN, by());
     expect(staleSession(mcp, SESSION, place)).toBe(true);
-    recordHookSeen(mcp, SESSION, NOW + 2 * MIN, by(3));
+    recordHookSeen(mcp, SESSION, NOW + 2 * MIN, by());
     expect(staleSession(mcp, SESSION, place)).toBe(false);
   });
 });
