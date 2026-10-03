@@ -344,6 +344,12 @@ describe.skipIf(NEW === undefined || OLD === undefined)(
         expect(readdirSync(join(global, "@tokenhud"))).toEqual([
           platform.slice("@tokenhud/".length),
         ]);
+        // Bun's notice, which the README explains: the one script it blocked is tokenhud's own
+        // preinstall, which only npm on Windows needs.
+        expect(add.out).toContain("Blocked 1 postinstall. Run `bun pm -g untrusted` for details.");
+        const untrusted = await run([process.execPath, "pm", "-g", "untrusted"], env);
+        expect(untrusted.out).toContain(`./node_modules/tokenhud @${OLD_VERSION}\n`);
+        expect(untrusted.out.match(/».*/g)).toEqual(["» [preinstall]: node preinstall.cjs"]);
 
         const tokenhud = join(bunHome, "bin", "tokenhud");
         expect(await run([tokenhud, "--version"], env)).toEqual({

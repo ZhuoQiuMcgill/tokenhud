@@ -8,6 +8,30 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+### Fixed
+
+- **A new release on npm never lacks its binary.** For 0.1.0, npm served
+  `@tokenhud/linux-x64` as a 404 for about 10 minutes after it was published, and
+  `bun add -g tokenhud` installed tokenhud without it, leaving a command that only said its
+  binary was missing. Releases now publish `tokenhud` only once every platform package's
+  tarball downloads from npm and matches its integrity.
+- **When the binary's package is missing**, the `tokenhud` command names a failed download
+  as a cause too, and how to reinstall right after a release
+  (`bun remove -g tokenhud && bun add -g --no-cache tokenhud`, or
+  `npm install -g --prefer-online tokenhud`). `tokenhud doctor` points out such an install,
+  bun's or npm's, with the same command.
+
+### Changed
+
+- The README says what Bun's `Blocked 1 postinstall` after `bun add -g tokenhud` is:
+  tokenhud's Windows-only `preinstall`, harmless on Linux and macOS, best left blocked.
+
+### For contributors
+
+- Releases publish to npm as a trusted publisher (OIDC), with no token or secret, and move
+  only `tokenhud`'s `next` tag. `scripts/publish-npm.ts` does the publishing; CI runs it
+  with the real npm against a registry on localhost that serves a tarball late.
+
 ## [0.1.0] - 2026-10-02
 
 The first release: tokenhud succeeds cc-usage 2.6.1 and imports its history. It is the same
