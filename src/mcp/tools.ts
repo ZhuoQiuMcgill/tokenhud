@@ -9,6 +9,7 @@ import {
   loadAlerts,
   NOTE_MAX,
   prune,
+  type ServerPlace,
   sessionActivity,
 } from "../alerts/store.ts";
 import { BadArgument, parseBound } from "../commands/json.ts";
@@ -96,6 +97,8 @@ export interface ToolsDeps {
   mcpDir: string;
   /** The Claude Code session this server serves now, or null when it can't tell. */
   session: () => string | null;
+  /** Its Claude Code process and config dir, to tell a stale session id from a missing hook. */
+  place: ServerPlace;
   /** Detail of a failure the answer works around (stderr). */
   log?: (message: string) => void;
 }
@@ -487,7 +490,11 @@ export class Tools {
   /** Re-reads alerts.json and changes it under its lock; a busy or unwritable file is a plain error. */
   #editAlerts(edit: (alerts: Alert[]) => boolean): Alert[] {
     try {
-      return editAlerts(this.#d.alertsPath, edit);
+      const log = this.#d.log;
+      return editAlerts(this.#d.alertsPath, edit, {
+        now: this.#d.now(),
+        ...(log !== undefined && { log }),
+      });
     } catch (error) {
       if (error instanceof ToolError) throw error;
       const code = (error as NodeJS.ErrnoException).code ?? (error as Error).name;
@@ -640,7 +647,7 @@ export class Tools {
       windows: windowViews(alert, limits.windows, zone, now),
       as_of: limits.as_of === null ? null : zone.iso(limits.as_of),
       message: setMessage(alert, limits.windows, limits.as_of !== null, zone, now),
-      delivery: delivery(this.#d.mcpDir, session, zone),
+      delivery: delivery(this.#d.mcpDir, session, this.#d.place, zone),
       warnings,
     };
   }
@@ -656,7 +663,7 @@ export class Tools {
     );
     return {
       alerts: shown.map((a) => alertView(a, this.#alertWindows(a), session, this.#d.zone, now)),
-      delivery: delivery(this.#d.mcpDir, session, this.#d.zone),
+      delivery: delivery(this.#d.mcpDir, session, this.#d.place, this.#d.zone),
     };
   }
 

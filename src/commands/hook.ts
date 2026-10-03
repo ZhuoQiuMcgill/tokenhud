@@ -4,6 +4,7 @@
 
 import { homedir } from "node:os";
 import { hookLog, hookLogPath, runHook } from "../alerts/hook.ts";
+import { procReader } from "../alerts/proc.ts";
 
 export const HOOK_HELP = `Usage:
   tokenhud hook
@@ -13,6 +14,16 @@ server's set_alert tool. Claude Code runs it on PostToolBatch, UserPromptSubmit 
 SessionEnd, with the event as JSON on stdin; it prints a hook reply only when an alert
 fires. Install it with the tokenhud plugin, or with:
   tokenhud mcp install --hooks`;
+
+/**
+ * The clock tests run a fresh `tokenhud hook` process on: TOKENHUD_TEST_NOW (epoch ms), read
+ * only under the test guard's TOKENHUD_TEST=1, which is never set outside tests.
+ */
+function testClock(env: Readonly<Record<string, string | undefined>>): number | null {
+  if (env.TOKENHUD_TEST !== "1" || env.TOKENHUD_TEST_NOW === undefined) return null;
+  const now = Number(env.TOKENHUD_TEST_NOW);
+  return Number.isFinite(now) ? now : null;
+}
 
 export async function runHookCommand(args: readonly string[]): Promise<number> {
   if (args.length > 0 || process.stdin.isTTY) {
@@ -31,8 +42,9 @@ export async function runHookCommand(args: readonly string[]): Promise<number> {
   const out = runHook(input, {
     env,
     home,
-    now: Date.now(),
+    now: testClock(env) ?? Date.now(),
     ppid: process.ppid,
+    readProc: procReader(),
     log: hookLog(hookLogPath(env, home), home),
   });
   if (out !== "") process.stdout.write(out);

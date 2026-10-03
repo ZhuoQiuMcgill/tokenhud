@@ -3,7 +3,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { release } from "node:os";
 import { win32 } from "node:path";
 import type { Config, RootEntry } from "../config.ts";
-import { byCodePoint } from "../store/store.ts";
+import { byCodePoint } from "./order.ts";
 import { nodeRealpathFs, pyExpandUser, pyNormPath, pyRealpath, type RealpathFs } from "./pypath.ts";
 
 /**

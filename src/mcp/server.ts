@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
   type CallToolResult,
@@ -12,11 +13,13 @@ import {
   StdioServerTransport,
   serveStdio,
 } from "@modelcontextprotocol/server/stdio";
+import { claudeProcess, type ProcId, procReader } from "../alerts/proc.ts";
 import {
   ALERT_WINDOWS,
   alertsPath,
   currentSession,
   NOTE_MAX,
+  type ServerPlace,
   sweepHookSeen,
 } from "../alerts/store.ts";
 import { AlertWatch } from "../alerts/watch.ts";
@@ -34,7 +37,12 @@ import { pricingOverridesPath, storePath } from "../paths.ts";
 import { loadPriceTable } from "../pricing/overrides.ts";
 import { PERIOD_NAMES } from "../query/periods.ts";
 import { Zone } from "../query/tz.ts";
-import { discoverClaudeRoots, discoverCodexRoots, type Root } from "../sources/roots.ts";
+import {
+  discoverClaudeRoots,
+  discoverCodexRoots,
+  type Root,
+  rootIdentity,
+} from "../sources/roots.ts";
 import { VERSION } from "../version.ts";
 import { transcriptExists } from "./accounts.ts";
 import { asToolError } from "./errors.ts";
@@ -355,8 +363,11 @@ export interface WiringOptions {
   zone?: Zone;
   refresh?: ToolsDeps["refresh"];
   log?: (message: string) => void;
-  /** The Claude Code process that started the server (`process.ppid`): finds its session. */
-  ppid?: number;
+  /**
+   * The Claude Code process that started the server, which finds its session after /clear;
+   * by default read from `process.ppid` where the OS lets it be verified (null elsewhere).
+   */
+  claude?: ProcId | null;
 }
 
 export interface Wiring {
@@ -439,9 +450,13 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     log,
   });
   const mcp = mcpDir(env, home);
-  const startedAt = now();
-  const ppid = options.ppid ?? process.ppid;
-  const session = () => currentSession(env, mcp, ppid, startedAt);
+  const place: ServerPlace = {
+    claude:
+      options.claude !== undefined ? options.claude : claudeProcess(process.ppid, procReader()),
+    root: rootIdentity(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), home),
+    startedAt: now(),
+  };
+  const session = () => currentSession(env, mcp, place);
   const heartbeat = new Heartbeat(mcp, { log, session });
   const shutdown = new AbortController();
   const clock = options.clock ?? realClock;
@@ -470,6 +485,7 @@ export function wireTools(options: WiringOptions = {}): Wiring {
     alertsPath: alertsPath(env, home),
     mcpDir: mcp,
     session,
+    place,
     log,
   });
   const watch = new AlertWatch({ armed: () => tools.armedAccounts(), refresh, log });

@@ -1,5 +1,5 @@
 import { alertStatus, deliveryFor, type WindowState, watched } from "../alerts/match.ts";
-import { type Alert, readHookSeen } from "../alerts/store.ts";
+import { type Alert, readHookSeen, type ServerPlace, staleSession } from "../alerts/store.ts";
 import type { Zone } from "../query/tz.ts";
 import { clock, percent } from "./decide.ts";
 
@@ -14,6 +14,8 @@ export const MAX_ALERTS = 100;
 
 export const HOOK_WARNING =
   "alerts are stored but this session hasn't run the tokenhud hook: install the tokenhud plugin, or run `tokenhud mcp install --hooks`";
+export const STALE_WARNING =
+  "the tokenhud hook runs, but for a newer Claude Code session than the one this MCP server started in (after /clear or a resume), so session alerts set here can't reach it: use scope persistent, or reconnect the server with /mcp";
 export const NO_SESSION_WARNING =
   "this session's id is unknown (Claude Code passes it as CLAUDE_CODE_SESSION_ID), so whether it runs the tokenhud hook can't be checked";
 
@@ -104,13 +106,25 @@ export function alertView(
   };
 }
 
-/** Whether alerts reach this session: its hook's last run, from the MCP heartbeat dir. */
-export function delivery(mcpDir: string, session: string | null, zone: Zone): HookDelivery {
+/**
+ * Whether alerts reach this session: its hook's last run, from the MCP heartbeat dir. When
+ * it never ran but ran for another session of this config dir since the server started, the
+ * server's session id is stale (a /clear or resume it couldn't follow): said so, rather than
+ * telling the user to install a hook they have.
+ */
+export function delivery(
+  mcpDir: string,
+  session: string | null,
+  place: ServerPlace,
+  zone: Zone,
+): HookDelivery {
   if (session === null) return { hook_seen_at: null, warning: NO_SESSION_WARNING };
   const seen = readHookSeen(mcpDir, session);
-  return seen === null
-    ? { hook_seen_at: null, warning: HOOK_WARNING }
-    : { hook_seen_at: zone.iso(seen.seen_at), warning: null };
+  if (seen !== null) return { hook_seen_at: zone.iso(seen.seen_at), warning: null };
+  return {
+    hook_seen_at: null,
+    warning: staleSession(mcpDir, session, place) ? STALE_WARNING : HOOK_WARNING,
+  };
 }
 
 const KIND_NAMES: Record<Alert["window"], string> = {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hookLog, hookLogPath, runHook } from "../../src/alerts/hook.ts";
+import type { ProcInfo } from "../../src/alerts/proc.ts";
 import {
   type Alert,
   alertsPath,
@@ -14,6 +15,7 @@ import {
   readHookSeen,
 } from "../../src/alerts/store.ts";
 import { limitsPath, loadLimitsCache, saveLimitsCache } from "../../src/limits/cache.ts";
+import { tryLease } from "../../src/limits/lease.ts";
 import { mcpDir } from "../../src/paths.ts";
 import { guard } from "../guard.ts";
 import {
@@ -112,12 +114,20 @@ function event(f: Fixture, name: string, over: Record<string, unknown> = {}): st
   return JSON.stringify({ ...common, ...extra, ...over });
 }
 
+/** A made-up process table: the hook's shell 4242, under Claude Code 4000. */
+const PROCS: Record<number, ProcInfo> = {
+  4242: { ppid: 4000, start: "500", name: "sh" },
+  4000: { ppid: 1, start: "777", name: "claude" },
+};
+const readProc = (pid: number) => PROCS[pid] ?? null;
+
 function run(f: Fixture, input: string, now = NOW): string {
   return runHook(input, {
     env: f.m.env,
     home: f.m.home,
     now,
     ppid: 4242,
+    readProc,
     log: (message) => f.logs.push(message),
   });
 }
@@ -328,6 +338,7 @@ describe("whose alerts", () => {
       home: f.m.home,
       now: NOW,
       ppid: 1,
+      readProc: null,
       log: () => {},
     });
     expect(out).toContain("5-hour limit (work) is at 90%");
@@ -348,14 +359,29 @@ describe("whose alerts", () => {
 });
 
 describe("the session's record and SessionEnd", () => {
-  test("each run records the session for set_alert's warning, with the hook's parent", () => {
+  test("each run records the session, with the Claude Code process above its shell and its config dir", () => {
     const f = fixture();
     run(f, event(f, "UserPromptSubmit"));
     expect(readHookSeen(mcpDir(f.m.env, f.m.home), SESSION)).toEqual({
       session: SESSION,
       seen_at: NOW,
       ppid: 4242,
+      claude: { pid: 4000, start: "777" },
+      root: f.personal,
     });
+  });
+
+  test("SessionEnd waits at most 300 ms for a held lock, then leaves the alerts to expire", () => {
+    const f = fixture();
+    setAlerts(f, alert(f));
+    const path = alertsPath(f.m.env, f.m.home);
+    const lease = tryLease(`${path}.lock`, 60_000);
+    const t = performance.now();
+    expect(run(f, event(f, "SessionEnd"))).toBe("");
+    expect(performance.now() - t).toBeLessThan(1_000);
+    lease?.release();
+    expect(loadAlerts(path)).toHaveLength(1);
+    expect(f.logs).toEqual(["SessionEnd: alerts.json stayed locked; its alerts expire in 24 h"]);
   });
 
   test("SessionEnd removes the session's alerts and record, and prints nothing", () => {
@@ -399,7 +425,9 @@ describe("failures never reach the agent", () => {
     setAlerts(f, alert(f));
     writeFileSync(limitsPath(f.m.env, f.m.home), "[1, 2");
     expect(run(f, event(f, "PostToolBatch"))).toBe("");
-    expect(f.logs).toEqual([]);
+    // The damaged alerts.json is logged (once: the log skips a repeat), and moved aside
+    // by the next writer.
+    expect(f.logs).toEqual(["alerts.json is unreadable; it is moved aside on the next change"]);
   });
 
   test("other events are ignored", () => {
@@ -428,9 +456,10 @@ describe("failures never reach the agent", () => {
 });
 
 describe("tokenhud hook, as Claude Code runs it", () => {
+  /** The test guard's TOKENHUD_TEST=1 lets the fresh process take NOW as its clock. */
   function spawn(f: Fixture, input: string) {
     return Bun.spawn([process.execPath, CLI, "hook"], {
-      env: envOf(f.m),
+      env: { ...envOf(f.m), TOKENHUD_TEST_NOW: String(NOW) },
       stdin: Buffer.from(input),
       stdout: "pipe",
       stderr: "pipe",
@@ -442,16 +471,7 @@ describe("tokenhud hook, as Claude Code runs it", () => {
     async (name) => {
       const f = fixture();
       setAlerts(f, alert(f));
-      // A fresh process reads the real clock, so the capture is placed relative to it: a
-      // minute old, its window resetting 1h12m from now (whole minutes, with 20 s to spare).
-      const now = Date.now();
-      writeLimits(f.m, {
-        [f.personal]: {
-          capture: capture(now - MIN, {
-            session: { pct: 82, resetsAt: now + HOUR + 12 * MIN + 20_000 },
-          }),
-        },
-      });
+      limits(f, 82);
       const proc = spawn(f, event(f, name));
       expect(await proc.exited).toBe(0);
       expect(await new Response(proc.stdout).text()).toBe(reply(name, LINE));
@@ -474,12 +494,7 @@ describe("tokenhud hook, as Claude Code runs it", () => {
   test("two hooks at once tell a persistent alert once", async () => {
     const f = fixture();
     setAlerts(f, alert(f, { session: null }));
-    const now = Date.now();
-    writeLimits(f.m, {
-      [f.personal]: {
-        capture: capture(now - MIN, { session: { pct: 90, resetsAt: now + HOUR } }),
-      },
-    });
+    limits(f, 90);
     const procs = [
       spawn(f, event(f, "PostToolBatch")),
       spawn(f, event(f, "PostToolBatch", { session_id: OTHER })),

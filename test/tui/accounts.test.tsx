@@ -822,12 +822,20 @@ describe("limit alerts agents set (T29)", () => {
     expect(dark.hex.dim).toBe(rgbToHex(span?.fg as RGBA).toLowerCase());
   });
 
-  test("narrow, nothing runs past the edge; short of rows, the alerts go first", async () => {
-    const v = alertViews();
-    const narrow = await frameAt(80, 24, "personal", v);
-    noCutNumbers(narrow);
-    for (const line of narrow.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
-    expect(await frameAt(60, 20, "personal", v)).not.toContain("5-hour at 80%");
+  test("at 80×24 they show before the weekly history; short of rows, one line says how many (critique N4)", async () => {
+    const two = await frameAt(80, 24, "personal", alertViews());
+    noCutNumbers(two);
+    for (const line of two.split("\n")) expect(Bun.stringWidth(line)).toBeLessThanOrEqual(80);
+    expect(two).toContain(" alerts    5-hour at 80% · session · fired 11:18 ");
+    expect(two).toContain("            weekly at 90% · persistent · not fired");
+    // Six alerts don't fit at 80×24: one line says so, and the meters and spend stay.
+    const six = Array.from({ length: 6 }, (_, i) => alert({ id: `b${i}`, at: 50 + i }));
+    const many = t13Views(fx, fixtureConfig(), null, MCP, six).views;
+    const frame = await frameAt(80, 24, "personal", many);
+    expect(frame).toContain(" alerts    6 alerts armed ");
+    expect(frame).not.toContain("5-hour at 50%");
+    expect(frame).toContain("spend 30d");
+    expect(frame).toContain(" WEEKLY ");
   });
 });
 

@@ -13,16 +13,19 @@ import {
   type WindowState,
   watched,
 } from "./match.ts";
+import { claudeProcess, type ReadProc } from "./proc.ts";
 import {
   type Alert,
   alertsPath,
   editAlerts,
   loadAlerts,
   prune,
+  readAlerts,
   recordHookSeen,
   removeHookSeen,
   SESSION_ID,
   sessionActivity,
+  tryEditAlerts,
 } from "./store.ts";
 
 /**
@@ -32,9 +35,13 @@ import {
  * per alert that fires, and nothing at all otherwise. On SessionEnd it removes the
  * session's alerts.
  *
- * It reads only alerts.json and limits.json (and, when an alert fires, the MCP heartbeat
- * dir): no network, no store, no credentials. It never blocks or fails the agent: on any
- * error it prints nothing, exits 0 and logs the error once to `logs/hook.log`.
+ * Its data are alerts.json and limits.json. Besides them it keeps its session's record in
+ * the MCP heartbeat dir (once a minute, naming the Claude Code process above it: see
+ * src/alerts/proc.ts), and reads that dir when an alert fires, to drop expired session
+ * alerts. No network, no store, no credentials. It never blocks or fails the agent: on any
+ * error it prints nothing, exits 0 and logs the error once to `logs/hook.log`; and the
+ * command line Claude Code runs ends `; exit 0` (src/alerts/install.ts), so even a tokenhud
+ * without this command can't block a prompt.
  *
  * Which alerts: the session's own (on whatever account each was set), and the persistent
  * ones on the account the session runs on, or on another root of its subscription account
@@ -51,10 +58,15 @@ export interface HookOptions {
   env: Env;
   home: string;
   now: number;
-  /** The hook's parent, the Claude Code process (`process.ppid`). */
+  /** The hook's parent (`process.ppid`): the shell its command runs in. */
   ppid: number | null;
+  /** How processes are read here (`procReader()`), to name the Claude Code process above. */
+  readProc: ReadProc | null;
   log: (message: string) => void;
 }
+
+/** SessionEnd's whole budget is 1.5 s: it waits this long for the lock, then skips. */
+export const SESSION_END_WAIT_MS = 300;
 
 /** The context Claude Code caps a field at; longer is saved to a file the agent isn't shown. */
 const MAX_CONTEXT = 9_000;
@@ -128,25 +140,32 @@ function hook(input: string, o: HookOptions): string {
   const mcp = mcpDir(o.env, o.home);
   const path = alertsPath(o.env, o.home);
   if (event.name === "SessionEnd") {
-    endSession(path, mcp, event.session);
+    endSession(path, mcp, event.session, o);
     return "";
   }
   if (event.name !== "PostToolBatch" && event.name !== "UserPromptSubmit") return "";
+  let identity: string | null = null;
+  const sessionRoot = () => {
+    identity ??= sessionIdentity(event, o);
+    return identity;
+  };
   try {
-    recordHookSeen(mcp, event.session, o.now, o.ppid);
+    recordHookSeen(mcp, event.session, o.now, {
+      ppid: o.ppid,
+      claude: () => (o.ppid === null ? null : claudeProcess(o.ppid, o.readProc)),
+      root: sessionRoot,
+    });
   } catch (error) {
     // Delivery goes on; set_alert will only warn that it can't see the hook.
     o.log(`cannot record the session's hook (${(error as NodeJS.ErrnoException).code})`);
   }
   if (event.subagent) return "";
-  const alerts = loadAlerts(path);
+  const { alerts, unreadable } = readAlerts(path);
+  if (unreadable) o.log("alerts.json is unreadable; it is moved aside on the next change");
   if (alerts.length === 0) return "";
   const limits = loadLimitsCache(limitsPath(o.env, o.home));
-  let identity: string | null = null;
-  const onSessionAccount = (alert: Alert) => {
-    identity ??= sessionIdentity(event, o);
-    return currentMembers(limits.groups, alert.account).includes(identity);
-  };
+  const onSessionAccount = (alert: Alert) =>
+    currentMembers(limits.groups, alert.account).includes(sessionRoot());
   const due: Array<{ alert: Alert; window: WindowState; asOf: number }> = [];
   for (const alert of alerts) {
     const mine = alert.session === null ? onSessionAccount(alert) : alert.session === event.session;
@@ -159,7 +178,7 @@ function hook(input: string, o: HookOptions): string {
     }
   }
   if (due.length === 0) return "";
-  const lines = deliver(path, mcp, due, o.now);
+  const lines = deliver(path, mcp, due, o);
   if (lines.length === 0) return "";
   return `${JSON.stringify({
     hookSpecificOutput: { hookEventName: event.name, additionalContext: fit(lines) },
@@ -174,20 +193,25 @@ function deliver(
   path: string,
   mcp: string,
   due: ReadonlyArray<{ alert: Alert; window: WindowState; asOf: number }>,
-  now: number,
+  o: HookOptions,
 ): string[] {
+  const { now } = o;
   const activity = sessionActivity(mcp);
   const lines: string[] = [];
-  editAlerts(path, (alerts) => {
-    const pruned = prune(alerts, now, activity);
-    for (const d of due) {
-      const alert = alerts.find((a) => a.id === d.alert.id);
-      if (alert === undefined || deliveryFor(alert, d.window) !== undefined) continue;
-      alert.delivered.push({ kind: d.window.kind, resets_at: d.window.resets_at, at: now });
-      lines.push(alertMessage(alert, d.window, d.asOf, now));
-    }
-    return pruned || lines.length > 0;
-  });
+  editAlerts(
+    path,
+    (alerts) => {
+      const pruned = prune(alerts, now, activity);
+      for (const d of due) {
+        const alert = alerts.find((a) => a.id === d.alert.id);
+        if (alert === undefined || deliveryFor(alert, d.window) !== undefined) continue;
+        alert.delivered.push({ kind: d.window.kind, resets_at: d.window.resets_at, at: now });
+        lines.push(alertMessage(alert, d.window, d.asOf, now));
+      }
+      return pruned || lines.length > 0;
+    },
+    { now, log: o.log },
+  );
   return lines;
 }
 
@@ -205,17 +229,25 @@ function fit(lines: readonly string[]): string {
   return kept.join("\n");
 }
 
-/** SessionEnd: the session's alerts and its seen file go. */
-function endSession(path: string, mcp: string, session: string): void {
+/**
+ * SessionEnd: the session's alerts and its seen file go. Within Claude Code's 1.5 s budget:
+ * when alerts.json stays locked for 300 ms, its alerts are left to the 24-hour expiry.
+ */
+function endSession(path: string, mcp: string, session: string, o: HookOptions): void {
   removeHookSeen(mcp, session);
   if (!loadAlerts(path).some((a) => a.session === session)) return;
-  editAlerts(path, (alerts) => {
-    const before = alerts.length;
-    for (let i = alerts.length - 1; i >= 0; i--) {
-      if (alerts[i]?.session === session) alerts.splice(i, 1);
-    }
-    return alerts.length !== before;
-  });
+  const done = tryEditAlerts(
+    path,
+    (alerts) => {
+      const before = alerts.length;
+      for (let i = alerts.length - 1; i >= 0; i--) {
+        if (alerts[i]?.session === session) alerts.splice(i, 1);
+      }
+      return alerts.length !== before;
+    },
+    { waitMs: SESSION_END_WAIT_MS, now: o.now, log: o.log },
+  );
+  if (done === null) o.log("SessionEnd: alerts.json stayed locked; its alerts expire in 24 h");
 }
 
 // ── the log ──────────────────────────────────────────────────────────────────────

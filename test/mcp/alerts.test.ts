@@ -5,8 +5,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runHook } from "../../src/alerts/hook.ts";
-import { alertsPath, loadAlerts, recordHookSeen } from "../../src/alerts/store.ts";
-import { HOOK_WARNING, NO_SESSION_WARNING } from "../../src/mcp/alerts.ts";
+import type { ProcId } from "../../src/alerts/proc.ts";
+import { alertsPath, loadAlerts, recordHookSeen, type SeenBy } from "../../src/alerts/store.ts";
+import { HOOK_WARNING, NO_SESSION_WARNING, STALE_WARNING } from "../../src/mcp/alerts.ts";
 import { mcpDir } from "../../src/paths.ts";
 import type { Root } from "../../src/sources/roots.ts";
 import { guard } from "../guard.ts";
@@ -31,8 +32,6 @@ guard();
 afterEach(cleanup);
 
 const OTHER = "00000000-0000-4000-8000-000000000002";
-/** Not the test process's parent, so the server's session comes from its env. */
-const PPID = 999_999;
 const iso = (t: number) => new Date(t).toISOString();
 
 interface Fixture {
@@ -63,7 +62,7 @@ async function serve(
 ) {
   const wiring = wire(f.m, {
     env: { ...f.m.env, ...env },
-    ppid: PPID,
+    claude: null,
     refresh: async (account, maxAgeS) => {
       f.refreshed.push([account, maxAgeS]);
     },
@@ -72,6 +71,13 @@ async function serve(
 }
 
 const stored = (f: Fixture) => loadAlerts(alertsPath(f.m.env, f.m.home));
+
+/** A hook run in `~/.claude` (personal), in Claude Code process `claude`. */
+const seenBy = (f: Fixture, claude: ProcId | null = null): SeenBy => ({
+  ppid: 1,
+  claude: () => claude,
+  root: () => f.personal.identity,
+});
 
 describe("set_alert", () => {
   test("arms an alert on this session's account, refreshed first, and warns without the hook", async () => {
@@ -131,7 +137,7 @@ describe("set_alert", () => {
 
   test("a window already over the threshold is said so, and counts as told for this instance", async () => {
     const f = fixture(85);
-    recordHookSeen(mcpDir(f.m.env, f.m.home), SESSION, NOW - MIN, 1);
+    recordHookSeen(mcpDir(f.m.env, f.m.home), SESSION, NOW - MIN, seenBy(f));
     const { pipe } = await serve(f);
     const { value } = await pipe.call("set_alert", { window: "any", at: 80 });
     expect(value.windows).toEqual([
@@ -187,6 +193,28 @@ describe("set_alert", () => {
       "only Claude Code sessions run the tokenhud hook, so a persistent alert on a Codex account is never told: use scope session",
     ]);
     expect(stored(f).map((a) => a.session)).toEqual([null, null]);
+  });
+
+  test("after /clear, a server follows its Claude Code process to the new session; where it can't, the warning says the id is stale", async () => {
+    const f = fixture();
+    const mcp = mcpDir(f.m.env, f.m.home);
+    const claude = { pid: 4000, start: "777" };
+    // The hook ran for the new session in the same Claude Code process and config dir.
+    recordHookSeen(mcp, OTHER, NOW + MIN, seenBy(f, claude));
+    const followed = wire(f.m, {
+      env: { ...f.m.env, CLAUDE_CODE_SESSION_ID: SESSION },
+      claude,
+      refresh: async () => {},
+    });
+    const told = await (await connect(followed)).call("set_alert", { window: "5h", at: 80 });
+    expect(told.value.delivery).toEqual({ hook_seen_at: iso(NOW + MIN), warning: null });
+    expect(stored(f).map((a) => a.session)).toEqual([OTHER]);
+    // Unverifiable (Windows): the env's id, and a warning that names the real cause.
+    const { pipe } = await serve(f);
+    const stale = await pipe.call("set_alert", { window: "5h", at: 90 });
+    expect(stale.value.delivery).toEqual({ hook_seen_at: null, warning: STALE_WARNING });
+    expect(STALE_WARNING).toContain("after /clear or a resume");
+    expect(stored(f).map((a) => a.session)).toEqual([OTHER, SESSION]);
   });
 
   test("without a session id, a session alert is refused and a persistent one warns", async () => {
@@ -274,7 +302,7 @@ describe("list_alerts and clear_alert", () => {
         transcript_path: path,
         hook_event_name: "PostToolBatch",
       }),
-      { env: f.m.env, home: f.m.home, now: NOW + MIN, ppid: 1, log: () => {} },
+      { env: f.m.env, home: f.m.home, now: NOW + MIN, ppid: 1, readProc: null, log: () => {} },
     );
     expect(told).toContain("[tokenhud alert] 5-hour limit (personal) is at 82%");
     f.refreshed.length = 0;

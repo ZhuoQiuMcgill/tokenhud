@@ -488,7 +488,8 @@ const ALERT_WINDOWS: Readonly<Record<AlertInfo["window"], string>> = {
 
 /**
  * The limit alerts agents set on the account (T29), dim, one a line: the window and its
- * threshold, the scope, when it last fired, then the agent's note as far as it fits.
+ * threshold, the scope, when it last fired, then the agent's note as far as it fits. Short
+ * of rows, one line: `3 alerts armed`.
  */
 function alertsPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
   if (a.alerts.length === 0) return null;
@@ -503,12 +504,17 @@ function alertsPart(a: AccountRow, vm: AccountsVM, width: number): Part | null {
       left: [label(i === 0 ? "alerts" : ""), seg(truncate(text, width - FIELD - 1), "dim")],
     };
   });
+  const n = a.alerts.length;
+  const summary: Line = {
+    left: [label("alerts"), seg(`${n} alert${n === 1 ? "" : "s"} armed`, "dim")],
+  };
+  // Short of rows, one line still says they are there, before the weekly history.
   return {
     id: "alerts",
-    priority: 8,
+    priority: 5.5,
     height: lines.length,
     minHeight: 1,
-    lines: (h) => lines.slice(0, Math.max(1, h)),
+    lines: (h) => (h >= lines.length ? lines : [summary]),
   };
 }
 

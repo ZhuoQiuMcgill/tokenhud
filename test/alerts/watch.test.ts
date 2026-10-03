@@ -75,7 +75,7 @@ async function hourly(o: Run) {
   const wiring = wire(m, {
     env: { ...m.env, CLAUDE_CODE_SESSION_ID: SESSION },
     now: () => clock.now,
-    ppid: 999_999,
+    claude: null,
     refresh: (account, maxAgeS) => mcp.refresh(account, maxAgeS),
   });
   if (o.alert) await wiring.tools.setAlert({ window: "5h", at: 80 });
@@ -110,6 +110,7 @@ async function hourly(o: Run) {
         home: m.home,
         now: t,
         ppid: 1,
+        readProc: null,
         log: (message) => {
           throw new Error(message);
         },
@@ -188,7 +189,7 @@ describe("the 5-minute refresh runs only while an alert is armed", () => {
     const asked: string[] = [];
     const wiring = wire(m, {
       env: { ...m.env, CLAUDE_CODE_SESSION_ID: SESSION },
-      ppid: 999_999,
+      claude: null,
       refresh: async (account) => {
         asked.push(account);
       },
