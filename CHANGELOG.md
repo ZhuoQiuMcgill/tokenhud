@@ -14,8 +14,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
   `100% ~Sun evening` for a weekly window), which left the subtraction to you. It now says
   how long first, rounded up so it never says later than it is, and the time second where
   the card has room: `100% in <2h (12:13)`, `100% in ~3d (~Sun evening)`, `100% now` under
-  a minute. Narrower, the time goes first, then the `in` (`100% <2h`). The countdown is
-  worked out afresh each time the screen is drawn.
+  a minute. Narrower, the time goes first, then the `in` (`100% <2h`); a weekly card drops
+  `this week` from its pace before its time. The countdown is worked out afresh each time
+  the screen is drawn.
 - **The Accounts view shows each window's projection**, under its meter, in the same form.
 
 ### Added

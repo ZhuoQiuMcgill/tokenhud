@@ -297,7 +297,9 @@ function meterLine(name: string, m: LimitMeter | null, width: number, asOf: numb
 /**
  * The pace and its verdict, in the first form that fits `width`: the verdict gives way
  * first (a projection's time, then its `in`; T26), then the pace's basis, then its word
- * (T18). Exported for the drop-order tests.
+ * (T18). A weekly average's `this week` goes before its time, though: the LIMITS note
+ * already says what `avg` is, and the part of the day is worth more. Exported for the
+ * drop-order tests.
  */
 export function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line {
   const line = (pace: 0 | 1 | 2, verdict: VerdictForm): Line => ({
@@ -307,7 +309,18 @@ export function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf:
       verdictSeg(card.verdict, verdict, asOf, ctx.tz),
     ],
   });
-  return firstFit([line(0, 0), line(0, 1), line(0, 2), line(1, 2), line(2, 2)], width);
+  const weeklyTime = card.pace.basis === "window_avg" && card.verdict.kind === "hits";
+  return firstFit(
+    [
+      line(0, 0),
+      ...(weeklyTime ? [line(1, 0)] : []),
+      line(0, 1),
+      line(0, 2),
+      line(1, 2),
+      line(2, 2),
+    ],
+    width,
+  );
 }
 
 function cardBody(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line[] {

@@ -577,13 +577,13 @@ describe("which pace, and how precise (T18)", () => {
     }
   });
 
-  test("105×50: the basis on every card; a weekly time never in minutes", async () => {
+  test("105×50: a weekly time in place of this week, never in minutes", async () => {
     const { text } = await draw(105, 50);
     expect(text).toContain("pace $1.3/h (30m) → 100% in <1.5h (12:59)");
-    // The weekly times don't fit beside the basis: they go first (T26).
-    expect(text).toContain("avg $16/h this week → 100% in ~3d ");
+    // `this week` gives way to the weekly time.
+    expect(text).toContain("avg $16/h → 100% in ~3d (~Thu evening)");
     expect(text).toContain("pace $0/h (30m) → idle · week 83%");
-    expect(text).toContain("avg $6.2/h this week → 100% in <24h ");
+    expect(text).toContain("avg $6.2/h → 100% in <24h (~tomorrow morning)");
     expect(text).not.toMatch(/~\S* ?\d\d:\d\d/);
   });
 
@@ -593,6 +593,13 @@ describe("which pace, and how precise (T18)", () => {
     expect(text).toContain("avg $16/h this week → 100% in ~3d ");
     expect(text).toContain("pace $0/h (30m) → idle · week 83%");
     expect(text).toContain("avg $6.2/h this week → 100% <24h ");
+  });
+
+  test("160×50: as at 105", async () => {
+    const { text } = await draw(160, 50);
+    expect(text).toContain("pace $1.3/h (30m) → 100% in <1.5h (12:59)");
+    expect(text).toContain("avg $16/h → 100% in ~3d (~Thu evening)");
+    expect(text).toContain("avg $6.2/h → 100% in <24h (~tomorrow morning)");
   });
 
   test("80×24, compact: every countdown with its time", async () => {
@@ -662,12 +669,14 @@ describe("the countdown to 100 % (T26)", () => {
     ]);
   });
 
-  test("a weekly window: `~` days, its time a part of a day", () => {
+  test("a weekly window: `~` days, its time a part of a day; `this week` goes before it", () => {
     // NOW is Tue 11:40; 56 h on is Thu 19:40: over two days, so ~3d.
     const avg = { cost: 16.3, tokens: 652_000, basis: "window_avg" as const };
     const c = card({ kind: "hits", at: NOW + 56 * HOUR, rough: "~Thu evening" }, avg);
     expect(forms(c)).toEqual([
       "avg $16/h this week → 100% in ~3d (~Thu evening)",
+      // The LIMITS note says what avg is; the part of the day is worth more.
+      "avg $16/h → 100% in ~3d (~Thu evening)",
       "avg $16/h this week → 100% in ~3d",
       "avg $16/h this week → 100% ~3d",
       "avg $16/h → 100% ~3d",
