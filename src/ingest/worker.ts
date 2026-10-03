@@ -5,6 +5,7 @@
 //
 // With limits on, it also runs the limits schedule (src/limits/service.ts): the first
 // round after the first scan, so the UI thread never waits on the network.
+import { writeFileSync } from "node:fs";
 import { liveConfig } from "../config.ts";
 import { recordCaptureEvents } from "../limits/events.ts";
 import { manualLinks } from "../limits/groups.ts";
@@ -41,6 +42,21 @@ process.on("unhandledRejection", fatal);
 export const limitsOverrides: Pick<LimitsServiceOptions, "fetchClaude" | "fetchCodex" | "timing"> =
   {};
 
+/**
+ * Tests only, and only under TOKENHUD_TEST=1: with TOKENHUD_TEST_HOLD_PASS naming a file,
+ * the first pass creates that file once it has read the transcripts, before it writes
+ * anything, and then waits for good. A test can then quit while a pass is under way, on
+ * any machine and with any history (T22).
+ */
+function holdPass(): (() => Promise<void>) | null {
+  const file = process.env.TOKENHUD_TEST === "1" ? process.env.TOKENHUD_TEST_HOLD_PASS : "";
+  if (!file) return null;
+  return () => {
+    writeFileSync(file, "");
+    return new Promise<void>(() => {});
+  };
+}
+
 function limitsService(live: IngestEngine, options: LimitsWorkerOptions, worker: WorkerOptions) {
   // Links as config.json has them now: groups are written only from current links.
   const read =
@@ -69,9 +85,11 @@ function limitsService(live: IngestEngine, options: LimitsWorkerOptions, worker:
 function start(workerOptions: WorkerOptions): void {
   if (stopping) return;
   const { limits: limitsOptions, ...options } = workerOptions;
+  const hold = holdPass();
   try {
     engine = IngestEngine.open({
       ...options,
+      ...(hold === null ? {} : { beforeWrite: hold }),
       log: (level, message) => post({ type: "log", level, message }),
       onChanged: (event) => post(event),
       onPass: (report) => post({ type: "pass", report }),

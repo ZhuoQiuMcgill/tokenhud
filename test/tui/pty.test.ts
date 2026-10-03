@@ -2,10 +2,9 @@
 // `script`), driven by keystrokes, its screen read back through a small VT emulator.
 // Linux only; skipped where `script` isn't available.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { guard } from "../guard.ts";
-import { claudeLine } from "../ingest/helpers.ts";
 import { CLI, type Home, makeHome, type PtyRun, ptyAvailable, runInPty } from "./pty/driver.ts";
 
 guard();
@@ -27,26 +26,6 @@ function restored(run: PtyRun): void {
 const exitCode = (run: PtyRun) => Number(/EXIT=(\d+)/.exec(run.output())?.[1]);
 /** Starts for the q-at-the-first-frame check; before T22's fix, 93 in 100 lost the q. */
 const QUIT_RUNS = 20;
-/** makeHome's 40 lines and `addHistory(home, 100, 2000)`'s. */
-const HISTORY_RECORDS = 40 + 100 * 2000;
-
-/**
- * Adds `files` synthetic transcripts of `lines` lines (about 200 bytes each) to `home`:
- * line i has input 1000 + i and output 200, the lines a minute apart up to now.
- */
-function addHistory(home: Home, files: number, lines: number): void {
-  const now = Date.now();
-  for (let f = 0; f < files; f++) {
-    let text = "";
-    for (let i = 0; i < lines; i++) {
-      const ts = new Date(now - (lines - i) * 60_000 - f * 1000).toISOString();
-      text += claudeLine(`BIG${f}-${i}`, `BIG${f}-${i}`, 1000 + i, 200, { ts });
-    }
-    const id = `00000000-0000-4000-8000-${String(100 + f).padStart(12, "0")}`;
-    writeFileSync(join(home.projects, `${id}.jsonl`), text);
-  }
-}
-
 /** The store's all-time totals, read without ingesting (`tokenhud json usage`). */
 function storedTotals(home: Home): { records: number; input: number; output: number } {
   const out = Bun.spawnSync([BUN, CLI, "json", "usage", "--period", "all"], { env: home.env });
@@ -123,16 +102,17 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
   }, 60_000);
 
   // T22: quitting waited up to 5 s for the ingest Worker's pass, and a large history's cold
-  // scan takes seconds (about 2 s for this 40 MB one). Now q quits within 1 s and the exit
-  // cuts the pass short; the next start reads everything again and counts each line once.
-  test("q during a large cold scan quits within 1 s; the next start counts every line once", async () => {
+  // scan takes seconds. Now q quits within 1 s and the exit cuts the pass short; the next
+  // start reads everything again and counts each line once. The Worker's test hold
+  // (TOKENHUD_TEST_HOLD_PASS) keeps the pass under way until the quit, on any machine.
+  test("q while a pass is under way quits within 1 s; the next start counts every line once", async () => {
     const home = makeHome();
     try {
-      addHistory(home, 100, 2000);
-      const cut = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
+      const held = join(home.dir, "pass-held");
+      const env = { ...home.env, TOKENHUD_TEST_HOLD_PASS: held };
+      const cut = runInPty(`${BUN} ${CLI}; ${AFTER}`, env);
       try {
-        // Ingest starts at the first frame with data: its scan has hardly begun.
-        await cut.whenSeen(() => cut.vt.text().includes(" SPEND"), "the first frame with data");
+        await cut.waitFor(() => existsSync(held), "the pass to read and hold before its write");
         const sent = performance.now();
         cut.send("q");
         await cut.whenSeen(() => /EXIT=\d+/.test(cut.output()), "the quit", 5000);
@@ -141,24 +121,18 @@ describe.skipIf(!ptyAvailable())("under a real pty", () => {
       } finally {
         cut.kill();
       }
-      // The pass was cut short: it writes the store once, at its end.
-      expect(storedTotals(home).records).toBeLessThan(HISTORY_RECORDS);
+      expect(storedTotals(home)).toEqual({ records: 0, input: 0, output: 0 });
       const full = runInPty(`${BUN} ${CLI}; ${AFTER}`, home.env);
       try {
-        await full.waitFor(LIVE, "the cold scan", 30_000);
+        await full.waitFor(LIVE, "the first pass");
         full.send("q");
         await full.exited;
         expect(exitCode(full)).toBe(0);
       } finally {
         full.kill();
       }
-      expect(storedTotals(home)).toEqual({
-        records: HISTORY_RECORDS,
-        // makeHome's 40 lines: input 1000–1039; 100 files of 2000 lines: input 1000–2999.
-        input: 40 * 1000 + 780 + 100 * (2000 * 1000 + 1_999_000),
-        // 200 output tokens a line.
-        output: HISTORY_RECORDS * 200,
-      });
+      // makeHome's 40 lines: input 1000–1039 (40 × 1000 + 780), output 200 each.
+      expect(storedTotals(home)).toEqual({ records: 40, input: 40_780, output: 8000 });
     } finally {
       home.remove();
     }

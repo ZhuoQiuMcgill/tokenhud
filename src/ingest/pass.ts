@@ -128,6 +128,8 @@ export interface PassContext {
   codexSessions?: Readonly<Record<string, readonly string[]>>;
   /** Codex account identities to re-key in this pass (a full pass over their roots). */
   rekey?: ReadonlySet<string>;
+  /** Tests: awaited once the transcripts are read, before anything is written. */
+  beforeWrite?: () => Promise<void>;
 }
 
 interface Event {
@@ -325,6 +327,7 @@ export async function runPass(
     log: ctx.log,
     context: { codexSessions: codexSessionIndex(files, ctx.codexSessions) },
   });
+  await ctx.beforeWrite?.();
 
   // Apply in cc-usage's file order.
   const order = results

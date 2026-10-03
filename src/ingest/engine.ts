@@ -104,6 +104,11 @@ export interface EngineOptions {
    * (the 60 s sweep catches it later).
    */
   watch?: typeof watch;
+  /**
+   * Tests: awaited in every pass once the transcripts are read, before the store is written
+   * (worker.ts's TOKENHUD_TEST_HOLD_PASS holds a pass there).
+   */
+  beforeWrite?: () => Promise<void>;
 }
 
 /** Transcript directories of a root: Claude's `projects`; Codex's active and archived sessions. */
@@ -402,6 +407,9 @@ export class IngestEngine {
       log: this.#log,
       codexSessions: this.#codexSessions,
       ...(rekey === undefined ? {} : { rekey }),
+      ...(this.#options.beforeWrite === undefined
+        ? {}
+        : { beforeWrite: this.#options.beforeWrite }),
     };
   }
 
