@@ -100,6 +100,11 @@ async function compile(target: ReleaseTarget, bun: string | undefined, outfile: 
     // `main` into `f` in every crash report. Mangling saves about a fifth of our own JS (420
     // bytes at T1), which is noise next to the ~80 MB Bun runtime in the binary.
     minify: { whitespace: true, syntax: true, identifiers: false },
+    // Each command's modules go in chunks of their own, loaded when the command runs: one
+    // bundle made every start parse all of tokenhud (the TUI, the MCP SDK), about 50 ms on
+    // Linux, which `tokenhud hook`, run by Claude Code after every batch of tool calls,
+    // can't afford (T29: under 60 ms in all). With chunks, `--version` takes about 15 ms.
+    splitting: true,
     // With `compile`, this embeds a zstd-compressed sourcemap in the binary (the API form of
     // `--compile --sourcemap`), so stack frames point at src/*.ts lines, not the bundle.
     sourcemap: "linked",
