@@ -27,14 +27,14 @@ exports[`105×50 view 1 (overview) 1`] = `
   tokens         7.5M        13.1M       147.6M       315.5M                                             
                                                                                                          
  ACTIVITY · cost per 15 min · peak $1.47 at Mon 21:30                            ◀ a  5h  [24h]  7d  d ▶ 
- $1.47                                        █                                             ▃ ▃ ▃ ▃      
-                                              █                                             █ █ █ █      
-                                              █                             ▂               █ █ █ █      
- $0.73                                        █                             █               █ █ █ █      
-                                              █                            ▄█           ▁▃  █ █ █ █  ▁   
-                                              █                            ██           ██  █ █ █ █  █▁  
-     0                                       ▂█▃                           ██           ██  █ █ █ █  ██  
-       -24h                    -18h                    -12h                   -6h                   now  
+ $1.47                                        █                                              ▃ ▃ ▃ ▃     
+                                              █                                              █ █ █ █     
+                                              █                              ▂               █ █ █ █     
+ $0.73                                        █                              █               █ █ █ █     
+                                              █                             ▄█           ▁▃  █ █ █ █  ▁  
+                                              █                             ██           ██  █ █ █ █  █▁▁
+     0                                       ▂█▃                            ██           ██  █ █ █ █  ███
+       -24h                    -18h                     -12h                    -6h                   now
                                                                                                          
  TOP MODELS · 24h                                                                                        
  Opus 4.8                    $7.66  76% ━━━━━━                                                           
@@ -242,10 +242,10 @@ exports[`120×45 view 1 (overview) 1`] = `
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
  $0.77                              █                     ▅         █  ██ ██       Mystery 9        unpriced   0% ━━━━━━
-                                    █                     █▆        █  ██ ██  ▁                                         
-                                    █                     ██        █  ██ ██  █    peak $1.53 at Mon 21:25              
-     0                              █▃                    ██        █  ██ ██ ▇█                                         
-       -24h              -18h              -12h             -6h             now                                         
+                                    █                     █▆        █  ██ ██  ▁▁                                        
+                                    █                     ██        █  ██ ██  ██   peak $1.53 at Mon 21:25              
+     0                              █▃                    ██        █  ██ ██ ▇██                                        
+       -24h              -18h              -12h              -6h             now                                        
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
   Tue 09:30  work      5-hour limit reached  —                                                                          
@@ -553,7 +553,7 @@ exports[`160×50 view 1 (overview) 1`] = `
                                               █                            ▄█           ▁▃  █ █ █ █  ▁                                                          
                                               █                            ██           ██  █ █ █ █  █▁   peak $1.47 at Mon 21:30                               
      0                                       ▂█▃                           ██           ██  █ █ █ █  ██                                                         
-       -24h                    -18h                    -12h                   -6h                   now                                                         
+       -24h                    -18h                    -12h                    -6h                  now                                                         
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          
   Tue 09:30  work      5-hour limit reached  —                                                                                                                  
@@ -954,14 +954,14 @@ exports[`colours the Overview at 120×45 in the dark theme, by role 1`] = `
 [mute/bg]  tokens[tokens|heat4/bg]         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M[-/bg]                                  
 [-/bg]                                                                                                                        
 [head/bg/b] ACTIVITY · cost per 20 min[-/bg]                             [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b][24h][-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] [-/bg]  [head/bg/b] TOP MODELS · 24h[-/bg]                     
-[-/bg] [dim/bg]$1.53[-/bg] [cost|mid/bg]                             █                                  ▁▁ ▁▁   [-/bg]    [fg/bg]Opus 4.8       [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[empty/bg]━
-[-/bg]       [cost|mid/bg]                             █                                  ██ ██   [-/bg]    [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
-[-/bg]       [cost|mid/bg]                             █                               ▃  ██ ██   [-/bg]    [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
-[-/bg] [dim/bg]$0.77[-/bg] [cost|mid/bg]                             █                     ▅         █  ██ ██   [-/bg]    [fg/bg]Mystery 9      [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [empty/bg]━━━━━━
-[-/bg]       [cost|mid/bg]                             █                     █▆        █  ██ ██  ▁[-/bg]                                         
-[-/bg]       [cost|mid/bg]                             █                     ██        █  ██ ██  █[-/bg]   [dim/bg] peak $1.53 at Mon 21:25[-/bg]              
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                             █▃                    ██        █  ██ ██ ▇█[-/bg]                                         
-[-/bg]       [dim/bg]-24h[-/bg]              [dim/bg]-18h[-/bg]              [dim/bg]-12h[-/bg]             [dim/bg]-6h[-/bg]             [dim/bg]now[-/bg]                                         
+[-/bg] [dim/bg]$1.53[-/bg] [cost|mid/bg]                             █                                  ▁▁ ▁▁    [-/bg]   [fg/bg]Opus 4.8       [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[empty/bg]━
+[-/bg]       [cost|mid/bg]                             █                                  ██ ██    [-/bg]   [fg/bg]gpt-5.6-sol    [-/bg] [cost|mid/bg]    $1.42[-/bg] [mute/bg] 14%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[-/bg]       [cost|mid/bg]                             █                               ▃  ██ ██    [-/bg]   [fg/bg]gpt-5.5        [-/bg] [cost|mid/bg]    $1.01[-/bg] [mute/bg] 10%[-/bg] [cost|mid/bg]━[empty/bg]━━━━━
+[-/bg] [dim/bg]$0.77[-/bg] [cost|mid/bg]                             █                     ▅         █  ██ ██    [-/bg]   [fg/bg]Mystery 9      [-/bg] [dim/bg] unpriced[-/bg] [mute/bg]  0%[-/bg] [empty/bg]━━━━━━
+[-/bg]       [cost|mid/bg]                             █                     █▆        █  ██ ██  ▁▁[-/bg]                                        
+[-/bg]       [cost|mid/bg]                             █                     ██        █  ██ ██  ██[-/bg]  [dim/bg] peak $1.53 at Mon 21:25[-/bg]              
+[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                             █▃                    ██        █  ██ ██ ▇██[-/bg]                                        
+[-/bg]       [dim/bg]-24h[-/bg]              [dim/bg]-18h[-/bg]              [dim/bg]-12h[-/bg]              [dim/bg]-6h[-/bg]             [dim/bg]now[-/bg]                                        
 [-/bg]                                                                                                                        
 [head/bg/b] LIMIT EVENTS · 7 days[-/bg]                                                                                                  
 [dim/bg]  Tue 09:30  [fg/bg]work      [high/bg/b]5-hour limit reached  [mute/bg]—[-/bg]                                                                          
@@ -1007,14 +1007,14 @@ exports[`colours the light theme paints the same frame in its own roles 1`] = `
 [mute/bg]  tokens[tokens/bg]         7.5M        13.1M       147.6M       315.5M[-/bg]                                             
 [-/bg]                                                                                                         
 [head/bg/b] ACTIVITY · cost per 15 min[dim/bg] · peak $1.47 at Mon 21:30[-/bg]                            [dim/bg]◀ a [mute/bg] 5h [-/bg] [head/tab/b][24h][-/bg] [mute/bg] 7d [dim/bg] d ▶[-/bg] 
-[-/bg] [dim/bg]$1.47[-/bg] [cost|mid/bg]                                       █                                             ▃ ▃ ▃ ▃    [-/bg]  
-[-/bg]       [cost|mid/bg]                                       █                                             █ █ █ █    [-/bg]  
-[-/bg]       [cost|mid/bg]                                       █                             ▂               █ █ █ █    [-/bg]  
-[-/bg] [dim/bg]$0.73[-/bg] [cost|mid/bg]                                       █                             █               █ █ █ █    [-/bg]  
-[-/bg]       [cost|mid/bg]                                       █                            ▄█           ▁▃  █ █ █ █  ▁ [-/bg]  
-[-/bg]       [cost|mid/bg]                                       █                            ██           ██  █ █ █ █  █▁[-/bg]  
-[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                                      ▂█▃                           ██           ██  █ █ █ █  ██[-/bg]  
-[-/bg]       [dim/bg]-24h[-/bg]                    [dim/bg]-18h[-/bg]                    [dim/bg]-12h[-/bg]                   [dim/bg]-6h[-/bg]                   [dim/bg]now[-/bg]  
+[-/bg] [dim/bg]$1.47[-/bg] [cost|mid/bg]                                       █                                              ▃ ▃ ▃ ▃     
+[-/bg]       [cost|mid/bg]                                       █                                              █ █ █ █     
+[-/bg]       [cost|mid/bg]                                       █                              ▂               █ █ █ █     
+[-/bg] [dim/bg]$0.73[-/bg] [cost|mid/bg]                                       █                              █               █ █ █ █     
+[-/bg]       [cost|mid/bg]                                       █                             ▄█           ▁▃  █ █ █ █  ▁  
+[-/bg]       [cost|mid/bg]                                       █                             ██           ██  █ █ █ █  █▁▁
+[-/bg]     [dim/bg]0[-/bg] [cost|mid/bg]                                      ▂█▃                            ██           ██  █ █ █ █  ███
+[-/bg]       [dim/bg]-24h[-/bg]                    [dim/bg]-18h[-/bg]                     [dim/bg]-12h[-/bg]                    [dim/bg]-6h[-/bg]                   [dim/bg]now
 [-/bg]                                                                                                         
 [head/bg/b] TOP MODELS · 24h[-/bg]                                                                                        
 [-/bg] [fg/bg]Opus 4.8               [-/bg] [cost|mid/bg]    $7.66[-/bg] [mute/bg] 76%[-/bg] [cost|mid/bg]━━━━━[rule|empty/bg]━[-/bg]                                                           

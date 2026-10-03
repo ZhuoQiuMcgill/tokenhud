@@ -621,9 +621,12 @@ function spendSection(vm: OverviewVM, ctx: ViewContext): Section {
 // ── activity and top models ────────────────────────────────────────────────────────
 
 /**
- * The series summed into the most columns that fit `width`: the fewest neighbouring
- * buckets per column that divide them evenly. 288 five-minute buckets make 96 columns of
- * 15 minutes in 98 cells, and 72 of 20 minutes in 73.
+ * The series summed into the most columns that fit `width` at a cell each: the fewest
+ * neighbouring buckets per column that divide them evenly, so the finest whole bucket that
+ * fits. 288 five-minute buckets make 96 columns of 15 minutes in 98 cells, and 72 of 20
+ * minutes in 73. The chart spreads the columns over the whole width (`columnEdges`), and a
+ * finer bucket on narrower bars beats a coarser one on wider bars: 168 hours make 84
+ * columns of 2 h, 1 to 2 cells wide, in 150 cells, and are drawn by the hour from 168.
  */
 export function fitBuckets(
   values: readonly number[],

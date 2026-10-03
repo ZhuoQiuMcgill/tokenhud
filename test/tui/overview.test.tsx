@@ -6,11 +6,23 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Config } from "../../src/config.ts";
 import { Frame } from "../../src/tui/app.tsx";
+import { chartColumns, columnEdges, type XLabel } from "../../src/tui/components/vchart.ts";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
 import { theme } from "../../src/tui/theme.ts";
 import type { AccountsState } from "../../src/tui/views/accounts.tsx";
-import { fitLabels, listedEvents, type OverviewState } from "../../src/tui/views/overview.tsx";
-import type { AccountInfo, LimitCard, OverviewVM, ViewModels } from "../../src/tui/vm/types.ts";
+import {
+  fitBuckets,
+  fitLabels,
+  listedEvents,
+  type OverviewState,
+} from "../../src/tui/views/overview.tsx";
+import type {
+  AccountInfo,
+  ActivityWindow,
+  LimitCard,
+  OverviewVM,
+  ViewModels,
+} from "../../src/tui/vm/types.ts";
 import { guard } from "../guard.ts";
 import { fixtureConfig, NOW, TZ } from "./fixture.ts";
 import { MCP, makeOverviewFixture, type OverviewFixture } from "./overview-fixture.ts";
@@ -167,6 +179,187 @@ describe("what each size keeps (limits first)", () => {
     expect(text).toContain(" LIMITS");
     expect(text.split("╰─").length - 1).toBe(6);
     expect(text).not.toContain(" SPEND");
+  });
+});
+
+// ── the activity chart's width (T24) ───────────────────────────────────────────────
+
+// A user's wide terminal drew 24 h across the section and 7 d over about 60 % of it: 84
+// columns of 2 h took a cell each. The columns now fill the plot, whatever their number.
+describe("the activity chart fills its width (T24)", () => {
+  /** Each window's finest buckets, as the view model holds them (ACTIVITY): count, minutes. */
+  const FINEST: Readonly<Record<ActivityWindow, readonly [number, number]>> = {
+    "5h": [300, 1],
+    "24h": [288, 5],
+    "7d": [168, 60],
+  };
+  /** Positive whole amounts, so every column draws and sums are exact. */
+  const series = (n: number) => Array.from({ length: n }, (_, i) => 1 + ((i * 37) % 11));
+  const sum = (values: readonly number[]) => values.reduce((a, b) => a + b, 0);
+  const widthsOf = (edges: readonly number[]) =>
+    edges.slice(1).map((e, i) => e - (edges[i] as number));
+
+  /** The y labels and their gap, before the plot. */
+  const CHART_LABELS = 7;
+  /** A chart alone, `plot` cells of bars after its labels. */
+  async function chart(values: readonly number[], plot: number, xLabels: XLabel[] = []) {
+    const width = CHART_LABELS + plot;
+    // One spare row: OpenTUI's test renderer drops a 1-row frame's box-drawing characters.
+    const setup = await render(
+      <box width={width} height={10} flexDirection="column">
+        <th-vchart
+          values={values}
+          xLabels={xLabels}
+          theme={theme("dark")}
+          width={width}
+          height={9}
+        />
+      </box>,
+      width,
+      10,
+    );
+    return chars(setup).split("\n").slice(0, 9);
+  }
+
+  // By hand: the finest bucket that divides the window evenly with at most a column a
+  // cell (as before T24), and how many columns take floor(plot / columns) + 1 cells.
+  const CASES: [ActivityWindow, plot: number, columns: number, minutes: number, wide: number][] = [
+    ["5h", 60, 60, 5, 0],
+    ["5h", 84, 75, 4, 9],
+    ["5h", 100, 100, 3, 0],
+    ["5h", 150, 150, 2, 0],
+    ["5h", 200, 150, 2, 50],
+    ["24h", 60, 48, 30, 12],
+    ["24h", 84, 72, 20, 12],
+    ["24h", 100, 96, 15, 4],
+    ["24h", 150, 144, 10, 6],
+    ["24h", 200, 144, 10, 56],
+    ["7d", 60, 56, 180, 4],
+    ["7d", 84, 84, 120, 0],
+    ["7d", 100, 84, 120, 16],
+    ["7d", 150, 84, 120, 66],
+    // 7 d by the hour only once 168 columns fit.
+    ["7d", 200, 168, 60, 32],
+  ];
+
+  test.each(CASES)(
+    "%s in %i cells: %i columns of %i min, the plot filled, bars 1 cell apart at most",
+    async (window, plot, columns, minutes, wide) => {
+      const [n, finest] = FINEST[window];
+      const values = series(n);
+      const plotted = fitBuckets(values, plot);
+      expect(plotted.values).toHaveLength(columns);
+      expect(plotted.group * finest).toBe(minutes);
+      const layout = chartColumns(plotted.values, plot);
+      expect(layout.columns).toEqual(plotted.values);
+      expect(sum(layout.columns)).toBe(sum(values));
+      expect(layout.edges[0]).toBe(0);
+      expect(layout.edges[columns]).toBe(plot);
+      const widths = widthsOf(layout.edges);
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+      expect(widths.filter((w) => w > Math.floor(plot / columns))).toHaveLength(wide);
+
+      // As drawn: the bottom row is bars from the first plot cell to the last, and the
+      // top row, with every other column at the peak, shows each column's width.
+      const rows = await chart(values, plot);
+      expect((rows[8] as string).slice(CHART_LABELS)).toMatch(new RegExp(`^[▁-█]{${plot}}$`));
+      const alternate = plotted.values.map((_, i) => (i % 2 === 0 ? 2 : 1));
+      const top = ((await chart(alternate, plot))[0] as string).slice(CHART_LABELS);
+      const drawn = (top.match(/█+| +/g) ?? []).map((run) => run.length);
+      expect(drawn).toEqual(widths);
+    },
+  );
+
+  test("a run of empty buckets keeps its true time span, to within a cell", async () => {
+    for (const [columns, plot] of [
+      [84, 150],
+      [144, 200],
+      [75, 84],
+      [56, 60],
+    ] as const) {
+      const edges = columnEdges(columns, plot);
+      for (let from = 0; from < columns; from++) {
+        for (let to = from + 1; to <= columns; to++) {
+          const cells = (edges[to] as number) - (edges[from] as number);
+          expect(Math.abs(cells - ((to - from) * plot) / columns)).toBeLessThan(1);
+        }
+      }
+    }
+    // As drawn: 7 d in 150 cells, a day with no usage (12 columns of 2 h from the 25th)
+    // is 22 blank cells, 12 × 150 / 84 = 21.4 rounded by where it falls.
+    const hours = series(168).map((v, h) => (h >= 48 && h < 72 ? 0 : v));
+    const plotted = fitBuckets(hours, 150);
+    expect(plotted.values.slice(24, 36)).toEqual(Array(12).fill(0));
+    const bottom = ((await chart(plotted.values, 150))[8] as string).slice(CHART_LABELS);
+    expect(bottom.indexOf(" ")).toBe(42);
+    expect(bottom.slice(42).search(/[^ ]/)).toBe(22);
+    expect(bottom.trimEnd()).toHaveLength(150);
+  });
+
+  test("x ticks start at the column they fall in; now ends at the plot's last cell", async () => {
+    const days = ["-7d", "-6d", "-5d", "-4d", "-3d", "-2d", "-1d", "now"];
+    const labels = days.map((text, i) => ({ at: i / 7, text }));
+    // 84 columns of 2 h in 150 cells: a day is 12 columns, column 12k starts at
+    // floor(12k × 150 / 84).
+    const ticks = (await chart(Array(84).fill(1), 150, labels))[8] as string;
+    const at = days.map((d) => ticks.indexOf(d) - CHART_LABELS);
+    expect(at).toEqual([0, 21, 42, 64, 85, 107, 128, 147]);
+    expect(ticks.trimEnd()).toHaveLength(CHART_LABELS + 150);
+  });
+
+  test("at the user's sizes every window's chart ends where the section does", async () => {
+    // The chart's width: the screen's, or what the top models beside it leave. The
+    // fixture spends in every window's last bucket, so its bar ends the plot.
+    for (const [width, height, edge] of [
+      [160, 50, 103],
+      [120, 45, 80],
+      [105, 50, 105],
+    ] as const) {
+      const ends: Record<string, { bars: number; now: number }> = {};
+      for (const [window, press] of [
+        ["5h", "a"],
+        ["24h", null],
+        ["7d", "d"],
+      ] as const) {
+        const c = controller();
+        if (press !== null) c.key(key(press));
+        const lines = (await frame(width, height, c)).text.split("\n");
+        const at = lines.findIndex((l) => /^ {7}-(5h|24h|7d) /.test(l));
+        const bottom = (lines[at - 1] as string).slice(0, edge + 1);
+        ends[window] = {
+          bars: bottom.trimEnd().length,
+          now: (lines[at] as string).indexOf("now") + 3,
+        };
+      }
+      const end = { bars: edge, now: edge };
+      expect({ width, ends }).toEqual({ width, ends: { "5h": end, "24h": end, "7d": end } });
+    }
+  });
+});
+
+// T24 AC: each window at the user's sizes. The 24 h frames are the sizes' own, above.
+describe.each(["5h", "7d"] as const)("the %s chart", (window) => {
+  const turned = (config = fixtureConfig()) => {
+    const c = controller(config);
+    c.key(key(window === "5h" ? "a" : "d"));
+    expect((c.getState().viewState.overview as OverviewState).window).toBe(window);
+    return c;
+  };
+
+  test.each([
+    [105, 50],
+    [120, 45],
+    [160, 50],
+    [80, 24],
+  ] as const)("%i×%i: snapshot, and every number on screen whole", async (width, height) => {
+    const vm = views.overview as OverviewVM;
+    const { text } = await frame(width, height, turned());
+    expectOverviewWhole(text, vm, width, fixtureConfig(), window);
+    expect(text).toMatchSnapshot();
+    const tokensOnly = fixtureConfig({ show_cost: false });
+    const hidden = (await frame(width, height, turned(tokensOnly))).text;
+    expect(hidden).not.toContain("$");
+    expectOverviewWhole(hidden, vm, width, tokensOnly, window);
   });
 });
 
