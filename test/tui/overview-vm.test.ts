@@ -10,9 +10,22 @@ import type { AccountLimits, LimitWindow } from "../../src/limits/index.ts";
 import { Zone } from "../../src/query/tz.ts";
 import type { UsageRow } from "../../src/store/store.ts";
 import { ACTIVITY, activityRange, limitCard } from "../../src/tui/vm/overview.ts";
-import type { AccountInfo, LimitCard, OverviewVM } from "../../src/tui/vm/types.ts";
+import {
+  ACTIVITY_WINDOWS,
+  type AccountInfo,
+  type LimitCard,
+  type OverviewVM,
+  type TopModel,
+} from "../../src/tui/vm/types.ts";
 import { guard } from "../guard.ts";
-import { bundledTable, FIXTURE_ACCOUNTS, NOW } from "./fixture.ts";
+import {
+  bundledTable,
+  FIXTURE_ACCOUNTS,
+  type Fixture,
+  fixtureViews,
+  makeFixtureStore,
+  NOW,
+} from "./fixture.ts";
 import {
   CAPTURES,
   MCP,
@@ -122,27 +135,179 @@ describe("activity", () => {
 });
 
 describe("top models", () => {
-  test("over the 24 h chart: at most 5, by cost with cost shares, and by tokens with token shares", () => {
-    const day = activityRange(NOW, "24h");
-    const total = oracle(day.from, day.to);
-    expect(vm.topModels.length).toBeGreaterThan(0);
-    expect(vm.topModels.length).toBeLessThanOrEqual(5);
-    for (const m of vm.topModels) {
-      const tier = m.tier === "fast" ? 1 : 0;
-      const want = oracle(day.from, day.to, (r) => r.model === m.model && r.tier === tier);
-      close(m.cost, want.cost);
-      close(m.share, want.cost / total.cost);
+  test.each([...ACTIVITY_WINDOWS])(
+    "over the %s chart's range: the top 5 by cost with cost shares, and by tokens with token shares",
+    (window) => {
+      const range = activityRange(NOW, window);
+      const total = oracle(range.from, range.to);
+      // Every model and tier used in the range, summed on its own.
+      const used = new Set(
+        rows
+          .filter((r) => r.ts >= range.from && r.ts < range.to)
+          .map((r) => `${r.model}/${r.tier}`),
+      );
+      const all = [...used].map((id) => {
+        const [model, tier] = id.split("/") as [string, string];
+        const sum = oracle(
+          range.from,
+          range.to,
+          (r) => r.model === model && r.tier === Number(tier),
+        );
+        return { id, ...sum };
+      });
+      const id = (m: TopModel) => `${m.model}/${m.tier === "fast" ? 1 : 0}`;
+      const { byCost, byTokens } = vm.topModels[window];
+      const ranked = (by: "cost" | "tokens") =>
+        [...all]
+          .sort((a, b) => (by === "cost" ? b.cost - a.cost : 0) || b.tokens - a.tokens)
+          .slice(0, 5)
+          .map((m) => m.id);
+      expect(byCost.map(id)).toEqual(ranked("cost"));
+      expect(byTokens.map(id)).toEqual(ranked("tokens"));
+      for (const m of byCost) {
+        const want = all.find((x) => x.id === id(m));
+        close(m.cost, want?.cost ?? Number.NaN);
+        expect(m.tokens).toBe(want?.tokens ?? Number.NaN);
+        close(m.share, (want?.cost ?? Number.NaN) / total.cost);
+      }
+      for (const m of byTokens) {
+        const want = all.find((x) => x.id === id(m));
+        close(m.cost, want?.cost ?? Number.NaN);
+        expect(m.tokens).toBe(want?.tokens ?? Number.NaN);
+        close(m.share, (want?.tokens ?? Number.NaN) / total.tokens);
+      }
+    },
+  );
+
+  test("the fixture's windows rank different models, so switching shows", () => {
+    const names = (w: "5h" | "24h" | "7d") => vm.topModels[w].byCost.map((m) => m.name).join();
+    expect(new Set([names("5h"), names("24h"), names("7d")]).size).toBe(3);
+  });
+});
+
+// T27: each window's lists against sums worked by hand from a few rows. Rates per 1M tokens
+// (pricing.json), input/output: Opus 4.8 and 4.7 $5/$25, Sonnet 4.6 and 4.5 $3/$15,
+// Haiku 4.5 $1/$5, Sonnet 5 $2/$10. The charts' ranges (worked out above): 5h from
+// 10:41Z, 24h from Sep 28 15:45Z, 7d from Sep 22 16:00Z, each to the bucket holding now.
+describe("top models per window, worked by hand", () => {
+  const account = FIXTURE_ACCOUNTS[0];
+  const DAY = 24 * HOUR;
+  const row = (n: number, model: string, ago: number, inp: number, outp: number): UsageRow => ({
+    key: BigInt(n) * 0x9e3779b9n,
+    ...account,
+    ts: NOW - ago,
+    model,
+    inp,
+    outp,
+    cr: 0,
+    cc: 0,
+    e5: null,
+    e1: null,
+    tier: 0,
+  });
+  const hand = [
+    row(1, "claude-sonnet-4-6", 30 * MIN, 100_000, 10_000), // $0.30 + $0.15 = $0.45
+    row(2, "claude-haiku-4-5", 2 * HOUR, 100_000, 20_000), // $0.10 + $0.10 = $0.20
+    row(3, "claude-haiku-4-5", 4 * HOUR, 100_000, 20_000), // $0.20
+    // 10:40Z: a minute before the 5h chart begins.
+    row(4, "claude-sonnet-4-5", 5 * HOUR, 10_000, 0), // $0.03
+    row(5, "claude-opus-4-8", 10 * HOUR, 50_000, 10_000), // $0.25 + $0.25 = $0.50
+    row(6, "claude-opus-4-8", 3 * DAY, 100_000, 40_000), // $0.50 + $1.00 = $1.50
+    row(7, "claude-sonnet-4-6", 5 * DAY, 100_000, 0), // $0.30
+    row(8, "claude-opus-4-7", 6 * DAY, 2_000, 0), // $0.01
+    row(9, "claude-sonnet-5", 6 * DAY, 1_000, 0), // $0.002
+    // Sep 22 15:50Z: within 7 × 24 h of now, but before the 7d chart's first hour.
+    row(10, "claude-sonnet-4-6", 7 * DAY - 10 * MIN, 1_000_000, 0), // $3.00, in no window
+    row(11, "claude-opus-4-8", 8 * DAY, 1_000_000, 0), // $5.00, in no window
+  ];
+  /** [model, cost, tokens], listed in order. */
+  type Listed = [string, number, number];
+  const WORKED: Record<
+    "5h" | "24h" | "7d",
+    { cost: number; tokens: number; byCost: Listed[]; byTokens: Listed[] }
+  > = {
+    "5h": {
+      cost: 0.85,
+      tokens: 350_000,
+      byCost: [
+        ["claude-sonnet-4-6", 0.45, 110_000],
+        ["claude-haiku-4-5", 0.4, 240_000],
+      ],
+      byTokens: [
+        ["claude-haiku-4-5", 0.4, 240_000],
+        ["claude-sonnet-4-6", 0.45, 110_000],
+      ],
+    },
+    "24h": {
+      cost: 1.38,
+      tokens: 420_000,
+      byCost: [
+        ["claude-opus-4-8", 0.5, 60_000],
+        ["claude-sonnet-4-6", 0.45, 110_000],
+        ["claude-haiku-4-5", 0.4, 240_000],
+        ["claude-sonnet-4-5", 0.03, 10_000],
+      ],
+      byTokens: [
+        ["claude-haiku-4-5", 0.4, 240_000],
+        ["claude-sonnet-4-6", 0.45, 110_000],
+        ["claude-opus-4-8", 0.5, 60_000],
+        ["claude-sonnet-4-5", 0.03, 10_000],
+      ],
+    },
+    // Six models: Sonnet 5 is sixth both ways, and left out, but its share of the window
+    // still counts in the others'.
+    "7d": {
+      cost: 3.192,
+      tokens: 663_000,
+      byCost: [
+        ["claude-opus-4-8", 2, 200_000],
+        ["claude-sonnet-4-6", 0.75, 210_000],
+        ["claude-haiku-4-5", 0.4, 240_000],
+        ["claude-sonnet-4-5", 0.03, 10_000],
+        ["claude-opus-4-7", 0.01, 2_000],
+      ],
+      byTokens: [
+        ["claude-haiku-4-5", 0.4, 240_000],
+        ["claude-sonnet-4-6", 0.75, 210_000],
+        ["claude-opus-4-8", 2, 200_000],
+        ["claude-sonnet-4-5", 0.03, 10_000],
+        ["claude-opus-4-7", 0.01, 2_000],
+      ],
+    },
+  };
+  let store: Fixture;
+  let worked: OverviewVM;
+  beforeAll(() => {
+    store = makeFixtureStore(hand);
+    worked = fixtureViews(store.storePath).views.overview as OverviewVM;
+  });
+  afterAll(() => store.remove());
+
+  test.each([...ACTIVITY_WINDOWS])("%s", (window) => {
+    const want = WORKED[window];
+    const listed = (models: readonly TopModel[]): Listed[] =>
+      models.map((m) => [m.model, m.cost, m.tokens]);
+    const { byCost, byTokens } = worked.topModels[window];
+    expect(byCost.map((m) => m.model)).toEqual(want.byCost.map(([model]) => model));
+    expect(byTokens.map((m) => m.model)).toEqual(want.byTokens.map(([model]) => model));
+    for (const [models, rows_, share] of [
+      [byCost, want.byCost, (m: Listed) => m[1] / want.cost],
+      [byTokens, want.byTokens, (m: Listed) => m[2] / want.tokens],
+    ] as const) {
+      listed(models).forEach(([, cost, tokens], i) => {
+        const w = rows_[i] as Listed;
+        close(cost, w[1], 9);
+        expect(tokens).toBe(w[2]);
+        close((models[i] as TopModel).share, share(w), 9);
+      });
     }
-    const costs = vm.topModels.map((m) => m.cost);
-    expect(costs).toEqual([...costs].sort((a, b) => b - a));
-    for (const m of vm.topModelsByTokens) {
-      const tier = m.tier === "fast" ? 1 : 0;
-      const want = oracle(day.from, day.to, (r) => r.model === m.model && r.tier === tier);
-      expect(m.tokens).toBe(want.tokens);
-      close(m.share, want.tokens / total.tokens);
-    }
-    const counts = vm.topModelsByTokens.map((m) => m.tokens);
-    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    // The chart over the same range sums to the same window total.
+    close(
+      worked.activity[window].cost.reduce((a, b) => a + b, 0),
+      want.cost,
+      9,
+    );
+    expect(worked.activity[window].tokens.reduce((a, b) => a + b, 0)).toBe(want.tokens);
   });
 });
 

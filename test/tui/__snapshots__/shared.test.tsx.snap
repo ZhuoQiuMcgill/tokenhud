@@ -29,10 +29,10 @@ exports[`105×50 Overview: one card titled with both labels 1`] = `
  TOP MODELS · 24h                                                                                        
  Opus 4.8                    $0.90  70% ━━━━━━                                                           
  Sonnet 4.6                  $0.39  30% ━━━━━━                                                           
+ more windows: 3 Models                                                                                  
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
   Tue 08:10  personal-like…  5-hour limit reached  resumed 09:05                                         
-                                                                                                         
                                                                                                          
                                                                                                          
                                                                                                          
@@ -289,9 +289,9 @@ exports[`120×45 Overview: one card titled with both labels 1`] = `
  ACTIVITY · cost per 20 min                             ◀ a  5h  [24h]  7d  d ▶    TOP MODELS · 24h                     
  $0.34                                                                       ███   Opus 4.8            $0.90  70% ━━━━━━
                                                                              ███   Sonnet 4.6          $0.39  30% ━━━━━━
-                                                                       ▃  ▃  ███                                        
- $0.17                                                                 █  █  ███   peak $0.34 at 11:05                  
-                                                                       █▅ █  ███                                        
+                                                                       ▃  ▃  ███   more windows: 3 Models               
+ $0.17                                                                 █  █  ███                                        
+                                                                       █▅ █  ███   peak $0.34 at 11:05                  
                                                                        ██ █  ███                                        
      0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▅▁▁▁▁▁▁▁██▁█▁▁███                                        
        -24h              -18h              -12h              -6h             now                                        

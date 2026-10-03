@@ -14,8 +14,10 @@ import {
   type XLabel,
 } from "../../src/tui/components/vchart.ts";
 import { Controller, initialState, type Ports } from "../../src/tui/controller.ts";
+import { percent, tokens } from "../../src/tui/format.ts";
 import { theme } from "../../src/tui/theme.ts";
 import type { AccountsState } from "../../src/tui/views/accounts.tsx";
+import { costText } from "../../src/tui/views/cells.ts";
 import {
   fitBuckets,
   fitLabels,
@@ -464,6 +466,54 @@ describe("keys", () => {
     const personal = out.find((l) => l.includes("personal")) ?? "";
     expect(personal).toContain("/sel");
   });
+
+  // T27: the top models are the chart's window's, beside the chart (120) and below it (105).
+  test("a/d switch the top models with the chart: the title, and the list by cost or by tokens", async () => {
+    const vm = views.overview as OverviewVM;
+    for (const [width, height] of [
+      [120, 45],
+      [105, 50],
+    ] as const) {
+      for (const showCost of [true, false]) {
+        const c = controller(fixtureConfig({ show_cost: showCost }));
+        const { setup } = await frame(width, height, c);
+        /** The section's lines, from its title's column. */
+        const block = () => {
+          const lines = chars(setup).split("\n");
+          const from = lines.findIndex((l) => l.includes("TOP MODELS"));
+          const column = (lines[from] as string).indexOf("TOP MODELS") - 1;
+          return lines.slice(from, from + 7).map((l) => l.slice(column).trimEnd());
+        };
+        for (const [press, window] of [
+          [null, "24h"],
+          ["d", "7d"],
+          ["d", "5h"],
+          ["a", "7d"],
+          ["a", "24h"],
+          ["a", "5h"],
+        ] as const) {
+          if (press !== null) await settle(setup, () => c.key(key(press)));
+          expect(state(c).window).toBe(window);
+          const ranked = vm.topModels[window];
+          const models = showCost ? ranked.byCost : ranked.byTokens;
+          const lines = block();
+          const at = { width, showCost, window };
+          expect({ ...at, title: lines[0] }).toEqual({ ...at, title: ` TOP MODELS · ${window}` });
+          models.forEach((m, i) => {
+            const amount = showCost ? costText(m).text : tokens(m.tokens);
+            expect({ ...at, row: lines[i + 1] }).toEqual({
+              ...at,
+              row: expect.stringMatching(
+                new RegExp(`^ ${m.name} +${amount.replace("$", "\\$")} +${percent(m.share, 0)} `),
+              ),
+            });
+          });
+          // The list ends there: what follows is the hint, a blank or the next section.
+          expect(lines[models.length + 1] ?? "").not.toContain("%");
+        }
+      }
+    }
+  });
 });
 
 // Critique M1: at 120–140 columns real model names were cut until different models read the
@@ -499,7 +549,11 @@ describe("top models' names", () => {
     [105, 50],
     [160, 50],
   ] as const)("%i×%i: every name whole, (fast) kept", async (width, height) => {
-    const vm = { ...(views.overview as OverviewVM), topModels: top, topModelsByTokens: top };
+    const ranked = { byCost: top, byTokens: top };
+    const vm: OverviewVM = {
+      ...(views.overview as OverviewVM),
+      topModels: { "5h": ranked, "24h": ranked, "7d": ranked },
+    };
     for (const showCost of [true, false]) {
       const c = controller(fixtureConfig({ show_cost: showCost }), { overview: vm });
       const { text } = await frame(width, height, c);
@@ -513,7 +567,9 @@ describe("top models' names", () => {
 
   test("names come from the model ids as the Models view writes them", () => {
     const vm = views.overview as OverviewVM;
-    expect(vm.topModels.find((m) => m.model === "claude-opus-4-8")?.name).toBe("Opus 4.8");
+    expect(vm.topModels["24h"].byCost.find((m) => m.model === "claude-opus-4-8")?.name).toBe(
+      "Opus 4.8",
+    );
   });
 
   test("squeezed, a name is cut but never its (fast), and no two read the same", () => {

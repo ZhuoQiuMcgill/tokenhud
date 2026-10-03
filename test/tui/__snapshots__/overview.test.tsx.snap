@@ -41,13 +41,13 @@ exports[`105×50 snapshot, and every number on screen whole 1`] = `
  gpt-5.6-sol                 $1.42  14% ━━━━━━                                                           
  gpt-5.5                     $1.01  10% ━━━━━━                                                           
  Mystery 9                unpriced   0% ━━━━━━                                                           
+ more windows: 3 Models                                                                                  
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
   Tue 09:30  work      5-hour limit reached  —                                                           
   Mon 14:10  personal  5-hour limit reached  resumed 16:05                                               
   Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
   Sun 21:10  codex     weekly passed 80%     —                                                           
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
  a/d window   w/s card   enter open   t cost/tokens                                                      
  1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
@@ -80,9 +80,9 @@ exports[`120×45 snapshot, and every number on screen whole 1`] = `
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
  $0.77                              █                     ▅         █  ██ ██       Mystery 9        unpriced   0% ━━━━━━
-                                    █                     █▆        █  ██ ██  ▁▁                                        
-                                    █                     ██        █  ██ ██  ██   peak $1.53 at Mon 21:25              
-     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██                                        
+                                    █                     █▆        █  ██ ██  ▁▁   more windows: 3 Models               
+                                    █                     ██        █  ██ ██  ██                                        
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██   peak $1.53 at Mon 21:25              
        -24h              -18h              -12h              -6h             now                                        
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
@@ -157,9 +157,9 @@ exports[`160×50 snapshot, and every number on screen whole 1`] = `
                                               █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
                                               █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
  $0.73                                        █                             █               █ █ █ █       Mystery 9                unpriced   0% ━━━━━━         
-                                              █                            ▄█           ▁▃  █ █ █ █  ▁                                                          
-                                              █                            ██           ██  █ █ █ █  █▁   peak $1.47 at Mon 21:30                               
-     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██                                                         
+                                              █                            ▄█           ▁▃  █ █ █ █  ▁    more windows: 3 Models                                
+                                              █                            ██           ██  █ █ █ █  █▁                                                         
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██   peak $1.47 at Mon 21:30                               
        -24h                    -18h                    -12h                    -6h                  now                                                         
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          
@@ -269,11 +269,11 @@ exports[`the 5h chart 105×50: snapshot, and every number on screen whole 1`] = 
      0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁▁▁██▁▁██▂▁██
        -5h                -4h                 -3h                -2h                 -1h              now
                                                                                                          
- TOP MODELS · 24h                                                                                        
- Opus 4.8                    $7.66  76% ━━━━━━                                                           
- gpt-5.6-sol                 $1.42  14% ━━━━━━                                                           
- gpt-5.5                     $1.01  10% ━━━━━━                                                           
+ TOP MODELS · 5h                                                                                         
+ Opus 4.8                    $6.04  86% ━━━━━━                                                           
+ gpt-5.5                     $1.01  14% ━━━━━━                                                           
  Mystery 9                unpriced   0% ━━━━━━                                                           
+ more windows: 3 Models                                                                                  
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
   Tue 09:30  work      5-hour limit reached  —                                                           
@@ -308,11 +308,11 @@ exports[`the 5h chart 120×45: snapshot, and every number on screen whole 1`] = 
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                  
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                  
                                                                                                                         
- ACTIVITY · cost per 5 min                              ◀ a [5h]  24h   7d  d ▶    TOP MODELS · 24h                     
- $1.35                                    █      █      ██      █                  Opus 4.8            $7.66  76% ━━━━━━
-                                          █      █      ██      █                  gpt-5.6-sol         $1.42  14% ━━━━━━
-                                          █      █      ██      █                  gpt-5.5             $1.01  10% ━━━━━━
- $0.68                      ▁▁            █      █      ██      █                  Mystery 9        unpriced   0% ━━━━━━
+ ACTIVITY · cost per 5 min                              ◀ a [5h]  24h   7d  d ▶    TOP MODELS · 5h                      
+ $1.35                                    █      █      ██      █                  Opus 4.8            $6.04  86% ━━━━━━
+                                          █      █      ██      █                  gpt-5.5             $1.01  14% ━━━━━━
+                                          █      █      ██      █                  Mystery 9        unpriced   0% ━━━━━━
+ $0.68                      ▁▁            █      █      ██      █                  more windows: 3 Models               
                             ██            █      █      ██      █                                                       
                             ██▆           █      █      ██      █        ▁▁ ▁ ▁▁   peak $1.35 at 09:06                  
      0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁███▁▁▁▁▁▁▁▁▁▁▁█▁▁▁▁▁▁█▁▁▁▁▁▁██▁▁▁▁▁▁█▁▁▁▁▁▁▁▁██▂█▁██                                        
@@ -357,11 +357,11 @@ exports[`the 5h chart 160×50: snapshot, and every number on screen whole 1`] = 
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                                                          
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                                                          
                                                                                                                                                                 
- ACTIVITY · cost per 4 min                                                     ◀ a [5h]  24h   7d  d ▶    TOP MODELS · 24h                                      
- $1.35                                                █        █         █        █                       Opus 4.8                    $7.66  76% ━━━━━━         
-                                                      █        █         █        █                       gpt-5.6-sol                 $1.42  14% ━━━━━━         
-                                                      █        █         █        █                       gpt-5.5                     $1.01  10% ━━━━━━         
- $0.68                                                █        █         █        █                       Mystery 9                unpriced   0% ━━━━━━         
+ ACTIVITY · cost per 4 min                                                     ◀ a [5h]  24h   7d  d ▶    TOP MODELS · 5h                                       
+ $1.35                                                █        █         █        █                       Opus 4.8                    $6.04  86% ━━━━━━         
+                                                      █        █         █        █                       gpt-5.5                     $1.01  14% ━━━━━━         
+                                                      █        █         █        █                       Mystery 9                unpriced   0% ━━━━━━         
+ $0.68                                                █        █         █        █                       more windows: 3 Models                                
                                                       █        █         █        █                                                                             
                                    ▄▇▃▃               █        █         █        █           ▁  ▁▁  ▁▁   peak $1.35 at 09:09                                   
      0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁████▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁█▁▁▁▁▁▁▁▁▁▁▁█▁▁██▂▁██                                                         
@@ -454,18 +454,18 @@ exports[`the 7d chart 105×50: snapshot, and every number on screen whole 1`] = 
      0 ▁▁█▁▁▁▁▁▁█▁▁▁▁▁▁█▁▁███▁▁▁█▁▁▁▁▁▄▁▂▂▁▁██▁██▁▁▁▅▁▁▁█▁▁██▁▁▁▁▁▁▁▁▁█▁▁▁███▁▁▁▁█▁▁█▆█▁▄▁▁▁▁▁▁█▁▁▁▁█▁███
        -7d           -6d           -5d           -4d           -3d           -2d           -1d        now
                                                                                                          
- TOP MODELS · 24h                                                                                        
- Opus 4.8                    $7.66  76% ━━━━━━                                                           
- gpt-5.6-sol                 $1.42  14% ━━━━━━                                                           
- gpt-5.5                     $1.01  10% ━━━━━━                                                           
- Mystery 9                unpriced   0% ━━━━━━                                                           
+ TOP MODELS · 7d                                                                                         
+ gpt-5.5                    $12.64  33% ━━━━━━                                                           
+ gpt-5.6-sol                $12.11  32% ━━━━━━                                                           
+ Opus 4.8                   $10.39  27% ━━━━━━                                                           
+ Sonnet 4.6                  $2.04   5% ━━━━━━                                                           
+ Haiku 4.5                   $0.77   2% ━━━━━━                                                           
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
   Tue 09:30  work      5-hour limit reached  —                                                           
   Mon 14:10  personal  5-hour limit reached  resumed 16:05                                               
   Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
   Sun 21:10  codex     weekly passed 80%     —                                                           
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
  a/d window   w/s card   enter open   t cost/tokens                                                      
  1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
@@ -493,15 +493,15 @@ exports[`the 7d chart 120×45: snapshot, and every number on screen whole 1`] = 
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                  
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                  
                                                                                                                         
- ACTIVITY · cost per 3 h                                ◀ a  5h   24h  [7d] d ▶    TOP MODELS · 24h                     
- $6.09                                                                        ██   Opus 4.8            $7.66  76% ━━━━━━
-                                                                              ██   gpt-5.6-sol         $1.42  14% ━━━━━━
-                                                                              ██   gpt-5.5             $1.01  10% ━━━━━━
- $3.04                             ▁          ▅                               ██   Mystery 9        unpriced   0% ━━━━━━
-                                   █          █▅                ▆▁            ██                                        
-        ▂    ▆        ▄   ▁       ▅█▁▁        ██     ▂▂  ▅▅    ▁██       ▆  ▅▁██   peak $6.09 at 09:00                  
+ ACTIVITY · cost per 3 h                                ◀ a  5h   24h  [7d] d ▶    TOP MODELS · 7d                      
+ $6.09                                                                        ██   gpt-5.5            $12.64  33% ━━━━━━
+                                                                              ██   gpt-5.6-sol        $12.11  32% ━━━━━━
+                                                                              ██   Opus 4.8           $10.39  27% ━━━━━━
+ $3.04                             ▁          ▅                               ██   Sonnet 4.6          $2.04   5% ━━━━━━
+                                   █          █▅                ▆▁            ██   Haiku 4.5           $0.77   2% ━━━━━━
+        ▂    ▆        ▄   ▁       ▅█▁▁        ██     ▂▂  ▅▅    ▁██       ▆  ▅▁██   more windows: 3 Models               
      0 ▁█▁▁▁▁█▁▁▁▁▇▇▁▆█▁▁▁█▁▁▁▃▂▂▁████▁▁▃▃▁▆▁▁██▁▁▁▁▁██▁▆██▁▁▁▁███▁▁▂▁▁▁▁█▁▁████                                        
-       -7d       -6d       -5d        -4d       -3d        -2d       -1d     now                                        
+       -7d       -6d       -5d        -4d       -3d        -2d       -1d     now   peak $6.09 at 09:00                  
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
   Tue 09:30  work      5-hour limit reached  —                                                                          
@@ -542,15 +542,15 @@ exports[`the 7d chart 160×50: snapshot, and every number on screen whole 1`] = 
   cost          $2.04       $7.05*       $8.47*      $14.64*     $164.52*     $342.29*                                                                          
   tokens         1.7M         6.4M         7.5M        13.1M       147.6M       315.5M                                                                          
                                                                                                                                                                 
- ACTIVITY · cost per 2 h                                                       ◀ a  5h   24h  [7d] d ▶    TOP MODELS · 24h                                      
- $4.10                                                     █                                        ▂     Opus 4.8                    $7.66  76% ━━━━━━         
-                                                           █                                        █▆▆   gpt-5.6-sol                 $1.42  14% ━━━━━━         
-                                            ▆              █                      ▁                 ███   gpt-5.5                     $1.01  10% ━━━━━━         
- $2.05                                      █              █                      █                 ███   Mystery 9                unpriced   0% ━━━━━━         
-                ▆          ▂               ▄█             ▃█             ▁        █ ▂        ▆▆   ▃ ███                                                         
-         ▇      █      ▂  ▂█    ▅          ██  ▆       ▁  ██        ▇    █▄     ▅ █ █        ██   █ ███   peak $4.10 at Sat 08:00                               
+ ACTIVITY · cost per 2 h                                                       ◀ a  5h   24h  [7d] d ▶    TOP MODELS · 7d                                       
+ $4.10                                                     █                                        ▂     gpt-5.5                    $12.64  33% ━━━━━━         
+                                                           █                                        █▆▆   gpt-5.6-sol                $12.11  32% ━━━━━━         
+                                            ▆              █                      ▁                 ███   Opus 4.8                   $10.39  27% ━━━━━━         
+ $2.05                                      █              █                      █                 ███   Sonnet 4.6                  $2.04   5% ━━━━━━         
+                ▆          ▂               ▄█             ▃█             ▁        █ ▂        ▆▆   ▃ ███   Haiku 4.5                   $0.77   2% ━━━━━━         
+         ▇      █      ▂  ▂█    ▅          ██  ▆       ▁  ██        ▇    █▄     ▅ █ █        ██   █ ███   more windows: 3 Models                                
      0 ▁▁█▁▁▁▁▁▁█▁▁▁▁▁▁█▁▁██▁▁▁▁█▁▁▁▁▄▄▁▂▁▁██▁▁█▁▁▁▅▁▁▁█▁▁██▁▁▁▁▁▁▁▁█▁▁▁▁██▁▁▁▁▁█▁█▆█▁▁▄▁▁▁▁▁██▁▁▁█▁███                                                         
-       -7d          -6d           -5d           -4d          -3d           -2d           -1d        now                                                         
+       -7d          -6d           -5d           -4d          -3d           -2d           -1d        now   peak $4.10 at Sat 08:00                               
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          
   Tue 09:30  work      5-hour limit reached  —                                                                                                                  
@@ -644,13 +644,13 @@ exports[`which pace, and how precise (T18) 105×50: snapshot, and every number w
  gpt-5.6-sol                 $1.42  14% ━━━━━━                                                           
  gpt-5.5                     $1.01  10% ━━━━━━                                                           
  Mystery 9                unpriced   0% ━━━━━━                                                           
+ more windows: 3 Models                                                                                  
                                                                                                          
  LIMIT EVENTS · 7 days                                                                                   
   Tue 09:30  work      5-hour limit reached  —                                                           
   Mon 14:10  personal  5-hour limit reached  resumed 16:05                                               
   Fri 11:05  personal  5-hour limit reached  resumed 12:57                                               
   Sun 21:10  codex     weekly passed 80%     —                                                           
-                                                                                                         
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
  a/d window   w/s card   enter open   t cost/tokens                                                      
  1-4/tab views   c account   x settings   ? help   q quit                                 MCP ● 2 agents 
@@ -683,9 +683,9 @@ exports[`which pace, and how precise (T18) 120×45: snapshot, and every number w
                                     █                                  ██ ██       gpt-5.6-sol         $1.42  14% ━━━━━━
                                     █                               ▃  ██ ██       gpt-5.5             $1.01  10% ━━━━━━
  $0.77                              █                     ▅         █  ██ ██       Mystery 9        unpriced   0% ━━━━━━
-                                    █                     █▆        █  ██ ██  ▁▁                                        
-                                    █                     ██        █  ██ ██  ██   peak $1.53 at Mon 21:25              
-     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██                                        
+                                    █                     █▆        █  ██ ██  ▁▁   more windows: 3 Models               
+                                    █                     ██        █  ██ ██  ██                                        
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁█▁▁██▁██▁▇██   peak $1.53 at Mon 21:25              
        -24h              -18h              -12h              -6h             now                                        
                                                                                                                         
  LIMIT EVENTS · 7 days                                                                                                  
@@ -732,9 +732,9 @@ exports[`which pace, and how precise (T18) 160×50: snapshot, and every number w
                                               █                                             █ █ █ █       gpt-5.6-sol                 $1.42  14% ━━━━━━         
                                               █                             ▂               █ █ █ █       gpt-5.5                     $1.01  10% ━━━━━━         
  $0.73                                        █                             █               █ █ █ █       Mystery 9                unpriced   0% ━━━━━━         
-                                              █                            ▄█           ▁▃  █ █ █ █  ▁                                                          
-                                              █                            ██           ██  █ █ █ █  █▁   peak $1.47 at Mon 21:30                               
-     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██                                                         
+                                              █                            ▄█           ▁▃  █ █ █ █  ▁    more windows: 3 Models                                
+                                              █                            ██           ██  █ █ █ █  █▁                                                         
+     0 ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂█▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁██▁▁▁▁▁▁▁▁▁▁▁██▁▁█▁█▁█▁█▁▁██   peak $1.47 at Mon 21:30                               
        -24h                    -18h                    -12h                    -6h                  now                                                         
                                                                                                                                                                 
  LIMIT EVENTS · 7 days                                                                                                                                          

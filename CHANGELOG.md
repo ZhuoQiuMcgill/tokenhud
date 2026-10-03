@@ -18,6 +18,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
   `this week` from its pace before its time. The countdown is worked out afresh each time
   the screen is drawn.
 - **The Accounts view shows each window's projection**, under its meter, in the same form.
+- **The Overview's top models follow the activity chart's window.** They always covered
+  the last 24 hours, even beside a 5-hour or 7-day chart. `a`/`d` now switch both between
+  the last 5 hours, 24 hours and 7 days, and the title names the window
+  (`TOP MODELS · 7d`). When a row is free, a dim `more windows: 3 Models` under the list
+  points to the Models view for today, this week, this month and the rest.
 
 ### Added
 

@@ -217,6 +217,22 @@ try {
   console.log(
     `  switch + frame: p50 ${f.p50.toFixed(2)} p95 ${f.p95.toFixed(2)} max ${f.max.toFixed(2)} ms`,
   );
+  // The Overview's a/d (T27): the chart and the top models change window together, from
+  // what the view model already holds.
+  await act(async () => c.key({ name: "1", sequence: "1", ctrl: false }));
+  await setup.renderOnce();
+  const windowFrames: number[] = [];
+  for (let i = 0; i < 100; i++) {
+    const a = performance.now();
+    await act(async () => c.key({ name: "d", sequence: "d", ctrl: false }));
+    await setup.renderOnce();
+    windowFrames.push(performance.now() - a);
+  }
+  const wf = stats(windowFrames);
+  console.log(
+    `  a/d window + frame: p50 ${wf.p50.toFixed(2)} p95 ${wf.p95.toFixed(2)} max ${wf.max.toFixed(2)} ms`,
+  );
+  verdict("Overview a/d key → frame (p95, in-process)", wf.p95, BUDGET.switchP95);
   const tickFrames: number[] = [];
   for (let i = 0; i < 50; i++) {
     const a = performance.now();

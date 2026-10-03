@@ -266,13 +266,17 @@ describe("the footer says how to move (AC 6)", () => {
     await settle(setup, () => c.key(typed("?")));
     const help = chars(setup);
     expect(help).toContain("OVERVIEW");
-    expect(help).not.toContain("activity window");
+    expect(help).not.toContain("top models window");
     expect(help).not.toContain("Show cost or tokens");
-    // With room for the chart, the same keys work and show.
+    // With room for the chart, the same keys work and show: one window for the chart and
+    // the top models (T27).
     const roomy = controller([]);
     const big = await render(<Frame controller={roomy.c} width={105} height={50} />, 105, 50);
     expect(chars(big).split("\n")[48]).toContain("a/d window");
+    await settle(big, () => roomy.c.key(typed("?")));
+    expect(chars(big)).toContain("Switch the activity and top models window: 5h · 24h · 7d");
     await settle(big, () => {
+      roomy.c.key(typed("escape"));
       roomy.c.key(typed("d"));
       roomy.c.key(typed("t"));
     });
