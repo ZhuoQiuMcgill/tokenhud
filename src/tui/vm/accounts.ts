@@ -1,8 +1,8 @@
 // The Accounts view (T13): every account in the store with its root, its subscription
-// limits and their weekly history, its 30-day spend and models, and its last MCP call. A
-// root on a subscription account it shares with others (T16) shows the account's limits
-// and their total spend beside its own. Computed in the view-model Worker; the view only
-// formats it.
+// limits and their weekly history, the limit alerts agents set on it (T29), its 30-day
+// spend and models, and its last MCP call. A root on a subscription account it shares with
+// others (T16) shows the account's limits, alerts and total spend beside its own. Computed
+// in the view-model Worker; the view only formats it.
 
 import { sep } from "node:path";
 import { lastFired } from "../../alerts/match.ts";
