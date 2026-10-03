@@ -6,6 +6,11 @@ name: Release
 #
 # Pull requests that touch the release path run everything up to the publishing, so a broken
 # build, installer or update is caught before a tag is pushed.
+#
+# Every smoke test (scripts/build.ts --smoke) runs each binary with --version, with a headless
+# --once, and as `tokenhud mcp`, which scripts/mcp-smoke.ts drives over stdio as Claude Code
+# does. Each binary is tested on a runner that can execute it (darwin-x64 under Rosetta,
+# where the macOS runner has it).
 
 on:
   push:
@@ -15,6 +20,7 @@ on:
     paths:
       - .github/workflows/release.yml
       - scripts/build.ts
+      - scripts/mcp-smoke.ts
       - scripts/stage-npm.ts
       - src/release.ts
       - src/update.ts
@@ -72,7 +78,7 @@ jobs:
           { echo '### Binaries'; echo '```'; cat build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       # The musl binary runs in an Alpine container.
-      - name: Smoke test (linux-x64, linux-x64-musl)
+      - name: Smoke test, CLI and MCP server (linux-x64, linux-x64-musl)
         run: bun scripts/build.ts --smoke linux-x64 linux-x64-musl
 
       # Every npm package as `npm publish` would send it, without sending it. The registry is
@@ -143,7 +149,8 @@ jobs:
           path: dist
       # Artifacts don't keep the executable bit.
       - run: chmod +x dist/tokenhud-*
-      - run: bun scripts/build.ts --smoke ${{ matrix.targets }}
+      - name: Smoke test, CLI and MCP server (${{ matrix.targets }})
+        run: bun scripts/build.ts --smoke ${{ matrix.targets }}
 
   # Release-time signing: CI (ci.yml) fails on a bad signature; here a binary that fails
   # `codesign --verify` is re-signed ad hoc, verified again, and that copy is released.
@@ -177,9 +184,9 @@ jobs:
             echo "$bin: re-signed ad hoc" | tee -a "$GITHUB_STEP_SUMMARY"
           done
 
-      - name: Smoke test (darwin-arm64)
+      - name: Smoke test, CLI and MCP server (darwin-arm64)
         run: bun scripts/build.ts --smoke darwin-arm64
-      - name: Smoke test (darwin-x64, under Rosetta)
+      - name: Smoke test, CLI and MCP server (darwin-x64, under Rosetta)
         run: |
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
             bun scripts/build.ts --smoke darwin-x64
