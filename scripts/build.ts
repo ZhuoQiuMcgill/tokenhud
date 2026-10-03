@@ -11,12 +11,13 @@
 // src/release.ts. Cross-compiling needs every platform's OpenTUI native package, so install
 // with `bun install --os="*" --cpu="*"` first.
 //
-// --smoke runs each release binary in dist/ that can run here with --version and with a
-// headless `--once --width 100` against a fixture store, from a temp copy that is deleted
-// afterwards. Ids (`linux-x64-musl`) name the binaries that must run; without ids, every
-// binary that can run here does, and the others are listed as skipped. Beyond the native
-// ones: musl binaries run in an Alpine container when Docker is there, x64 macOS binaries
-// under Rosetta, and Windows binaries from WSL when --workdir is on a Windows drive.
+// --smoke runs each release binary in dist/ that can run here with --version, with a
+// headless `--once --width 100` against a fixture store, and as `tokenhud mcp`
+// (scripts/mcp-smoke.ts), from a temp copy that is deleted afterwards. Ids (`linux-x64-musl`)
+// name the binaries that must run; without ids, every binary that can run here does, and
+// the others are listed as skipped. Beyond the native ones: musl binaries run in an Alpine
+// container when Docker is there, x64 macOS binaries under Rosetta, and Windows binaries
+// from WSL when --workdir is on a Windows drive.
 import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,6 +35,7 @@ import {
 } from "../src/release.ts";
 import { openStore } from "../src/store/store.ts";
 import { VERSION } from "../src/version.ts";
+import { mcpMachine, smokeMcp } from "./mcp-smoke.ts";
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
@@ -207,6 +209,8 @@ function runnerFor(t: ReleaseTarget, work: string): Wrap | string {
         "docker",
         "run",
         "--rm",
+        // Keeps stdin attached: `tokenhud mcp` reads its requests there.
+        "-i",
         "--network",
         "none",
         "-v",
@@ -229,7 +233,8 @@ function runnerFor(t: ReleaseTarget, work: string): Wrap | string {
     if (!isWsl()) return "a Windows binary on Linux";
     if (!/^\/mnt\/[a-z]\//.test(work)) return "from WSL, pass --workdir on a Windows drive";
     // WSL hands Windows programs only the variables WSLENV lists; /p translates the paths.
-    const wslenv = "HOME/p:USERPROFILE/p:XDG_CONFIG_HOME/p:TOKENHUD_WSL_USERS:NO_COLOR";
+    const wslenv =
+      "HOME/p:USERPROFILE/p:XDG_CONFIG_HOME/p:TOKENHUD_WSL_USERS:TOKENHUD_TEST:NO_COLOR";
     return (bin, args, env) => ({
       cmd: [bin, ...args],
       env: {
@@ -336,6 +341,8 @@ async function smokeOne(t: ReleaseTarget, wrap: Wrap, dir: string): Promise<stri
     problems.push("--once: the fixture store's usage is not on screen");
   }
   if (problems.length > 0) problems.push(firstLines(once.stderr));
+  const mcp = wrap(bin, ["mcp"], await mcpMachine(dir));
+  problems.push(...(await smokeMcp(mcp.cmd, mcp.env)).map((p) => `mcp: ${p}`));
   return problems;
 }
 
@@ -367,7 +374,7 @@ async function smoke(ids: string[], workdir: string): Promise<boolean> {
       }
       const problems = (await smokeOne(t, wrap, work)).filter(Boolean);
       ran++;
-      if (problems.length === 0) console.log(`ok   ${name}: --version, --once --width 100`);
+      if (problems.length === 0) console.log(`ok   ${name}: --version, --once --width 100, mcp`);
       else {
         ok = false;
         console.log(`FAIL ${name}\n${problems.map((p) => `     ${p}`).join("\n")}`);
