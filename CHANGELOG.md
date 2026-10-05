@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-04
+
 ### Fixed
 
 - **Windows: the TUI and ingest work in the binaries.** In 0.1.4's Windows binaries
