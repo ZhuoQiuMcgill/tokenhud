@@ -91,9 +91,6 @@ test("with minBytes 0 (selftest workers), even a few bytes go to the Workers", a
   });
   expect(logs).toHaveLength(2);
   expect(results.map((r) => r.entries.length)).toEqual([1, 1]);
-  expect(
-    (await readAll([task, task], [10, 10], { poolSize: 2, minBytes: 0 }))[1]?.entries,
-  ).toHaveLength(1);
 });
 
 test("every provider has a reader: a missing rollout is an error, not a crash", () => {
