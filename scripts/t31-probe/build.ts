@@ -1,5 +1,6 @@
 // bun scripts/t31-probe/build.ts <outfile> [bun-target]
 import { join } from "node:path";
+
 const args = Bun.argv.slice(2);
 const split = !args.includes("--no-split");
 const [outfile, target] = args.filter((a) => a !== "--no-split");

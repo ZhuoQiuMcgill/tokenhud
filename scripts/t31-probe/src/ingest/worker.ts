@@ -1,5 +1,6 @@
 // The nested case: the ingest Worker starts parse Workers.
 import { probe } from "./probe.ts";
+
 declare const self: Worker;
 self.onmessage = async (e: MessageEvent<string>) => {
   if (e.data === "stop") process.exit(0);
