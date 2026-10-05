@@ -59,6 +59,8 @@ function runOn(url: string, tasks: ReadTask[], context: ReadContext): Promise<Re
 export interface PoolOptions {
   /** Up to this many Workers; 1 reads inline. */
   poolSize?: number;
+  /** Less work than this many bytes is read inline (default `POOL_MIN_BYTES`). */
+  minBytes?: number;
   log?: Log;
   /** The Worker script (tests substitute one that fails). */
   workerUrl?: string;
@@ -82,7 +84,7 @@ export async function readAll(
   clearParentStreams();
   const total = bytes.reduce((a, b) => a + b, 0);
   const workers = Math.min(options.poolSize ?? defaultPoolSize(), tasks.length);
-  if (workers <= 1 || total < POOL_MIN_BYTES) return tasks.map(inline);
+  if (workers <= 1 || total < (options.minBytes ?? POOL_MIN_BYTES)) return tasks.map(inline);
   const order = tasks.map((_, i) => i).sort((a, b) => (bytes[b] ?? 0) - (bytes[a] ?? 0));
   const bins: number[][] = Array.from({ length: workers }, () => []);
   const load = new Array<number>(workers).fill(0);

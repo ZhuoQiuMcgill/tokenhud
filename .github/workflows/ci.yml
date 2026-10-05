@@ -131,6 +131,17 @@ jobs:
             exit 1
           fi
 
+      # The compiled binary's Workers (T31: 0.1.4's Windows binaries could not start them),
+      # on an empty home and config home.
+      - name: Start the binary's Workers
+        run: |
+          bin=dist/tokenhud
+          if [ "$RUNNER_OS" = "Windows" ]; then bin=dist/tokenhud.exe; fi
+          home="$RUNNER_TEMP/selftest-home"
+          mkdir -p "$home"
+          HOME="$home" USERPROFILE="$home" XDG_CONFIG_HOME="$RUNNER_TEMP/selftest-xdg" \
+            TOKENHUD_WSL_USERS= "./$bin" selftest workers
+
   # The plugin's hook commands must never block Claude Code, whatever tokenhud a user has
   # (T29 B1): the plugin is served from main, and a tokenhud from before `hook` answers it
   # with exit 2, which Claude Code takes as "block the prompt". scripts/hook-compat.ts runs

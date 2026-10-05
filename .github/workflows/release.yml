@@ -9,9 +9,10 @@ name: Release
 #
 # Every smoke test (scripts/build.ts --smoke) runs each binary with --version, with a headless
 # --once, as `tokenhud hook` with an event on stdin (silent, then telling a fixture alert),
-# and as `tokenhud mcp`, which scripts/mcp-smoke.ts drives over stdio as Claude Code
-# does. Each binary is tested on a runner that can execute it (darwin-x64 under Rosetta,
-# where the macOS runner has it).
+# as `tokenhud mcp`, which scripts/mcp-smoke.ts drives over stdio as Claude Code does, and
+# as `tokenhud selftest workers`, which starts each Worker and round-trips a message through
+# it. Each binary is tested on a runner that can execute it (darwin-x64 under Rosetta, where
+# the macOS runner has it).
 
 on:
   push:
@@ -24,6 +25,8 @@ on:
       - scripts/mcp-smoke.ts
       - scripts/stage-npm.ts
       - src/release.ts
+      - src/ingest/worker-url.ts
+      - src/commands/selftest.ts
       - src/update.ts
       - src/installs.ts
       - src/commands/update.ts

@@ -3,7 +3,6 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { POOL_MIN_BYTES, readAll } from "../../src/ingest/pool.ts";
 import { type ReadResult, type ReadTask, readTask } from "../../src/ingest/read.ts";
-import { workerUrl } from "../../src/ingest/worker-url.ts";
 import { guard } from "../guard.ts";
 import { claudeLine, cleanup, tempDir } from "./helpers.ts";
 
@@ -78,6 +77,22 @@ test("small jobs stay on the calling thread", async () => {
   expect(result?.entries).toHaveLength(1);
 });
 
+test("with minBytes 0 (selftest workers), even a few bytes go to the Workers", async () => {
+  const path = join(tempDir(), "s.jsonl");
+  writeFileSync(path, claudeLine("1", "1", 1));
+  const task: ReadTask = { provider: "claude", path, start: 0, tail: null, state: null };
+  const logs: string[] = [];
+  // A Worker that throws: its warning shows the work went to the Workers.
+  const results = await readAll([task, task], [10, 10], {
+    poolSize: 2,
+    minBytes: 0,
+    workerUrl: new URL("./worker-throws.ts", import.meta.url).href,
+    log: (_level, message) => logs.push(message),
+  });
+  expect(logs).toHaveLength(2);
+  expect(results.map((r) => r.entries.length)).toEqual([1, 1]);
+});
+
 test("every provider has a reader: a missing rollout is an error, not a crash", () => {
   const result = readTask({
     provider: "codex",
@@ -87,23 +102,4 @@ test("every provider has a reader: a missing rollout is an error, not a crash", 
     state: null,
   });
   expect(result.error).toBe("ENOENT");
-});
-
-describe("workerUrl", () => {
-  test("from source: the file under src/", () => {
-    expect(workerUrl("ingest/parse-worker.ts")).toBe(
-      new URL("../../src/ingest/parse-worker.ts", import.meta.url).href,
-    );
-  });
-
-  test("in a compiled binary: under the bundle root, whichever chunk asks", () => {
-    for (const base of ["file:///$bunfs/root/tokenhud", "file:///$bunfs/root/ingest/worker.js"]) {
-      expect(workerUrl("ingest/parse-worker.ts", base)).toBe(
-        "file:///$bunfs/root/ingest/parse-worker.ts",
-      );
-    }
-    expect(workerUrl("ingest/worker.ts", "file:///B:/~BUN/root/tokenhud.exe")).toBe(
-      "file:///B:/~BUN/root/ingest/worker.ts",
-    );
-  });
 });

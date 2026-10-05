@@ -89,6 +89,11 @@ export interface EngineOptions {
   /** cc-usage's ledger, imported (read-only) before the first pass if the store has no cc-usage import; null never imports. */
   importLedger: string | null;
   poolSize?: number;
+  /**
+   * Less to read than this many bytes is read inline (default: the pool's 8 MiB).
+   * `selftest workers` sets 0, so its tiny fixture goes through the parse Workers.
+   */
+  poolMinBytes?: number;
   log?: Log;
   onChanged?: (event: ChangedEvent) => void;
   /** Every pass's report (watch mode prints them with --stats). */
@@ -406,6 +411,9 @@ export class IngestEngine {
       store: this.store,
       cursors: this.cursors,
       poolSize: this.#options.poolSize ?? defaultPoolSize(),
+      ...(this.#options.poolMinBytes === undefined
+        ? {}
+        : { poolMinBytes: this.#options.poolMinBytes }),
       log: this.#log,
       codexSessions: this.#codexSessions,
       ...(rekey === undefined ? {} : { rekey }),
