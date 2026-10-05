@@ -693,7 +693,8 @@ bun src/cli.ts   # run from source
 `--target=bun-windows-x64` writes `dist/tokenhud.exe`. `bun run build --release` builds all
 eight release binaries and `SHA256SUMS` (install with `bun install --os="*" --cpu="*"`
 first), and `bun run build --smoke` runs the ones this machine can, each also as an MCP
-server driven over stdio (`scripts/mcp-smoke.ts`).
+server driven over stdio (`scripts/mcp-smoke.ts`) and with `selftest workers`, a developer
+command that starts each of the binary's Workers and round-trips a message through it.
 `test/release/npm-e2e.test.ts` installs and updates the npm packages with bun and with npm
 from a registry on localhost, as CI does; its header says how to run it. `bun run format`
 rewrites files in the project style. [VERSIONING.md](VERSIONING.md) describes releases.

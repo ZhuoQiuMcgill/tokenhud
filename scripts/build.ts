@@ -13,12 +13,12 @@
 //
 // --smoke runs each release binary in dist/ that can run here with --version, with a
 // headless `--once --width 100` against a fixture store, as `tokenhud hook` (silent, then
-// telling a fixture alert), and as `tokenhud mcp`
-// (scripts/mcp-smoke.ts), from a temp copy that is deleted afterwards. Ids (`linux-x64-musl`)
-// name the binaries that must run; without ids, every binary that can run here does, and
-// the others are listed as skipped. Beyond the native ones: musl binaries run in an Alpine
-// container when Docker is there, x64 macOS binaries under Rosetta, and Windows binaries
-// from WSL when --workdir is on a Windows drive.
+// telling a fixture alert), as `tokenhud mcp` (scripts/mcp-smoke.ts), and as `tokenhud
+// selftest workers` (each Worker started and answering), from a temp copy that is deleted
+// afterwards. Ids (`linux-x64-musl`) name the binaries that must run; without ids, every
+// binary that can run here does, and the others are listed as skipped. Beyond the native
+// ones: musl binaries run in an Alpine container when Docker is there, x64 macOS binaries
+// under Rosetta, and Windows binaries from WSL when --workdir is on a Windows drive.
 import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -167,6 +167,9 @@ const MUSL_IMAGE = "tokenhud-smoke-musl:alpine3.22";
  */
 const FIXTURE_MODEL = "gpt-5.5";
 
+/** Where `os.tmpdir()` looks: TMPDIR on POSIX, TEMP or TMP on Windows. */
+const TEMP_VARS = ["TMPDIR", "TEMP", "TMP"];
+
 let muslImage: boolean | null = null;
 /** Builds, once, an Alpine image with the C++ runtime that Bun's musl builds link against. */
 function dockerMusl(): boolean {
@@ -221,7 +224,11 @@ function runnerFor(t: ReleaseTarget, work: string): Wrap | string {
         "none",
         "-v",
         `${work}:${work}`,
-        ...Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+        // The container's own /tmp, not the work dir's: there the binary runs as root, and a
+        // directory root makes could not be emptied afterwards.
+        ...Object.entries(env)
+          .filter(([k]) => !TEMP_VARS.includes(k))
+          .flatMap(([k, v]) => ["-e", `${k}=${v}`]),
         MUSL_IMAGE,
         bin,
         ...args,
@@ -240,7 +247,7 @@ function runnerFor(t: ReleaseTarget, work: string): Wrap | string {
     if (!/^\/mnt\/[a-z]\//.test(work)) return "from WSL, pass --workdir on a Windows drive";
     // WSL hands Windows programs only the variables WSLENV lists; /p translates the paths.
     const wslenv =
-      "HOME/p:USERPROFILE/p:XDG_CONFIG_HOME/p:TOKENHUD_WSL_USERS:TOKENHUD_TEST:NO_COLOR";
+      "HOME/p:USERPROFILE/p:XDG_CONFIG_HOME/p:TEMP/p:TMP/p:TOKENHUD_WSL_USERS:TOKENHUD_TEST:NO_COLOR";
     return (bin, args, env) => ({
       cmd: [bin, ...args],
       env: {
@@ -404,19 +411,45 @@ async function smokeHook(
   return [];
 }
 
+/**
+ * `tokenhud selftest workers`: the ingest Worker (with its parse Workers) and the
+ * view-model Worker, each started from the binary and answering (T31: 0.1.4's Windows
+ * binaries asked for Worker entries that weren't there, and nothing here started one).
+ */
+async function smokeWorkers(
+  wrap: Wrap,
+  bin: string,
+  env: Record<string, string>,
+): Promise<string[]> {
+  const workers = ["ingest Worker", "parse Worker", "view-model Worker"];
+  const out = await run(wrap, bin, ["selftest", "workers"], env);
+  const lines = out.stdout.trimEnd().split("\n");
+  const passed = workers.every((w) => lines.some((line) => line.startsWith(`ok   ${w}: `)));
+  if (out.code === 0 && passed) return [];
+  return [
+    `selftest workers: exit ${out.code}`,
+    ...lines.filter((line) => line.startsWith("FAIL")).map((line) => `  ${line}`),
+    firstLines(out.stderr),
+  ];
+}
+
 /** Smoke-tests one binary from a copy in `dir`; returns the problems found. */
 async function smokeOne(t: ReleaseTarget, wrap: Wrap, dir: string): Promise<string[]> {
   const bin = join(dir, assetName(t));
   await cp(join(dist, assetName(t)), bin);
   const home = join(dir, "home");
   const xdg = join(dir, "xdg");
+  const tmp = join(dir, "tmp");
   await mkdir(home, { recursive: true });
+  await mkdir(tmp, { recursive: true });
   writeFixtureStore(xdg);
-  // Nothing from this machine: an empty home, the fixture store, no WSL or env roots.
+  // Nothing from this machine: an empty home, the fixture store, no WSL or env roots, and a
+  // temp dir of its own (for `selftest workers`).
   const env = {
     HOME: home,
     USERPROFILE: home,
     XDG_CONFIG_HOME: xdg,
+    ...Object.fromEntries(TEMP_VARS.map((k) => [k, tmp])),
     TOKENHUD_WSL_USERS: "",
     CLAUDE_CONFIG_DIR: "",
     CODEX_HOME: "",
@@ -441,6 +474,7 @@ async function smokeOne(t: ReleaseTarget, wrap: Wrap, dir: string): Promise<stri
   problems.push(...(await smokeHook(wrap, bin, env, home, xdg)));
   const mcp = wrap(bin, ["mcp"], await mcpMachine(dir));
   problems.push(...(await smokeMcp(mcp.cmd, mcp.env)).map((p) => `mcp: ${p}`));
+  problems.push(...(await smokeWorkers(wrap, bin, env)));
   return problems;
 }
 
@@ -473,7 +507,7 @@ async function smoke(ids: string[], workdir: string): Promise<boolean> {
       const problems = (await smokeOne(t, wrap, work)).filter(Boolean);
       ran++;
       if (problems.length === 0)
-        console.log(`ok   ${name}: --version, --once --width 100, hook, mcp`);
+        console.log(`ok   ${name}: --version, --once --width 100, hook, mcp, selftest workers`);
       else {
         ok = false;
         console.log(`FAIL ${name}\n${problems.map((p) => `     ${p}`).join("\n")}`);

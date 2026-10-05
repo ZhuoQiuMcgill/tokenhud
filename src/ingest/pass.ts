@@ -123,6 +123,8 @@ export interface PassContext {
   store: Store;
   cursors: CursorCache;
   poolSize: number;
+  /** `selftest workers`: send even a few bytes to the parse Workers. */
+  poolMinBytes?: number;
   log: Log;
   /** Codex session id -> its rollouts, to find a child rollout's parent. This pass's files are added. */
   codexSessions?: Readonly<Record<string, readonly string[]>>;
@@ -324,6 +326,7 @@ export async function runPass(
 
   const results = await readAll(tasks, bytes, {
     poolSize: ctx.poolSize,
+    ...(ctx.poolMinBytes === undefined ? {} : { minBytes: ctx.poolMinBytes }),
     log: ctx.log,
     context: { codexSessions: codexSessionIndex(files, ctx.codexSessions) },
   });

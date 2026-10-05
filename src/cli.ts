@@ -121,10 +121,14 @@ if (process.platform === "win32") {
 }
 
 const argv = process.argv.slice(2);
-// `ingest` is a developer command, kept out of --help and parsed by its own module.
+// `ingest` and `selftest` are developer commands, kept out of --help and parsed by their own
+// modules.
 if (argv[0] === "ingest") {
   const { runIngest } = await import("./commands/ingest.ts");
   process.exitCode = await runIngest(argv.slice(1));
+} else if (argv[0] === "selftest") {
+  const { runSelftest } = await import("./commands/selftest.ts");
+  process.exit(await runSelftest(argv.slice(1)));
 } else {
   process.exitCode = await main(argv);
 }
