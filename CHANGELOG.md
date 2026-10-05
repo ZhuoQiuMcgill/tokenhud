@@ -15,9 +15,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
   models stopped (BuildMessage: ModuleNotFound …)` and kept restarting, and the ingest
   Worker that keeps the store current never started either. The binary looked for its
   Workers in the wrong place, because Windows spells their location differently from Linux
-  and macOS. A build made the way 0.1.3 was fails the same way, so earlier Windows binaries
-  were affected too. `json` and `mcp`, which ingest by themselves, read a large backlog on
-  one thread instead of several, with a warning; `--once` and `hook` were not affected.
+  and macOS. 0.1.3's Windows binaries fail the same way, and earlier ones had the same
+  code. `json` and `mcp`, which ingest by themselves, read a large backlog on one thread
+  instead of several, with a warning; `--once` and `hook` were not affected.
   Every release binary now starts its Workers in CI before it is published.
 
 ## [0.1.4] - 2026-10-03
