@@ -10,7 +10,13 @@
 // The rest is a sum of products, so pricing the sums differs from the per-row sum only by
 // floating-point rounding, far below a cent.
 
-import { computeCost, type Rates, type TokenCounts, type Unpriced } from "../pricing/cost.ts";
+import {
+  computeCost,
+  isLongContext,
+  type Rates,
+  type TokenCounts,
+  type Unpriced,
+} from "../pricing/cost.ts";
 
 /** Token sums of a group of usage rows, as roll_hour keeps them. */
 export interface Sums {
@@ -56,6 +62,7 @@ function linearCard(card: Rates): Rates {
       long_context_input_multiplier: _input,
       long_context_output_multiplier: _output,
       long_context_unpriced: _unpriced,
+      long_context_counts_cache_writes: _countsWrites,
       ...rest
     } = card;
     linear = rest;
@@ -124,7 +131,7 @@ export function priceGroup(
   let unpricedTierTokens = 0;
   if (threshold !== undefined && candidates !== undefined) {
     for (const row of candidates) {
-      if (row.inp + row.cr <= threshold) continue;
+      if (!isLongContext(card, row.inp, row.cr, row.cc)) continue;
       rest = without(rest, row);
       const alone = computeCost(
         {

@@ -140,7 +140,8 @@ function sameCard(a: Rates | Unpriced, b: Rates | Unpriced): boolean {
     a.cache_write === b.cache_write &&
     a.long_context_threshold === b.long_context_threshold &&
     a.long_context_input_multiplier === b.long_context_input_multiplier &&
-    a.long_context_output_multiplier === b.long_context_output_multiplier
+    a.long_context_output_multiplier === b.long_context_output_multiplier &&
+    a.long_context_counts_cache_writes === b.long_context_counts_cache_writes
   );
 }
 

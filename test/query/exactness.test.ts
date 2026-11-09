@@ -2,15 +2,17 @@
 // sum of each row's computeCost over the same rows, within $0.005, for 1,000 random
 // queries. Token counts must match exactly. Queries mix every grouping, five time zones
 // (two with half- or three-quarter-hour offsets, one with DST), ranges of a minute to four
-// months at millisecond edges, and account and provider filters. A second price table adds
-// a price change in the middle of an hour and a long-context threshold below the partial
-// index's, the two paths the bundled table never takes.
+// months at millisecond edges, and account and provider filters. The bundled table's
+// Claude Haiku 5.5 has a threshold below the partial index's that counts cache writes. A
+// second price table adds a price change in the middle of an hour, which the bundled table
+// never has, and a low threshold that counts input and cache reads only.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { isLongContext } from "../../src/pricing/cost.ts";
 import { normalizeModel } from "../../src/pricing/normalize.ts";
 import { mergePricing } from "../../src/pricing/overrides.ts";
-import { parseModelPricing } from "../../src/pricing/schema.ts";
+import { isDated, parseModelPricing } from "../../src/pricing/schema.ts";
 import { bundledPricing, PriceTable } from "../../src/pricing/table.ts";
 import { UsageQueries } from "../../src/query/engine.ts";
 import type { Range } from "../../src/query/types.ts";
@@ -22,7 +24,7 @@ import { ACCOUNTS, prng, syntheticRows } from "./synthetic.ts";
 guard();
 
 const FROM = Date.parse("2026-06-01T00:00:00Z");
-const TO = Date.parse("2026-10-01T00:00:00Z");
+const TO = Date.parse("2026-11-01T00:00:00Z");
 const ZONES = ["UTC", "America/Toronto", "Asia/Kolkata", "Asia/Kathmandu", "Australia/Adelaide"];
 const KINDS = ["totals", "model", "account", "day", "week", "month", "activity"] as const;
 const DAY = 86_400_000;
@@ -260,15 +262,14 @@ describe("cost from sums equals the per-row sum", () => {
     const bundled = new PriceTable(bundledPricing().models);
     const reasons = new Set<string>();
     let long = 0;
+    let longByWrites = 0;
     for (const r of rows) {
       const tier = r.tier === 0 ? "standard" : "fast";
       const rates = bundled.rates(r.model, tier, r.ts);
       if (typeof rates === "string") reasons.add(rates);
-      else if (
-        rates.long_context_threshold !== undefined &&
-        r.inp + r.cr > rates.long_context_threshold
-      ) {
+      else if (isLongContext(rates, r.inp, r.cr, r.cc)) {
         long++;
+        if (!isLongContext(rates, r.inp, r.cr, 0)) longByWrites++;
         const c = bundled.cost({
           ...r,
           model: r.model,
@@ -286,12 +287,22 @@ describe("cost from sums equals the per-row sum", () => {
     }
     expect([...reasons].sort()).toEqual(["long unpriced-tier", "unpriced", "unpriced-tier"]);
     expect(long).toBeGreaterThan(200);
+    expect(longByWrites).toBeGreaterThan(50);
     expect(rows.some((r) => r.e5 === null && r.e1 === null)).toBe(true);
     expect(rows.some((r) => r.e5 === null && r.e1 !== null)).toBe(true);
-    const sol = rows.filter((r) => r.model === "gpt-5.6-sol").map((r) => r.ts);
-    for (const boundary of bundled.boundaries()) {
-      expect(sol.some((t) => t < boundary)).toBe(true);
-      expect(sol.some((t) => t >= boundary)).toBe(true);
+    // Every dated boundary has rows of its model on both sides.
+    const straddled = new Set<number>();
+    for (const [id, pricing] of Object.entries(bundledPricing().models)) {
+      if (!isDated(pricing)) continue;
+      const times = rows.filter((r) => normalizeModel(r.model) === id).map((r) => r.ts);
+      for (const { from } of pricing.periods) {
+        if (from === null) continue;
+        const boundary = Date.parse(from);
+        if (times.some((t) => t < boundary) && times.some((t) => t >= boundary)) {
+          straddled.add(boundary);
+        }
+      }
     }
+    expect([...straddled].sort((a, b) => a - b)).toEqual(bundled.boundaries());
   });
 });

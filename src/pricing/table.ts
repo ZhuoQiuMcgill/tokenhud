@@ -56,9 +56,10 @@ function standardRates(card: RateCard): Rates {
 // Cache writes need no derivation: without `cache_write`, computeCost charges the 1.25x
 // and 2x write multipliers on the fast input.
 //
-// Long context: the threshold is the standard card's, but the multipliers must be the fast
-// card's own. Without them the fast tier has no long-context price, and computeCost
-// returns "unpriced-tier" above the threshold rather than extrapolate one.
+// Long context: the threshold, and what it counts, are the standard card's, but the
+// multipliers must be the fast card's own. Without them the fast tier has no long-context
+// price, and computeCost returns "unpriced-tier" above the threshold rather than
+// extrapolate one.
 function fastRates(card: RateCard): Rates | undefined {
   const fast = card.fast;
   if (fast === undefined) return undefined;
@@ -74,6 +75,7 @@ function fastRates(card: RateCard): Rates | undefined {
   if (fast.cache_write !== undefined) rates.cache_write = fast.cache_write;
   if (card.long_context_threshold !== undefined) {
     rates.long_context_threshold = card.long_context_threshold;
+    if (card.long_context_counts_cache_writes) rates.long_context_counts_cache_writes = true;
     if (
       fast.long_context_input_multiplier !== undefined &&
       fast.long_context_output_multiplier !== undefined
@@ -215,10 +217,28 @@ export class PriceTable {
     return min;
   }
 
+  /**
+   * What finding `model`'s long-context records takes: the lowest threshold on any of its
+   * cards, and whether any of those thresholds counts cache writes. Undefined when no card
+   * of `model` has a long-context tier (fast cards share the standard threshold).
+   */
+  longContext(
+    model: string | null | undefined,
+  ): { readonly threshold: number; readonly countsCacheWrites: boolean } | undefined {
+    let threshold: number | undefined;
+    let countsCacheWrites = false;
+    for (const { standard } of this.#periods(model) ?? []) {
+      const t = standard.long_context_threshold;
+      if (t === undefined) continue;
+      if (threshold === undefined || t < threshold) threshold = t;
+      if (standard.long_context_counts_cache_writes) countsCacheWrites = true;
+    }
+    return threshold === undefined ? undefined : { threshold, countsCacheWrites };
+  }
+
   /** Whether any card of `model` has a long-context tier (fast cards share the standard threshold). */
   hasLongContext(model: string | null | undefined): boolean {
-    const periods = this.#periods(model);
-    return periods?.some((p) => p.standard.long_context_threshold !== undefined) ?? false;
+    return this.longContext(model) !== undefined;
   }
 
   /** The standard card in effect now, for the UI's $/M columns. */

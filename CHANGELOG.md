@@ -8,6 +8,23 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+### Added
+
+- **Prices for Claude Fable 5.2, Claude Mythos 5.2 and Claude Haiku 5.5**, from Anthropic's
+  pricing page of 2026-11-09. Until now their usage was counted but `unpriced`.
+  - Fable 5.2 and Mythos 5.2: $8/$40 per million tokens, cache hits $0.20 (0.025x), fast
+    mode $16/$80.
+  - Haiku 5.5: $0.10/$0.50, and every price 5x ($0.50/$2.50) for a request whose prompt is
+    over 100,000 tokens. Its prompt counts cache writes as well as input and cache reads,
+    as Anthropic bills it. In `pricing.overrides.json`, a card can say the same with
+    `"long_context_counts_cache_writes": true`.
+
+### Fixed
+
+- **Claude Sonnet 5.5 cache hits cost $0.10 per million tokens from 2026-10-07**, down from
+  $0.20. tokenhud priced them at $0.20 throughout, so Sonnet 5.5 costs since then come out
+  lower.
+
 ## [0.1.5] - 2026-10-04
 
 ### Fixed
