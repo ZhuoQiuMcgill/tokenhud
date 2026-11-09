@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-09
+
 ### Added
 
 - **Prices for Claude Fable 5.2, Claude Mythos 5.2 and Claude Haiku 5.5**, from Anthropic's
