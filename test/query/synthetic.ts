@@ -3,8 +3,9 @@
 // alongside), rows every few seconds to a minute. The mix covers what pricing from sums
 // must get right: every bundled dated period, both tiers (with tiers a model has no price
 // for), unpriced models, raw model ids that normalise, NULL and half-NULL cache buckets,
-// and long-context rows (above OpenAI's 272k threshold, and Claude rows that size, which
-// have no long-context tier).
+// and long-context rows (above OpenAI's 272k threshold, Claude rows that size, which have
+// no long-context tier, and Haiku 5.5 helper rows above its 100k, some of them only
+// because its threshold counts cache writes).
 //
 // Nothing here reads a real file; identities and labels are obviously fake.
 
@@ -24,10 +25,11 @@ const CLAUDE_MODELS = [
   "claude-opus-4-8-20260101",
   "Claude-Opus-4-8[1m]",
   "claude-opus-4-7", // no fast card: fast rows are unpriced-tier
+  "claude-sonnet-5-5", // dated: its cache-read cut on Oct 7 2026
   "claude-sonnet-4-6",
   "claude-mystery-9", // not in the table
 ];
-const CLAUDE_HELPER = "claude-haiku-4-5";
+const CLAUDE_HELPER = "claude-haiku-5-5"; // 100k long-context threshold, counting cache writes
 const CODEX_MODELS = [
   "gpt-5.6-sol", // dated: Jul 30, Aug 5 and Aug 21 2026
   "gpt-5.6-terra",

@@ -585,7 +585,10 @@ entries; rates are USD per 1 million tokens:
 ```
 
 `input` and `output` are required. `cache_read` defaults to a tenth of `input` and
-`cache_write` to 1.25 × `input`; `fast` holds a fast or priority card in the same form. An
+`cache_write` to 1.25 × `input`; `fast` holds a fast or priority card in the same form. A
+long-context tier is `long_context_threshold` with `long_context_input_multiplier` and
+`long_context_output_multiplier`; the threshold counts input and cache reads, and cache
+writes too with `"long_context_counts_cache_writes": true` (Claude Haiku 5.5's rule). An
 entry replaces everything the bundled table says about that model, its dated prices and
 fast card included. Because the file holds only your entries, later corrections to the
 bundled table still reach every other model. An entry tokenhud can't read is skipped, with

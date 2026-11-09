@@ -108,6 +108,36 @@ describe("cost", () => {
     db.close();
   });
 
+  test("a Claude Haiku 5.5 row whose cache writes take its prompt over 100k is long", () => {
+    // claude-haiku-5-5: $0.10/$0.50, every price 5x above 100k prompt tokens, which count
+    // input, cache reads and cache writes.
+    // Long: 50,000 + 40,000 + 10,001 > 100k: 50000 * 0.5 + 1000 * 2.5 + 40000 * 0.05
+    //   + 10001 * 0.625 (5m writes) = 0.035750625.
+    // At 100k exactly, base: 50000 * 0.1 + 1000 * 0.5 + 40000 * 0.01 + 10000 * 0.125 = 0.00715.
+    // Opus 4.8 has no long-context tier: 200000 * 5 = 1.
+    const ts = at("2026-10-08T14:10:00Z");
+    const haiku = { model: "claude-haiku-5-5-20261007", ts, inp: 50_000, outp: 1000, cr: 40_000 };
+    const { q, db } = engine([
+      row({ ...haiku, cc: 10_001, e5: 10_001, e1: 0 }),
+      row({ ...haiku, cc: 10_000, e5: 10_000, e1: 0 }),
+      row({ ts, inp: 200_000 }),
+    ]);
+    const hour = { from: at("2026-10-08T14:00:00Z"), to: at("2026-10-08T15:00:00Z") };
+    expect(q.totals({ range: hour }).usage.cost).toBeCloseTo(1.042900625, 12);
+    expect(q.totals({ range: { from: hour.from + 1, to: hour.to } }).usage.cost).toBeCloseTo(
+      1.042900625,
+      12,
+    );
+    const haikuRow = q.byModel().find((m) => m.model === "claude-haiku-5-5");
+    expect(haikuRow?.usage.cost).toBeCloseTo(0.042900625, 12);
+    expect(haikuRow?.rates?.longContext).toEqual({
+      threshold: 100_000,
+      inputMultiplier: 5,
+      outputMultiplier: 5,
+    });
+    db.close();
+  });
+
   test("fast long context without a price is unpriced-tier, the rest of the tier priced", () => {
     // Fast short row: 1000 * 12.5 + 1000 * 75 = 0.0875. The long one has no price.
     const { q, db } = engine([

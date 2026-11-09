@@ -117,7 +117,12 @@ describe("test_cost.py", () => {
   });
 
   test("test_bundled_pricing_prices_sonnet_5_5_and_mythos", () => {
-    expect(bundledPricing().models["claude-sonnet-5-5"]).toEqual({ input: 2.0, output: 10.0 });
+    // tokenhud dates Sonnet 5.5's cache-read cut (2026-10-07); cc-usage's row is the first card.
+    const sonnet55Entry = bundledPricing().models["claude-sonnet-5-5"];
+    expect(sonnet55Entry !== undefined && isDated(sonnet55Entry)).toBe(true);
+    if (sonnet55Entry !== undefined && isDated(sonnet55Entry)) {
+      expect(sonnet55Entry.periods[0]).toEqual({ from: null, card: { input: 2.0, output: 10.0 } });
+    }
     const sonnet55 = rates("claude-sonnet-5-5") as Rates;
     expect(sonnet55).toEqual({ input: 2.0, output: 10.0 });
     expect(rates("claude-sonnet-5-5[1m]")).toEqual({ input: 2.0, output: 10.0 });

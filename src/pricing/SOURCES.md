@@ -6,7 +6,8 @@ below, or from captures of them.
 
 | Provider | Page | Checked |
 | --- | --- | --- |
-| Anthropic | https://platform.claude.com/docs/en/about-claude/pricing.md | 2026-10-01 (capture `anthropic_20261001172026.md`) |
+| Anthropic | https://platform.claude.com/docs/en/about-claude/pricing.md | 2026-11-09 (capture `anthropic_20261109222005.md`; before it, `anthropic_20261001172026.md`) |
+| Anthropic release notes | https://platform.claude.com/docs/en/release-notes/overview.md | 2026-11-09 (capture `anthropic-release-notes_20261109222551.md`) |
 | OpenAI | https://developers.openai.com/api/docs/pricing.md | 2026-10-01 (capture `live_20261001172025.md`) |
 | OpenAI changelog | https://developers.openai.com/api/docs/changelog.md | 2026-10-01 (capture `changelog_20261001172026.md`) |
 
@@ -15,36 +16,82 @@ never committed. A capture's file name carries its time in UTC (`YYYYMMDDhhmmss`
 
 ## Anthropic
 
-The standard cards are cc-usage v2.6.1's table, unchanged. Every row matches the live
-"Model pricing" table: Fable 5.1 and Mythos 5.1 at $10/$50 with $0.25 cache hits (0.025x);
-Fable 5 and Mythos 5 at $10/$50; Opus 5.5 at $4/$20 with $0.20 cache hits (0.05x); Opus 5,
-4.8, 4.7, 4.6 and 4.5 at $5/$25; Sonnet 5.5 and Sonnet 5 at $2/$10; Sonnet 4.6 and 4.5 at
-$3/$15; Haiku 4.5 at $1/$5. The other cache rates follow the page's multipliers: 5m writes
-1.25x, 1h writes 2x and cache hits 0.1x, unless stated.
+The standard cards started as cc-usage v2.6.1's table. Every row matches the live "Model
+pricing" table of 2026-11-09:
+- Fable 5.2 and Mythos 5.2 at $8/$40 with $0.20 cache hits (0.025x);
+- Fable 5.1 and Mythos 5.1 at $10/$50 with $0.25 cache hits (0.025x);
+- Fable 5 and Mythos 5 at $10/$50;
+- Opus 5.5 at $4/$20 with $0.20 cache hits (0.05x);
+- Opus 5, 4.8, 4.7, 4.6 and 4.5 at $5/$25;
+- Sonnet 5.5 at $2/$10 with $0.10 cache hits (0.05x) since 2026-10-07 (see "Dated
+  boundaries" below), and Sonnet 5 at $2/$10;
+- Sonnet 4.6 and 4.5 at $3/$15;
+- Haiku 5.5 at $0.10/$0.50, more above 100,000 prompt tokens (see "Claude Haiku 5.5 long
+  context" below), and Haiku 4.5 at $1/$5.
 
-No Anthropic model has dated periods. The page's footnote 3 says the Sonnet 5 introductory
-price of $2/$10 "is now the standard price" and that the planned rise to $3/$15 on
-2026-09-01 "will not occur".
+The other cache rates follow the page's multipliers: 5m writes 1.25x, 1h writes 2x and cache
+hits 0.1x, unless stated. The page's footnotes: "Cache hits and refreshes on Claude Fable
+5.2, Claude Mythos 5.2, Claude Fable 5.1, and Claude Mythos 5.1 are priced at 0.025x the
+base input price", and "on Claude Opus 5.5 and Claude Sonnet 5.5 are priced at 0.05x".
 
-**Fast mode.** These cards come from the "Fast mode pricing" table: Opus 5.5 at $8/$40, and
-Opus 5 and Opus 4.8 at $10/$50. The page says "Prompt caching multipliers apply on top of
-fast mode pricing" and that "Fast mode pricing applies across the full context window". So
-fast cards state only input and output, and `table.ts` derives the cache rates:
+Fable 5.2 and Mythos 5.2 launched on 2026-11-09 and Haiku 5.5 on 2026-10-07 (release notes,
+under those dates). Each has one card, which applies for all time.
 
-- cache read = fast input × (standard cache read ÷ standard input): $0.40 on Opus 5.5
-  (0.05x), $1.00 on Opus 5 and 4.8 (0.1x);
+The page's footnote 3 says the Sonnet 5 introductory price of $2/$10 "is now the standard
+price" and that the planned rise to $3/$15 on 2026-09-01 "will not occur".
+
+### Dated boundaries
+
+| Model | Effective from | Change | Evidence |
+| --- | --- | --- | --- |
+| claude-sonnet-5-5 | 2026-10-07T07:00:00Z | cache hits $0.20 (0.1x) -> $0.10 (0.05x); input, output and cache writes unchanged | Release notes, October 7, 2026: "We’ve lowered the price of prompt cache reads on Claude Sonnet 5.5 from $0.20 USD to $0.10 USD per million tokens: 0.05x the base input price instead of 0.1x. Cache writes and all other prices are unchanged." Captures: `anthropic_20261001172026.md` shows $0.20, `anthropic_20261109222005.md` $0.10. |
+
+**An announced date means 00:00 America/Los_Angeles**, as for OpenAI (see "Rules" below):
+Anthropic is also based there, and the release notes give no time or zone. That is 07:00Z
+while daylight time is in effect, as on 2026-10-07. This is a ruling, not a fact.
+
+### Claude Haiku 5.5 long context
+
+The page lists two rows, "for prompts up to 100,000 tokens" and "for prompts over 100,000
+tokens": $0.10/$0.50 (writes $0.125 and $0.20, hits $0.01) and $0.50/$2.50 (writes $0.625
+and $1, hits $0.05). Every price is 5x above the threshold, so the card has
+`long_context_threshold` 100000 and both multipliers at 5. The base card's cache rates are
+the default multipliers.
+
+"Long context pricing" says: "A request’s prompt length counts all of its input tokens,
+including cache reads and cache writes. Each request is priced on its own: a request over
+the threshold pays the higher prices even when part of its prompt is a cache hit". So the
+card sets `long_context_counts_cache_writes`: its threshold counts input + cache reads +
+cache writes, strictly greater than 100,000. Without that field a threshold counts input
+and cache reads only, cc-usage's rule, which the OpenAI cards keep (Codex reports no cache
+writes, so it makes no difference there).
+
+The same section says every other Claude model 4.6 and later has "the full 1M token
+context window at standard pricing", so no other Claude card has a threshold.
+
+**Fast mode.** These cards come from the "Fast mode pricing" table: Fable 5.2 and Mythos 5.2
+at $16/$80, Opus 5.5 at $8/$40, and Opus 5 and Opus 4.8 at $10/$50. The page says "Prompt
+caching multipliers apply on top of fast mode pricing" and that "Fast mode pricing applies
+across the full context window". So fast cards state only input and output, and `table.ts`
+derives the cache rates:
+
+- cache read = fast input × (standard cache read ÷ standard input): $0.40 on Fable 5.2 and
+  Mythos 5.2 (0.025x), $0.40 on Opus 5.5 (0.05x), $1.00 on Opus 5 and 4.8 (0.1x);
 - writes = 1.25x (5m) and 2x (1h) of the fast input.
 
-The page also says: "Fast mode is not available on Claude Opus 4.7 (requests with
+The 2026-10-01 page also said: "Fast mode is not available on Claude Opus 4.7 (requests with
 `speed: "fast"` return an error) or Claude Opus 4.6 (requests run at standard speed and are
-billed at standard rates)."
+billed at standard rates)." The 2026-11-09 page no longer names either model; the release
+notes of June 29, 2026 say of Opus 4.6: "Requests to `claude-opus-4-6` with `speed: "fast"`
+no longer run at fast speed or premium pricing: they run at standard speed, are billed at
+standard rates, and do not return an error."
 - **Opus 4.6** therefore has a fast card equal to its standard card ($5/$25), so a fast
   record prices exactly as a standard one.
 - **Opus 4.7** and every other Claude model have no fast card. A fast record for them is
   `unpriced-tier`.
 
-Claude models have no long-context tier, and "Fast mode pricing applies across the full
-context window", so Claude fast cards need no long-context fields.
+Fast cards need no long-context fields: "Fast mode pricing applies across the full context
+window", and Haiku 5.5, the one Claude model with a threshold, has no fast mode.
 
 ## OpenAI
 
@@ -180,10 +227,7 @@ standard or fast API-equivalent cost.
 - **OpenAI Ultrafast** (gpt-6-astra, from 2026-09-29).
 - **Regional uplifts**: the OpenAI regional-processing (data residency) and FedRAMP uplift
   of 10%, and the Anthropic data-residency multiplier of 1.1x (`inference_geo: "us"`,
-  Claude 4.6 and later).
+  Claude 4.6 and later, on Haiku 5.5's long-context prices too).
 - **Other providers' prices** for the same models, such as Bedrock, Google Cloud and Azure.
-- **Claude long-context premiums**: the current page lists none for any model in this
-  table ("Claude 4.6 and later models … include the full 1M token context window at
-  standard pricing").
 - **OpenAI models outside cc-usage's table**, such as gpt-5.5-pro, gpt-5.6-cyber and the
   older GPT-5 and GPT-4 models. They stay unpriced until someone adds them with evidence.
