@@ -179,9 +179,10 @@ export function rollupMatchesUsage(db: Database): boolean {
 // ── long context ─────────────────────────────────────────────────────────────────
 // Rows above a long-context threshold are priced at multiplied rates, so sums can't price
 // them. This partial index finds them, by time, without reading every row. It holds rows
-// above the lowest threshold in the bundled price table (OpenAI's 272k), which the real
-// data has almost none of. A query must spell its predicate exactly as below for SQLite
-// to use it; a price card with a lower threshold makes the query layer scan instead.
+// whose input and cache reads are above OpenAI's 272k threshold, which the real data has
+// almost none of. A query must spell its predicate exactly as below for SQLite to use it.
+// A card with a lower threshold, or one that counts cache writes (Claude Haiku 5.5's
+// 100k), can't use it: the query layer finds those rows through roll_hour instead.
 
 export const LONG_CONTEXT_INDEX_MIN = 272_000;
 export const LONG_CONTEXT_PREDICATE = `inp + cr > ${LONG_CONTEXT_INDEX_MIN}`;

@@ -27,6 +27,12 @@ export interface Rates {
   readonly long_context_input_multiplier?: number;
   readonly long_context_output_multiplier?: number;
   /**
+   * The threshold counts cache writes as well as input and cache reads (Anthropic's rule
+   * for Claude Haiku 5.5: a prompt's length is all of its input tokens). Without it the
+   * threshold counts input and cache reads only, as cc-usage does for OpenAI.
+   */
+  readonly long_context_counts_cache_writes?: true;
+  /**
    * Set only on resolved fast rates whose fast card states no long-context price: a
    * request above the threshold then has no price ("unpriced-tier"). Never in pricing.json.
    */
@@ -71,6 +77,25 @@ export function cacheReadRate(card: Rates, inputMult = 1): number {
 }
 
 /**
+ * Whether a request is above `card`'s long-context threshold: its input and cache reads,
+ * plus its cache writes when the card says the threshold counts them, strictly above the
+ * threshold. A card without a threshold has no long context.
+ */
+export function isLongContext(
+  card: Rates,
+  input: number,
+  cacheRead: number,
+  cacheCreation: number,
+): boolean {
+  const threshold = card.long_context_threshold;
+  if (threshold === undefined) return false;
+  const prompt = card.long_context_counts_cache_writes
+    ? input + cacheRead + cacheCreation
+    : input + cacheRead;
+  return prompt > threshold;
+}
+
+/**
  * The API-equivalent cost in USD of one record at `card`, or the reason it has none.
  *
  * Cache creation:
@@ -78,16 +103,16 @@ export function cacheReadRate(card: Rates, inputMult = 1): number {
  * - else, with both ephemeral buckets null, the aggregate count at 1.25x input;
  * - else the 5m bucket at 1.25x and the 1h bucket at 2x input.
  *
- * Long context applies when `input + cacheRead` is strictly above the card's threshold. It
- * scales input, cache reads and cache writes by the input multiplier, and output by the
- * output multiplier. On a card marked `long_context_unpriced`, such a record is
+ * Long context applies when `isLongContext` says so: `input + cacheRead` (plus cache
+ * creation, on a card that counts it) strictly above the card's threshold. It scales
+ * input, cache reads and cache writes by the input multiplier, and output by the output
+ * multiplier. On a card marked `long_context_unpriced`, such a record is
  * "unpriced-tier" instead: no long-context price is ever extrapolated.
  */
 export function computeCost(tokens: TokenCounts, card: Rates | Unpriced): number | Unpriced {
   if (typeof card === "string") return card;
 
-  const threshold = card.long_context_threshold;
-  const longContext = threshold !== undefined && tokens.input + tokens.cacheRead > threshold;
+  const longContext = isLongContext(card, tokens.input, tokens.cacheRead, tokens.cacheCreation);
   if (longContext && card.long_context_unpriced) return "unpriced-tier";
   const inputMult = longContext ? (card.long_context_input_multiplier ?? 1) : 1;
   const outputMult = longContext ? (card.long_context_output_multiplier ?? 1) : 1;

@@ -193,6 +193,96 @@ describe("Claude fast cards", () => {
   });
 });
 
+describe("Claude cards of 2026-11-09", () => {
+  const t = at("2026-11-09T23:00:00Z");
+  const usd = (model: string, tokens: Partial<TokenCounts>, tier: Tier = "standard") =>
+    computeCost({ input: 0, output: 0, ...NO_CACHE, ...tokens }, table.rates(model, tier, t));
+
+  test("Fable 5.2 and Mythos 5.2: $8/$40, cache hits $0.20 (0.025x), fast $16/$80", () => {
+    for (const model of ["claude-fable-5-2", "claude-mythos-5-2"]) {
+      expect(table.rates(model, "standard", t)).toEqual({ input: 8, output: 40, cache_read: 0.2 });
+      expect(usd(model, { input: 1_000_000, output: 1_000_000 })).toBe(48);
+      expect(usd(model, { cacheRead: 1_000_000 })).toBe(0.2);
+      // Writes: 1.25x and 2x of $8.
+      expect(usd(model, { cacheCreation: 1_000_000, ephemeral5m: 1_000_000 })).toBe(10);
+      expect(usd(model, { cacheCreation: 1_000_000, ephemeral1h: 1_000_000 })).toBe(16);
+      // Fast: cache hits at the standard card's 0.025x of the $16 fast input.
+      expect(table.rates(model, "fast", t)).toEqual({ input: 16, output: 80, cache_read: 0.4 });
+      expect(usd(model, { cacheRead: 1_000_000 }, "fast")).toBe(0.4);
+    }
+    expect(table.rates("claude-fable-5-2-20261109", "standard", t)).toBe(
+      table.rates("claude-fable-5-2", "standard", t),
+    );
+  });
+
+  test("Haiku 5.5: $0.10/$0.50 up to 100,000 prompt tokens, every price 5x above", () => {
+    expect(table.rates("claude-haiku-5-5", "standard", t)).toEqual({
+      input: 0.1,
+      output: 0.5,
+      long_context_threshold: 100_000,
+      long_context_input_multiplier: 5,
+      long_context_output_multiplier: 5,
+      long_context_counts_cache_writes: true,
+    });
+    const short = { input: 40_000, output: 1_000_000, cacheRead: 60_000 };
+    expect(isClose(usd("claude-haiku-5-5", short) as number, 0.004 + 0.5 + 0.0006)).toBe(true);
+    const long = { input: 40_001, output: 1_000_000, cacheRead: 60_000 };
+    expect(isClose(usd("claude-haiku-5-5", long) as number, 0.0200005 + 2.5 + 0.003)).toBe(true);
+    // Above the threshold, writes cost 5x too: $0.625 (5m) and $1 (1h).
+    const writes = (bucket: "ephemeral5m" | "ephemeral1h") =>
+      usd("claude-haiku-5-5", { input: 100_001, cacheCreation: 1_000_000, [bucket]: 1_000_000 });
+    expect(isClose(writes("ephemeral5m") as number, 0.0500005 + 0.625)).toBe(true);
+    expect(isClose(writes("ephemeral1h") as number, 0.0500005 + 1)).toBe(true);
+    // Haiku 5.5 has no fast mode.
+    expect(table.rates("claude-haiku-5-5", "fast", t)).toBe("unpriced-tier");
+  });
+
+  test("Haiku 5.5's threshold counts cache writes: 'all of its input tokens'", () => {
+    // 50,000 + 40,000 + 10,000 = 100,000 is not over; one more write token is.
+    const at100k = { input: 50_000, cacheRead: 40_000, cacheCreation: 10_000, ephemeral5m: 10_000 };
+    const over = { ...at100k, cacheCreation: 10_001, ephemeral5m: 10_001 };
+    expect(isClose(usd("claude-haiku-5-5", at100k) as number, 0.005 + 0.0004 + 0.00125)).toBe(true);
+    expect(
+      isClose(usd("claude-haiku-5-5", over) as number, 5 * (0.005 + 0.0004 + 0.001250125)),
+    ).toBe(true);
+    // An OpenAI card's threshold still counts input and cache reads only (cc-usage's rule).
+    const gpt = table.rates("gpt-5.5", "standard", at("2026-10-01T00:00:00Z")) as Rates;
+    const below = { input: 200_000, output: 0, cacheRead: 72_000, cacheCreation: 1_000 };
+    expect(computeCost({ ...below, ephemeral5m: null, ephemeral1h: null }, gpt)).toBe(
+      200_000 * (5 / 1e6) + 72_000 * (0.5 / 1e6) + 1_000 * (5 / 1e6) * 1.25,
+    );
+  });
+
+  test("Sonnet 5.5 cache hits: $0.20 before 2026-10-07T07:00Z, $0.10 (0.05x) from then", () => {
+    expect(card("claude-sonnet-5-5", "standard", "2026-10-07T06:59:59.999Z")).toEqual([
+      2,
+      10,
+      Number.NaN,
+      Number.NaN,
+    ]);
+    expect(card("claude-sonnet-5-5", "standard", "2026-10-07T07:00:00Z")).toEqual([
+      2,
+      10,
+      0.1,
+      Number.NaN,
+    ]);
+    const hit = (iso: string) =>
+      computeCost(
+        { input: 0, output: 0, ...NO_CACHE, cacheRead: 1_000_000 },
+        table.rates("claude-sonnet-5-5[1m]", "standard", at(iso)),
+      );
+    expect(isClose(hit("2026-10-06T00:00:00Z") as number, 0.2, 1e-12)).toBe(true);
+    expect(hit("2026-10-08T00:00:00Z")).toBe(0.1);
+    // Writes are unchanged: 1.25x of $2.
+    expect(
+      computeCost(
+        { input: 0, output: 0, ...NO_CACHE, cacheCreation: 1_000_000, ephemeral5m: 1_000_000 },
+        table.rates("claude-sonnet-5-5", "standard", at("2026-10-08T00:00:00Z")),
+      ),
+    ).toBe(2.5);
+  });
+});
+
 describe("tier fallback", () => {
   const t = at("2026-10-01T00:00:00Z");
 
@@ -342,11 +432,14 @@ describe("bundled pricing.json", () => {
       expect(bundledPricing().models[id]).toBeDefined();
   });
 
-  test("Anthropic cards are valid for all time; dated OpenAI entries start with null", () => {
+  test("dated entries start with null; Sonnet 5.5 is the only dated Claude entry", () => {
+    const datedClaude: string[] = [];
     for (const [id, pricing] of Object.entries(bundledPricing().models)) {
-      if (id.startsWith("claude-")) expect(isDated(pricing)).toBe(false);
-      if (isDated(pricing)) expect(pricing.periods[0]?.from).toBeNull();
+      if (!isDated(pricing)) continue;
+      expect(pricing.periods[0]?.from).toBeNull();
+      if (id.startsWith("claude-")) datedClaude.push(id);
     }
+    expect(datedClaude).toEqual(["claude-sonnet-5-5"]);
   });
 
   test("names both providers' sources with the date checked", () => {
@@ -372,7 +465,7 @@ describe("bundled pricing.json", () => {
         expect({ id, from, line }).toEqual({ id, from, line: expect.any(String) });
       }
     }
-    expect(boundaries).toBe(6);
+    expect(boundaries).toBe(7);
   });
 });
 
@@ -390,12 +483,13 @@ describe("what the query layer asks of a table", () => {
       at("2026-07-30T07:00:00Z"),
       at("2026-08-05T07:00:00Z"),
       at("2026-08-21T07:00:00Z"),
+      at("2026-10-07T07:00:00Z"),
     ]);
     expect(new PriceTable({ "m-1": { input: 1, output: 2 } }).boundaries()).toEqual([]);
   });
 
   test("the lowest long-context threshold, and which models have one", () => {
-    expect(table.minLongContextThreshold()).toBe(272_000);
+    expect(table.minLongContextThreshold()).toBe(100_000); // Claude Haiku 5.5
     expect(new PriceTable({ "m-1": { input: 1, output: 2 } }).minLongContextThreshold()).toBe(
       undefined,
     );
@@ -404,12 +498,20 @@ describe("what the query layer asks of a table", () => {
       "m-1": {
         input: 1,
         output: 2,
-        long_context_threshold: 100_000,
+        long_context_threshold: 50_000,
         long_context_input_multiplier: 2,
         long_context_output_multiplier: 2,
       },
     });
-    expect(low.minLongContextThreshold()).toBe(100_000);
+    expect(low.minLongContextThreshold()).toBe(50_000);
+    expect(low.longContext("m-1")).toEqual({ threshold: 50_000, countsCacheWrites: false });
+    expect(table.longContext("gpt-5.5")).toEqual({ threshold: 272_000, countsCacheWrites: false });
+    expect(table.longContext("claude-haiku-5-5-20261007")).toEqual({
+      threshold: 100_000,
+      countsCacheWrites: true,
+    });
+    expect(table.longContext("claude-opus-4-8")).toBeUndefined();
+    expect(table.hasLongContext("claude-haiku-5-5")).toBe(true);
     expect(table.hasLongContext("gpt-5.5")).toBe(true);
     expect(table.hasLongContext("GPT-5.6")).toBe(true); // the alias of gpt-5.6-sol
     expect(table.hasLongContext("claude-opus-4-8")).toBe(false);

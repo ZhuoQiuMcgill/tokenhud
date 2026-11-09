@@ -57,6 +57,10 @@ import type {
 import { Zone } from "./tz.ts";
 
 const HOUR = 3_600_000;
+// Reading a usage row through an index on time costs about this many rows read in the
+// table's own order (measured on stores of 300k and 1M rows).
+const SCAN_RATIO = 8;
+const SCAN_MIN_ROWS = 4_096;
 const DAY_HOURS = 24;
 // Between queries the row cache keeps at most this many rows (an empty hour counts as
 // one), dropping the least recently used hours first. A single query may hold more while
@@ -718,42 +722,116 @@ export class UsageQueries {
   }
 
   /**
-   * Rows that may be above a long-context threshold, in [from, to), through the partial
-   * index. Only models with a long-context tier are read, and which those are is read from
-   * this snapshot's models table, so a model written after the names were cached still
-   * counts. If some card's threshold is below the index's, the range is scanned instead.
+   * Rows that may be above a long-context threshold, in [from, to). Only models with a
+   * long-context tier are read, and which those are is read from this snapshot's models
+   * table, so a model written after the names were cached still counts. This returns a
+   * superset: priceGroup checks each row against its own card.
+   *
+   * - A model whose thresholds are all at or above the partial index's, and count input
+   *   and cache reads only (OpenAI's), is read through that index.
+   * - Any other (a lower threshold, or one that counts cache writes, such as Claude Haiku
+   *   5.5's) is read hour by hour: roll_hour names the hours with a bucket of such a model
+   *   whose summed prompt is above the lowest of their thresholds, since no row's prompt
+   *   exceeds its bucket's sum, and only those hours' rows are read, through usage_ts.
+   *   When those hours hold more than 1/SCAN_RATIO of the store's rows, one scan of the
+   *   table in its own order is cheaper, and is used instead: on a million rows with such
+   *   a model in most hours, about 50 ms against 600 ms.
    */
   #candidates(
     from: number,
     to: number,
   ): Array<CandidateRow & { acct: number; model: number; tier: number }> {
-    const threshold = this.#longThreshold;
-    if (threshold === undefined) return [];
-    const longModels = this.#db
-      .query<{ id: bigint; name: string }, []>("SELECT id, name FROM models")
-      .all()
-      .filter((m) => this.#prices.hasLongContext(m.name))
-      .map((m) => m.id);
-    if (longModels.length === 0) return [];
-    const predicate =
-      threshold >= LONG_CONTEXT_INDEX_MIN ? LONG_CONTEXT_PREDICATE : `inp + cr > ${threshold}`;
+    if (this.#longThreshold === undefined) return [];
+    const indexed: bigint[] = [];
+    const hourly: bigint[] = [];
+    let hourlyThreshold = Number.POSITIVE_INFINITY;
+    const names = this.#db.query<{ id: bigint; name: string }, []>("SELECT id, name FROM models");
+    for (const { id, name } of names.all()) {
+      const long = this.#prices.longContext(name);
+      if (long === undefined) continue;
+      if (long.threshold >= LONG_CONTEXT_INDEX_MIN && !long.countsCacheWrites) {
+        indexed.push(id);
+      } else {
+        hourly.push(id);
+        hourlyThreshold = Math.min(hourlyThreshold, long.threshold);
+      }
+    }
+    const rows: Row[] = [];
+    if (indexed.length > 0) {
+      const where = `${LONG_CONTEXT_PREDICATE} AND model IN (${indexed.join(", ")})`;
+      this.#usageRows(where, [[from, to]], rows);
+    }
+    if (hourly.length > 0) {
+      const where = `inp + cr + cc > ${hourlyThreshold} AND model IN (${hourly.join(", ")})`;
+      // Each hour, with the rows it holds of every model: reading it by time reads them all.
+      const hours = this.#db
+        .query<Row, [number, number]>(
+          `SELECT h.hour, (SELECT sum(n) FROM roll_hour AS r WHERE r.hour = h.hour)
+           FROM (SELECT DISTINCT hour FROM roll_hour
+                 WHERE hour >= ?1 AND hour < ?2 AND ${where}) AS h
+           ORDER BY h.hour`,
+        )
+        .values(Math.floor(from / HOUR), Math.ceil(to / HOUR)) as Row[];
+      let inHours = 0;
+      for (const [, n] of hours) inHours += num(n);
+      // A few thousand rows read by time take a few milliseconds whatever the store's size,
+      // so the store is only counted (all of roll_hour) when the scan could win.
+      const scan = inHours > SCAN_MIN_ROWS && inHours * SCAN_RATIO > this.#storedRows();
+      if (scan) {
+        this.#usageRows(where, [[from, to]], rows, "NOT INDEXED");
+      } else {
+        // Consecutive hours are read as one range.
+        const ranges: Array<[number, number]> = [];
+        for (const [h] of hours) {
+          const lo = Math.max(from, num(h) * HOUR);
+          const hi = Math.min(to, (num(h) + 1) * HOUR);
+          const last = ranges.at(-1);
+          if (last !== undefined && last[1] === lo) last[1] = hi;
+          else ranges.push([lo, hi]);
+        }
+        this.#usageRows(where, ranges, rows);
+      }
+    }
+    return rows.map((r) => ({
+      ts: num(r[0]),
+      acct: num(r[1]),
+      model: num(r[2]),
+      tier: num(r[3]),
+      inp: num(r[4]),
+      outp: num(r[5]),
+      cr: num(r[6]),
+      cc: num(r[7]),
+      e5: r[8] === null ? null : num(r[8]),
+      e1: r[9] === null ? null : num(r[9]),
+    }));
+  }
+
+  /** How many usage rows the store holds, from roll_hour, which is small. */
+  #storedRows(): number {
+    const sql = "SELECT coalesce(sum(n), 0) FROM roll_hour";
+    const [row] = this.#db.query<Row, []>(sql).values() as Row[];
+    return num(row?.[0]);
+  }
+
+  /**
+   * Appends to `out` the usage rows matching `where` in each [from, to) of `ranges`, read
+   * through an index on time, or with "NOT INDEXED" in the table's own order.
+   */
+  #usageRows(
+    where: string,
+    ranges: ReadonlyArray<readonly [number, number]>,
+    out: Row[],
+    access: "" | "NOT INDEXED" = "",
+  ): void {
+    if (ranges.length === 0) return;
     const stmt = this.#db.prepare<Row, [number, number]>(
-      `SELECT ts, acct, model, tier, inp, outp, cr, cc, e5, e1 FROM usage
-       WHERE ${predicate} AND model IN (${longModels.join(", ")}) AND ts >= ?1 AND ts < ?2`,
+      `SELECT ts, acct, model, tier, inp, outp, cr, cc, e5, e1 FROM usage ${access}
+       WHERE ${where} AND ts >= ?1 AND ts < ?2`,
     );
     try {
-      return (stmt.values(from, to) as Row[]).map((r) => ({
-        ts: num(r[0]),
-        acct: num(r[1]),
-        model: num(r[2]),
-        tier: num(r[3]),
-        inp: num(r[4]),
-        outp: num(r[5]),
-        cr: num(r[6]),
-        cc: num(r[7]),
-        e5: r[8] === null ? null : num(r[8]),
-        e1: r[9] === null ? null : num(r[9]),
-      }));
+      for (const [lo, hi] of ranges) {
+        for (const row of stmt.values(lo, hi) as Row[]) out.push(row);
+      }
     } finally {
       stmt.finalize();
     }

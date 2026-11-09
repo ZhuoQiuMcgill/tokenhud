@@ -15,8 +15,8 @@ export type Tier = "standard" | "fast";
  * - a fast card has a long-context price only if it states both multipliers, which apply
  *   to its own rates above that threshold;
  * - without them, a fast record above the threshold is "unpriced-tier";
- * - a model with no threshold (every Claude model) has no long-context tier at all, so its
- *   fast card covers the whole context window.
+ * - a model with no threshold (every Claude model but Haiku 5.5, which has no fast card)
+ *   has no long-context tier at all, so its fast card covers the whole context window.
  */
 export interface FastCard {
   readonly input: number;
@@ -104,6 +104,7 @@ const CARD_KEYS: ReadonlySet<string> = new Set([
   "input",
   "output",
   ...OPTIONAL_RATE_FIELDS,
+  "long_context_counts_cache_writes",
   "fast",
 ]);
 const FAST_OPTIONAL_FIELDS = [
@@ -198,6 +199,23 @@ export function parseRateCard(raw: unknown, path: string, opts: ParseOptions): R
   };
   for (const key of OPTIONAL_RATE_FIELDS) {
     if (raw[key] !== undefined) card[key] = rate(raw[key], `${path}.${key}`, opts);
+  }
+  const counts = raw.long_context_counts_cache_writes;
+  if (counts !== undefined) {
+    // Not a rate, so `coerce` doesn't apply: only the JSON booleans.
+    if (typeof counts !== "boolean") {
+      fail(
+        `${path}.long_context_counts_cache_writes`,
+        `expected true or false, got ${describeValue(counts)}`,
+      );
+    }
+    if (counts && card.long_context_threshold === undefined) {
+      fail(
+        `${path}.long_context_counts_cache_writes`,
+        "needs a long_context_threshold on the same card",
+      );
+    }
+    if (counts) card.long_context_counts_cache_writes = true;
   }
   if (raw.fast !== undefined) card.fast = parseFastCard(raw.fast, `${path}.fast`, opts);
   if (

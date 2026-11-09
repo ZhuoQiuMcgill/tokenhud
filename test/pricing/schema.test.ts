@@ -121,6 +121,42 @@ describe("fast long context", () => {
   });
 });
 
+describe("long_context_counts_cache_writes", () => {
+  const haiku = {
+    input: 0.1,
+    output: 0.5,
+    long_context_threshold: 100000,
+    long_context_input_multiplier: 5,
+    long_context_output_multiplier: 5,
+  };
+
+  test("true is kept, false is the default and dropped", () => {
+    expect(parse({ ...haiku, long_context_counts_cache_writes: true })).toEqual({
+      ...haiku,
+      long_context_counts_cache_writes: true,
+    });
+    expect(parse({ ...haiku, long_context_counts_cache_writes: false })).toEqual(haiku);
+  });
+
+  test("must be a JSON boolean, even when coercing, on a card with a threshold", () => {
+    rejects(
+      { ...haiku, long_context_counts_cache_writes: "true" },
+      /m\.long_context_counts_cache_writes: expected true or false/,
+      lenient,
+    );
+    rejects({ ...haiku, long_context_counts_cache_writes: 1 }, /expected true or false, got 1/);
+    rejects(
+      { input: 1, output: 2, long_context_counts_cache_writes: true },
+      /needs a long_context_threshold on the same card/,
+    );
+    // The fast card shares the standard card's threshold and what it counts.
+    rejects(
+      { ...haiku, fast: { input: 1, output: 5, long_context_counts_cache_writes: true } },
+      /m\.fast: unknown field "long_context_counts_cache_writes"/,
+    );
+  });
+});
+
 describe("error messages", () => {
   test("describe a bad value briefly, without recursing into it", () => {
     let deep: unknown = 1;
