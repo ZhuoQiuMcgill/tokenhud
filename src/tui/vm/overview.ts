@@ -170,14 +170,22 @@ export function limitCard(
   now: number,
   zone: Zone,
 ): LimitCard {
-  // Account-wide windows only: a model's own weekly limit binds that model alone (T9).
-  const windows = limits.account.signed_in
-    ? limits.windows.filter((w) => windowScope(limits.account.provider, w) === null)
-    : [];
+  // The verdict reads account-wide windows only: a model's own weekly limit binds that
+  // model alone (T9). The card shows those too, each on its own row.
+  const signedIn = limits.account.signed_in ? limits.windows : [];
+  const windows = signedIn.filter((w) => windowScope(limits.account.provider, w) === null);
+  const meterOf = (w: LimitWindow): LimitMeter => ({
+    utilization: w.utilization,
+    resetsAt: w.resets_at,
+  });
   const meter = (seconds: number): LimitMeter | null => {
     const w = windows.find((x) => x.window_s === seconds);
-    return w === undefined ? null : { utilization: w.utilization, resetsAt: w.resets_at };
+    return w === undefined ? null : meterOf(w);
   };
+  const models = signedIn.flatMap((w) => {
+    const scope = windowScope(limits.account.provider, w);
+    return scope === null ? [] : [{ name: scope.toLowerCase(), meter: meterOf(w) }];
+  });
   const members = limits.group?.members ?? [{ id: limits.account.id, label: limits.account.label }];
   const stored = members.map((m) => byIdentity.get(m.id));
   const accts = stored.flatMap((a) => (a === undefined ? [] : [a.id]));
@@ -201,6 +209,7 @@ export function limitCard(
     signedIn: limits.account.signed_in,
     fiveHour: meter(FIVE_HOURS_S),
     week: meter(WEEK_S),
+    models,
     pace,
     verdict: judged.verdict,
     capturedAt: limits.as_of,

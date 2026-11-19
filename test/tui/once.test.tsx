@@ -122,6 +122,7 @@ describe.each([50, 60, 80, 105, 120])("--once --width %i", (width) => {
     for (const title of [" LIMITS", " SPEND", " ACTIVITY", " TOP MODELS", " LIMIT EVENTS"]) {
       expect(text).toContain(title);
     }
-    if (showCost) expect(text).toContain("unpriced");
+    // A model with no price shows its tokens, not a bare "unpriced".
+    if (showCost) expect(text).toMatch(/Mystery 9 +[\d.]+[KMB]? tok +—/);
   });
 });
