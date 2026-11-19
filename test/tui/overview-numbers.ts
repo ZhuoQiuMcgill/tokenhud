@@ -4,7 +4,7 @@ import { expect } from "bun:test";
 import type { Config } from "../../src/config.ts";
 import { countdownTo } from "../../src/limits/derive.ts";
 import { clock, countdown, money, tokens } from "../../src/tui/format.ts";
-import { costText } from "../../src/tui/views/cells.ts";
+import { costText, unpriced } from "../../src/tui/views/cells.ts";
 import { fitBuckets, listedEvents } from "../../src/tui/views/overview.tsx";
 import type {
   ActivityWindow,
@@ -56,14 +56,16 @@ function projectionNumbers(text: string, vm: OverviewVM): string[] {
 
 /**
  * Every number of the cards: meters, countdowns, the pace, the verdict's share (an idle
- * card's full window), the age; a projection's in `projectionNumbers`.
+ * card's full window), the age; a projection's in `projectionNumbers`. A model's own
+ * window (`fable`) counts when its name is on screen: the narrowest form leaves it out.
  */
-function cardNumbers(vm: OverviewVM, showCost: boolean, resets: boolean): string[] {
+function cardNumbers(text: string, vm: OverviewVM, showCost: boolean, resets: boolean): string[] {
   const out: string[] = [];
   for (const c of vm.cards ?? []) {
     out.push(paceText(c, showCost));
     if (c.signedIn && c.capturedAt !== null) {
-      for (const m of [c.fiveHour, c.week]) {
+      const shown = c.models.filter((m) => new RegExp(`\\b${m.name}\\b`).test(text));
+      for (const m of [c.fiveHour, c.week, ...shown.map((x) => x.meter)]) {
         if (m === null) continue;
         out.push(pct(m.utilization));
         if (resets) out.push(countdown(m.resetsAt - vm.asOf));
@@ -100,7 +102,7 @@ export function expectOverviewWhole(
   window: ActivityWindow = "24h",
 ) {
   const show = config.show_cost;
-  const numbers = [...cardNumbers(vm, show, true), ...projectionNumbers(text, vm)];
+  const numbers = [...cardNumbers(text, vm, show, true), ...projectionNumbers(text, vm)];
   const alternatives: string[][] = [];
   if (text.includes(" SPEND")) {
     const header = text.split("\n").find((l) => l.includes("today")) ?? "";
@@ -131,7 +133,9 @@ export function expectOverviewWhole(
     for (const m of show ? ranked.byCost : ranked.byTokens) {
       // Each model's name whole, and its tier (critique M1).
       numbers.push(`${m.name}${m.tier === "fast" ? " (fast)" : ""}`);
-      if (show) alternatives.push(costForms(m));
+      // A model with no price shows its tokens instead.
+      if (show && unpriced(m)) numbers.push(`${tokens(m.tokens)} tok`);
+      else if (show) alternatives.push(costForms(m));
       else numbers.push(tokens(m.tokens));
     }
   }

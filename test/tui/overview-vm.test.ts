@@ -326,6 +326,15 @@ describe("limit cards", () => {
     expect(card("work").capturedAt).toBe(NOW - 47 * MIN);
   });
 
+  test("a model's own weekly window is a row of its own, named as the provider names it", () => {
+    expect(card("personal").models).toEqual([
+      { name: "fable", meter: { utilization: 0.4, resetsAt: NOW + 102 * HOUR } },
+    ]);
+    // An account without one, and a history-only account (no meters at all), have none.
+    expect(card("work").models).toEqual([]);
+    expect(card("old-laptop").models).toEqual([]);
+  });
+
   test("the pace is the verdict's: a weekly window's average, else the last 30 minutes", () => {
     for (const c of vm.cards ?? []) {
       if (c.label === "codex") continue;

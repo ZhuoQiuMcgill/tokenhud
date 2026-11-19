@@ -29,7 +29,7 @@ exports[`frames 105×50 1`] = `
  │ write    5m $6.25 · 1h $10.00                         │  │ first seen Aug 2 · 1,483 requests        │ 
  │ fast     $12.50 · $75.00 · read $1.25                 │  │                                          │ 
  │ long     >272K: input 2×, output 1.5×                 │  │                                          │ 
- │ source   developers.openai.com · checked 2026-10-01   │  │                                          │ 
+ │ source   developers.openai.com · checked 2026-11-18   │  │                                          │ 
  │                                                       │  │                                          │ 
  ╰───────────────────────────────────────────────────────╯  ╰──────────────────────────────────────────╯ 
                                                                                                          
@@ -83,7 +83,7 @@ exports[`frames 120×45 1`] = `
  │ write    $5.00                                             │  │ first seen Aug 2 · 1,678 requests                  │ 
  │ fast     $8.00 · $40.00 · read $0.80                       │  │                                                    │ 
  │ long     >272K: input 2×, output 1.5×                      │  │                                                    │ 
- │ source   developers.openai.com · checked 2026-10-01        │  │                                                    │ 
+ │ source   developers.openai.com · checked 2026-11-18        │  │                                                    │ 
  │ changed  Aug 21: $5/$30 → $4/$20                           │  │                                                    │ 
  ╰────────────────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────────╯ 
                                                                                                                         
@@ -160,7 +160,7 @@ exports[`frames 160×50 1`] = `
  │ write    5m $6.25 · 1h $10.00                              │  │ first seen Aug 2 · 1,483 requests                          │                                 
  │ fast     $12.50 · $75.00 · read $1.25                      │  │                                                            │                                 
  │ long     >272K: input 2×, output 1.5×                      │  │                                                            │                                 
- │ source   developers.openai.com · checked 2026-10-01        │  │                                                            │                                 
+ │ source   developers.openai.com · checked 2026-11-18        │  │                                                            │                                 
  │                                                            │  │                                                            │                                 
  ╰────────────────────────────────────────────────────────────╯  ╰────────────────────────────────────────────────────────────╯                                 
                                                                                                                                                                 
@@ -202,7 +202,7 @@ exports[`frames 80×24 with Enter: the selected model's cards, the table down to
  │ write    $5.00                                                             │ 
  │ fast     $8.00 · $40.00 · read $0.80                                       │ 
  │ long     >272K: input 2×, output 1.5×                                      │ 
- │ source   developers.openai.com · checked 2026-10-01                        │ 
+ │ source   developers.openai.com · checked 2026-11-18                        │ 
  │ changed  Aug 21: $5/$30 → $4/$20                                           │ 
  │ codex     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  51% $55.45 │ 
  │ codex-win ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  49% $52.73 │ 

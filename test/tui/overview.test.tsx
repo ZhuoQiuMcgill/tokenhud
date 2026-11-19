@@ -17,7 +17,7 @@ import { Controller, initialState, type Ports } from "../../src/tui/controller.t
 import { percent, tokens } from "../../src/tui/format.ts";
 import { theme } from "../../src/tui/theme.ts";
 import type { AccountsState } from "../../src/tui/views/accounts.tsx";
-import { costText } from "../../src/tui/views/cells.ts";
+import { costText, unpriced } from "../../src/tui/views/cells.ts";
 import {
   fitBuckets,
   fitLabels,
@@ -500,11 +500,18 @@ describe("keys", () => {
           const at = { width, showCost, window };
           expect({ ...at, title: lines[0] }).toEqual({ ...at, title: ` TOP MODELS · ${window}` });
           models.forEach((m, i) => {
-            const amount = showCost ? costText(m).text : tokens(m.tokens);
+            // By cost, a model with no price shows its tokens and no share.
+            const bare = showCost && unpriced(m);
+            const amount = bare
+              ? `${tokens(m.tokens)} tok`
+              : showCost
+                ? costText(m).text
+                : tokens(m.tokens);
+            const share = bare ? "—" : percent(m.share, 0);
             expect({ ...at, row: lines[i + 1] }).toEqual({
               ...at,
               row: expect.stringMatching(
-                new RegExp(`^ ${m.name} +${amount.replace("$", "\\$")} +${percent(m.share, 0)} `),
+                new RegExp(`^ ${m.name} +${amount.replace("$", "\\$")} +${share} `),
               ),
             });
           });

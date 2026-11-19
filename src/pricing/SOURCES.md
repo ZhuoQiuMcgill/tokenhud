@@ -8,8 +8,8 @@ below, or from captures of them.
 | --- | --- | --- |
 | Anthropic | https://platform.claude.com/docs/en/about-claude/pricing.md | 2026-11-09 (capture `anthropic_20261109222005.md`; before it, `anthropic_20261001172026.md`) |
 | Anthropic release notes | https://platform.claude.com/docs/en/release-notes/overview.md | 2026-11-09 (capture `anthropic-release-notes_20261109222551.md`) |
-| OpenAI | https://developers.openai.com/api/docs/pricing.md | 2026-10-01 (capture `live_20261001172025.md`) |
-| OpenAI changelog | https://developers.openai.com/api/docs/changelog.md | 2026-10-01 (capture `changelog_20261001172026.md`) |
+| OpenAI | https://developers.openai.com/api/docs/pricing.md | 2026-11-18 (capture `live_20261118235800.md`; before it, `live_20261001172025.md`) |
+| OpenAI changelog | https://developers.openai.com/api/docs/changelog.md | 2026-11-18 (capture `changelog_20261118235800.md`; before it, `changelog_20261001172026.md`) |
 
 Captures live in `docs/pricing-history/` of the main checkout. They are evidence and are
 never committed. A capture's file name carries its time in UTC (`YYYYMMDDhhmmss`).
@@ -97,12 +97,17 @@ window", and Haiku 5.5, the one Claude model with a threshold, has no fast mode.
 
 `scripts/extract-openai-pricing.ts` generates the OpenAI entries. It reads 17 archived HTML
 captures of the pricing page, from 2026-07-16T10:31:53Z to 2026-09-04T10:30:51Z, plus the
-live Markdown page of 2026-10-01T17:20:25Z.
+live Markdown page of 2026-10-01T17:20:25Z and of 2026-11-18T23:58:00Z.
 - **Short-context prices** come from the Astro island props. The tier comes from the
   island's `tier` prop or, for the "Specialized models" table, from its tab pane.
 - **Long-context prices** come from each island's server-rendered table, since the props
   don't carry them, and from the live page's long-context columns. The script checks every
   rendered row against the props.
+- **Cache writes are the 30-minute rate.** By 2026-11-18 the page lists "30m write" and
+  "12h write" columns where it had one "cache writes" column. The 30-minute rate is 1.25x
+  input, as "cache writes" was, so it fills `cache_write`. The changelog: "12-hour cache
+  writes cost 2.5x the input token price". Codex reports no cache writes, so neither rate
+  changes a cost here.
 - **The "Priority" tab is the fast tier.** The page renamed it "Fast" on 2026-07-30
   ("Priority processing was renamed Fast mode on July 30, 2026", first shown by
   `s_20260730195107`).
@@ -153,6 +158,9 @@ time.
 
 | Model | Standard | Fast | Seen |
 | --- | --- | --- | --- |
+| gpt-6.2-astra | $8/$40, cached $0.40, writes $10 | $16/$80, cached $0.80, writes $20 | live page of 2026-11-18 only; changelog: released Nov 17 |
+| gpt-6.2-sol | $2/$10, cached $0.10, writes $2.50 | $4/$20, cached $0.20, writes $5 | live page of 2026-11-18 only; changelog: released Nov 17 |
+| gpt-6.1-terra | $1/$5, cached $0.05, writes $1.25 | $2/$10, cached $0.10, writes $2.50 | live page of 2026-11-18 only; changelog: released Oct 26 |
 | gpt-6-astra | $10/$50, cached $1, writes $12.50 | $20/$100, cached $2, writes $25 | from `wb_20260904103051` (absent from `wb_20260902103226`); changelog: released Sep 3 |
 | gpt-6.1-sol | $2/$10, cached $0.10, writes $2.50 | $4/$20, cached $0.20, writes $5 | live page only; changelog: released Sep 29, same standard prices |
 | gpt-6-sol | $2/$10, cached $0.20, writes $2.50 | $4/$20, cached $0.40, writes $5 | live page only; changelog: released Sep 22, same standard prices |
@@ -172,8 +180,8 @@ counts towards it.
 **Standard long context.** The multipliers are the page's long-context columns divided by
 the short ones: 2x for input, cached input and cache writes, and 1.5x for output. The
 script checks that every column agrees.
-- They apply to gpt-6-astra, gpt-6.1-sol, gpt-6-sol, gpt-6-luna, gpt-5.6-sol,
-  gpt-5.6-terra, gpt-5.6-luna, gpt-5.5 and gpt-5.4.
+- They apply to gpt-6.2-astra, gpt-6.2-sol, gpt-6.1-terra, gpt-6-astra, gpt-6.1-sol,
+  gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5 and gpt-5.4.
 - The rendered tables show them in every capture from 2026-07-16 on.
 - gpt-5.4-mini, gpt-5.3-codex and gpt-5.2 have no long-context tier.
 
@@ -183,8 +191,8 @@ long-context price only if it states its own `long_context_input_multiplier` and
 threshold. A fast card without them has no long-context price: a fast record above the
 threshold is `unpriced-tier`, never priced at the standard or an extrapolated rate. Fast
 cards state multipliers only where the page lists long-context Fast prices:
-- **GPT-6 Astra, 6.1 Sol, 6 Sol and 6 Luna**: listed (2x/1.5x), in every capture showing
-  them and on the live page.
+- **GPT-6.2 Astra and Sol, GPT-6.1 Terra, GPT-6 Astra, 6.1 Sol, 6 Sol and 6 Luna**: listed
+  (2x/1.5x), in every capture showing them and on the live page.
 - **GPT-5.6 Sol, Terra and Luna**: listed (2x/1.5x) from 2026-08-05T07:00Z, per the
   boundary above. Before that there is no long-context Fast price.
 - **gpt-5.5 and gpt-5.4**: the live page shows "-" in all four long-context Fast cells.
@@ -224,7 +232,11 @@ The post texts were read on 2026-10-01 through X's public embed endpoint
 These are deliberately absent; the task leaves them out of scope. Usage priced here is
 standard or fast API-equivalent cost.
 - **Batch** (both providers) and **OpenAI Flex**.
-- **OpenAI Ultrafast** (gpt-6-astra, from 2026-09-29).
+- **OpenAI Ultrafast** (gpt-6-astra, from 2026-09-29; GPT-6.2 Astra and Sol at 3x standard
+  through 2027-02-28, then 6x).
+- **OpenAI's 12-hour cache writes** (2.5x input): Codex reports no cache writes.
+- **OpenAI's discounted background completion windows** (Responses API beta, from
+  2026-11-17).
 - **Regional uplifts**: the OpenAI regional-processing (data residency) and FedRAMP uplift
   of 10%, and the Anthropic data-residency multiplier of 1.1x (`inference_geo: "us"`,
   Claude 4.6 and later, on Haiku 5.5's long-context prices too).

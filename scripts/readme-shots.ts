@@ -344,7 +344,7 @@ const SHOTS: readonly Shot[] = [
             : s.tight(Screen.cols(s.section("activity"), split - 1, WIDTH));
         },
         name: "Top models",
-        text: "The five models with the most cost in the chart's window, its tab in the title (`TOP MODELS · 24h`): the cost, its share of the window's cost, and a bar of that share. `a`/`d` switch the window with the chart's, and `t` ranks by tokens. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced` and comes last. Under the list, when a row is free, `more windows: 3 Models`: the Models view (`3`) has today, this week, this month and more. Then the chart's tallest slot and when it started.",
+        text: "The five models with the most cost in the chart's window, its tab in the title (`TOP MODELS · 24h`): the cost, its share of the window's cost, and a bar of that share. `a`/`d` switch the window with the chart's, and `t` ranks by tokens. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows its token count in place of the cost, dimmed, with no share, and comes last. Under the list, when a row is free, `more windows: 3 Models`: the Models view (`3`) has today, this week, this month and more. Then the chart's tallest slot and when it started.",
       },
       {
         section: "events",
@@ -380,7 +380,7 @@ const SHOTS: readonly Shot[] = [
         locate: (s) => meters(s, /work · claude/, /^\S+\s+━+/),
         badge: "l",
         name: "Meters",
-        text: "The `5h` row is the 5-hour window, the `week` row the weekly one. Each bar is how much of that limit is used: blue below 50 %, amber from 50 %, red-orange from 80 %. A model's own weekly limit isn't on the card; the Accounts view lists it.",
+        text: "The `5h` row is the 5-hour window, the `week` row the weekly one. Each bar is how much of that limit is used: blue below 50 %, amber from 50 %, red-orange from 80 %. A model's own weekly limit, such as Fable's, gets a row of its own under them (`fable`); it binds that model only, so the pace and its verdict leave it out.",
       },
       {
         section: "limits",

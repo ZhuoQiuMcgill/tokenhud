@@ -8,6 +8,26 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+### Added
+
+- **Prices for OpenAI's GPT-6.2 Astra, GPT-6.2 Sol and GPT-6.1 Terra**, from OpenAI's
+  pricing page of 2026-11-18. Until now their usage was counted but `unpriced`.
+  - GPT-6.2 Astra: $8/$40 per million tokens, cached input $0.40; fast $16/$80.
+  - GPT-6.2 Sol: $2/$10, cached input $0.10; fast $4/$20.
+  - GPT-6.1 Terra: $1/$5, cached input $0.05; fast $2/$10.
+  - All three: above 272K input tokens, input 2x and output 1.5x, standard and fast.
+
+### Changed
+
+- **The Overview's limit cards show a model's own weekly limit.** Fable's weekly limit
+  (`FABLE WEEKLY`) gets a row of its own on its account's card, `fable`, under `5h` and
+  `week`. It binds Fable alone, so the pace and its verdict still read the account-wide
+  windows. Cards beside one another take the height of the tallest. On narrow screens it
+  follows `week` on the card's line while there is room.
+- **Top models show how much an unpriced model was used.** Ranked by cost, a model with
+  no published price showed `unpriced` and `0%`. It now shows its tokens in place of the
+  cost (`1.8M tok`, dimmed) and no share.
+
 ## [0.1.6] - 2026-11-09
 
 ### Added

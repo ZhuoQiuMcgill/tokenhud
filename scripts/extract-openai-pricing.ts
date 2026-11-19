@@ -23,9 +23,13 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { isRecord, parsePriceTableFile } from "../src/pricing/schema.ts";
 
-// Every OpenAI model in cc-usage v2.6.1's table, in its order. The task also names
-// gpt-6-sol, gpt-5.3-codex and gpt-5.2, which that table already has.
+// Every OpenAI model in cc-usage v2.6.1's table, in its order, after the models released
+// since (GPT-6.2 Astra and Sol on 2026-11-17, GPT-6.1 Terra on 2026-10-26). The task also
+// names gpt-6-sol, gpt-5.3-codex and gpt-5.2, which that table already has.
 const MODELS = [
+  "gpt-6.2-astra",
+  "gpt-6.2-sol",
+  "gpt-6.1-terra",
   "gpt-6-astra",
   "gpt-6.1-sol",
   "gpt-6-sol",
@@ -401,7 +405,9 @@ function parseMarkdown(file: string, text: string) {
       const short = prices(
         cell("Short context input", "Input"),
         cell("Short context cached input", "Cached input"),
-        cell("Short context cache writes", "Cache writes"),
+        // Since November the page has 30-minute and 12-hour writes (1.25x and 2.5x input);
+        // a card's one write rate is the 30-minute one, as "cache writes" was before.
+        cell("Short context cache writes", "Cache writes", "Short context 30m write"),
         cell("Short context output", "Output"),
         where,
       );
@@ -412,7 +418,7 @@ function parseMarkdown(file: string, text: string) {
               [
                 cell("Long context input"),
                 cell("Long context cached input"),
-                cell("Long context cache writes"),
+                cell("Long context cache writes", "Long context 30m write"),
                 cell("Long context output"),
               ],
               where,

@@ -98,6 +98,12 @@ export interface LimitCard {
   readonly fiveHour: LimitMeter | null;
   readonly week: LimitMeter | null;
   /**
+   * Windows limited to one model ("FABLE WEEKLY"), in the provider's order: `name` is the
+   * model as the provider names it, lower-cased ("fable"). They limit that model alone, so
+   * the verdict and pace don't read them.
+   */
+  readonly models: readonly { readonly name: string; readonly meter: LimitMeter }[];
+  /**
    * The pace the verdict comes from (T18), per hour: a weekly window's average since it
    * began when the verdict is that window's (`window_avg`), else the last 30 minutes.
    */

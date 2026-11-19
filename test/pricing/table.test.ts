@@ -283,6 +283,37 @@ describe("Claude cards of 2026-11-09", () => {
   });
 });
 
+describe("OpenAI cards of 2026-11-18", () => {
+  const t = at("2026-11-18T23:00:00Z");
+  const usd = (model: string, tokens: Partial<TokenCounts>, tier: Tier = "standard") =>
+    computeCost({ input: 0, output: 0, ...NO_CACHE, ...tokens }, table.rates(model, tier, t));
+
+  test("GPT-6.2 Astra, GPT-6.2 Sol and GPT-6.1 Terra: standard and fast, as the page lists", () => {
+    expect(card("gpt-6.2-astra", "standard", "2026-11-18T23:00:00Z")).toEqual([8, 40, 0.4, 10]);
+    expect(card("gpt-6.2-astra", "fast", "2026-11-18T23:00:00Z")).toEqual([16, 80, 0.8, 20]);
+    expect(card("gpt-6.2-sol", "standard", "2026-11-18T23:00:00Z")).toEqual([2, 10, 0.1, 2.5]);
+    expect(card("gpt-6.2-sol", "fast", "2026-11-18T23:00:00Z")).toEqual([4, 20, 0.2, 5]);
+    expect(card("gpt-6.1-terra", "standard", "2026-11-18T23:00:00Z")).toEqual([1, 5, 0.05, 1.25]);
+    expect(card("gpt-6.1-terra", "fast", "2026-11-18T23:00:00Z")).toEqual([2, 10, 0.1, 2.5]);
+  });
+
+  test("their long context: above 272K, input 2x and output 1.5x, standard and fast", () => {
+    // Astra above 272K: $16 in / $60 out; fast $32 / $120 (the page's long-context columns).
+    expect(usd("gpt-6.2-astra", { input: 300_000, output: 10_000 })).toBe(
+      300_000 * (16 / 1e6) + 10_000 * (60 / 1e6),
+    );
+    expect(usd("gpt-6.2-astra", { input: 300_000, output: 10_000 }, "fast")).toBe(
+      300_000 * (32 / 1e6) + 10_000 * (120 / 1e6),
+    );
+    expect(usd("gpt-6.2-sol", { input: 272_000, output: 1_000_000 })).toBe(
+      272_000 * (2 / 1e6) + 10,
+    );
+    expect(usd("gpt-6.1-terra", { input: 200_000, cacheRead: 100_000, output: 0 })).toBe(
+      200_000 * (2 / 1e6) + 100_000 * (0.1 / 1e6),
+    );
+  });
+});
+
 describe("tier fallback", () => {
   const t = at("2026-10-01T00:00:00Z");
 

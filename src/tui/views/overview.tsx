@@ -39,7 +39,7 @@ import type {
   Verdict,
 } from "../vm/types.ts";
 import { ACTIVITY_WINDOWS, SPEND_PERIODS, VIEW_IDS } from "../vm/types.ts";
-import { costNote, costText } from "./cells.ts";
+import { costNote, costText, unpriced } from "./cells.ts";
 import { projectedForms } from "./projection.ts";
 import { type Section, type View, type ViewContext, withCommand } from "./types.ts";
 
@@ -52,7 +52,11 @@ export interface OverviewState {
   readonly card: number | null;
 }
 
-const CARD_HEIGHT = 5;
+/** A card's body rows when it has no model's own window: 5h, week and the pace. */
+const CARD_ROWS = 3;
+/** Meter labels: `5h`, `week`, or a model's name (`fable`), cut to fit. */
+const LABEL_MIN = 5;
+const LABEL_MAX = 10;
 /** Limits captured longer ago than this show their age on the card. */
 const STALE_MS = 15 * 60_000;
 const CHART_ROWS = 7;
@@ -241,7 +245,7 @@ function fitSegs(segs: readonly Seg[], width: number): Seg[] {
 }
 
 /**
- * gen.py's `card()`: `╭─ title note ─╮`, three body lines between `│ ` and ` │`, and the
+ * gen.py's `card()`: `╭─ title note ─╮`, `rows` body lines between `│ ` and ` │`, and the
  * bottom border, each exactly `width` cells. The note (a stale age) is kept whole; the
  * title is the first of `titles` that fits, else the last one, cut.
  */
@@ -251,6 +255,7 @@ function cardText(
   note: string | null,
   body: (width: number) => Line[],
   width: number,
+  rows: number,
 ): Seg[][] {
   const inner = width - 4;
   const room = width - 6;
@@ -267,7 +272,7 @@ function cardText(
       seg(` ${"─".repeat(Math.max(1, fill))}╮`, "border"),
     ],
   ];
-  for (let r = 0; r < CARD_HEIGHT - 2; r++) {
+  for (let r = 0; r < rows; r++) {
     const line = lines[r] ?? { left: [] };
     const right = line.right ?? [];
     const gap = Math.max(1, inner - segsWidth(line.left) - segsWidth(right));
@@ -290,14 +295,26 @@ function resetIn(m: LimitMeter, asOf: number): string {
   return m.resetsAt > asOf ? countdown(m.resetsAt - asOf) : "—";
 }
 
+/** The meter labels' width on `card`: the longest of its names and a space, 5 to 10. */
+function labelWidth(card: LimitCard): number {
+  const longest = Math.max(0, ...card.models.map((m) => textWidth(m.name)));
+  return Math.min(LABEL_MAX, Math.max(LABEL_MIN, longest + 1));
+}
+
 /** gen.py's meter line, filling `width`: `5h   ━━━━━━━━━━━──────  62%   1h48m`. */
-function meterLine(name: string, m: LimitMeter | null, width: number, asOf: number): Line {
-  const label = seg(fit(name, 5), "mute");
+function meterLine(
+  name: string,
+  m: LimitMeter | null,
+  width: number,
+  asOf: number,
+  labelCells = LABEL_MIN,
+): Line {
+  const label = seg(fit(truncate(name, labelCells - 1), labelCells), "mute");
   if (m === null) return { left: [label, seg("—", "dim")] };
   return {
     left: [
       label,
-      ...meterSegs(m, Math.max(4, width - 17)),
+      ...meterSegs(m, Math.max(4, width - labelCells - 12)),
       seg(fit(pct(m.utilization), 5, "right"), level(m.utilization), true),
       seg(fit(resetIn(m, asOf), 7, "right"), "dim"),
     ],
@@ -333,17 +350,35 @@ export function paceLine(card: LimitCard, width: number, ctx: ViewContext, asOf:
   );
 }
 
-function cardBody(card: LimitCard, width: number, ctx: ViewContext, asOf: number): Line[] {
+/** Whether `card` shows meters: signed in, with limits captured. */
+const hasMeters = (card: LimitCard) => card.signedIn && card.capturedAt !== null;
+
+/** A card's body rows: 5h, week, a row per model's own window, and the pace. */
+function cardRows(card: LimitCard): number {
+  return CARD_ROWS + (hasMeters(card) ? card.models.length : 0);
+}
+
+/** A card's `rows` body lines, the pace on the last, so every card's pace lines up. */
+function cardBody(
+  card: LimitCard,
+  width: number,
+  ctx: ViewContext,
+  asOf: number,
+  rows: number,
+): Line[] {
   const pace = paceLine(card, width, ctx, asOf);
-  if (!card.signedIn) return [{ left: [seg("not signed in here", "dim")] }, { left: [] }, pace];
-  if (card.capturedAt === null) {
-    return [{ left: [seg("no limits captured yet", "dim")] }, { left: [] }, pace];
-  }
-  return [
-    meterLine("5h", card.fiveHour, width, asOf),
-    meterLine("week", card.week, width, asOf),
-    pace,
-  ];
+  const cells = labelWidth(card);
+  const above: Line[] = !card.signedIn
+    ? [{ left: [seg("not signed in here", "dim")] }]
+    : card.capturedAt === null
+      ? [{ left: [seg("no limits captured yet", "dim")] }]
+      : [
+          meterLine("5h", card.fiveHour, width, asOf, cells),
+          meterLine("week", card.week, width, asOf, cells),
+          ...card.models.map((m) => meterLine(m.name, m.meter, width, asOf, cells)),
+        ];
+  const gap = Math.max(0, rows - above.length - 1);
+  return [...above, ...Array.from({ length: gap }, (): Line => ({ left: [] })), pace];
 }
 
 /**
@@ -405,6 +440,8 @@ interface CompactShape {
   /** Meter cells, or 0 for none. */
   readonly cells: number;
   readonly resets: boolean;
+  /** Whether the windows of one model (`fable`) follow 5h and week. */
+  readonly models: boolean;
 }
 
 function compactName(card: LimitCard, shape: CompactShape): Seg {
@@ -435,6 +472,7 @@ function compactFirst(card: LimitCard, shape: CompactShape, asOf: number): Line 
       compactName(card, shape),
       ...window("5h", card.fiveHour),
       ...window("week", card.week),
+      ...(shape.models ? card.models.flatMap((m) => window(m.name, m.meter)) : []),
     ],
   };
 }
@@ -455,9 +493,10 @@ function compactSecond(card: LimitCard, ctx: ViewContext, asOf: number): Line {
 }
 
 /**
- * Two lines per card (the name, 5h and week; the pace and its verdict), in the first shape
- * that fits every card: with meters, without them, without the provider, with shorter
- * labels, then without the reset countdowns.
+ * Two lines per card (the name, 5h, week and each model's own window; the pace and its
+ * verdict), in the first shape that fits every card: with meters, without them, without
+ * the provider, with shorter labels, without the models' windows, then without the reset
+ * countdowns.
  */
 function compactLines(
   vm: OverviewVM,
@@ -469,11 +508,12 @@ function compactLines(
   const full = Math.min(22, widest(cards.map((c) => `${c.label} · ${c.provider}`)));
   const label = Math.min(14, widest(cards.map((c) => c.label)));
   const shapes: CompactShape[] = [
-    { provider: true, name: full, cells: 8, resets: true },
-    { provider: true, name: full, cells: 0, resets: true },
-    { provider: false, name: label, cells: 0, resets: true },
-    { provider: false, name: Math.min(label, 9), cells: 0, resets: true },
-    { provider: false, name: Math.min(label, 9), cells: 0, resets: false },
+    { provider: true, name: full, cells: 8, resets: true, models: true },
+    { provider: true, name: full, cells: 0, resets: true, models: true },
+    { provider: false, name: label, cells: 0, resets: true, models: true },
+    { provider: false, name: Math.min(label, 9), cells: 0, resets: true, models: true },
+    { provider: false, name: Math.min(label, 9), cells: 0, resets: true, models: false },
+    { provider: false, name: Math.min(label, 9), cells: 0, resets: false, models: false },
   ];
   const shape =
     shapes.find((sh) =>
@@ -524,7 +564,8 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
     titles: readonly string[];
     role: Role;
     note: string | null;
-    body: (w: number) => Line[];
+    body: (w: number, rows: number) => Line[];
+    rows: number;
   }[] = cards.map((c, i) => {
     const mark = i === selected ? "▸ " : "";
     // Roots on one account are titled "a + b": the provider goes before their labels are cut.
@@ -532,7 +573,8 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
       titles: [`${mark}${c.label} · ${c.provider}`, `${mark}${c.label}`],
       role: i === selected ? "live" : "head",
       note: staleNote(c, vm.asOf),
-      body: (w) => cardBody(c, w, ctx, vm.asOf),
+      body: (w, rows) => cardBody(c, w, ctx, vm.asOf, rows),
+      rows: cardRows(c),
     };
   });
   const agents = vm.agents;
@@ -542,9 +584,14 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
       role: "live",
       note: null,
       body: (w) => agentLines(agents, w, vm.asOf),
+      rows: CARD_ROWS,
     });
   }
-  const full = grid ? 1 + Math.ceil(boxes.length / perRow) * CARD_HEIGHT : compact.length;
+  // A row of the grid is as tall as its tallest card, so the cards beside each other match.
+  const gridRows: (typeof boxes)[] = [];
+  for (let i = 0; i < boxes.length; i += perRow) gridRows.push(boxes.slice(i, i + perRow));
+  const rowsOf = (row: typeof boxes) => Math.max(CARD_ROWS, ...row.map((b) => b.rows));
+  const full = grid ? 1 + gridRows.reduce((sum, row) => sum + rowsOf(row) + 2, 0) : compact.length;
   return {
     id: "limits",
     priority: 1,
@@ -560,11 +607,12 @@ function limitsSection(vm: OverviewVM, state: OverviewState, ctx: ViewContext): 
       // mounts in a fraction of the time of a card renderable per account.
       const widths = splitWidth(ctx.width - 2, perRow, 2);
       const lines: Line[] = [title];
-      for (let i = 0; i < boxes.length; i += perRow) {
-        const row = boxes
-          .slice(i, i + perRow)
-          .map((b, k) => cardText(b.titles, b.role, b.note, b.body, widths[k] as number));
-        for (let r = 0; r < CARD_HEIGHT; r++) {
+      for (const boxRow of gridRows) {
+        const rows = rowsOf(boxRow);
+        const row = boxRow.map((b, k) =>
+          cardText(b.titles, b.role, b.note, (w) => b.body(w, rows), widths[k] as number, rows),
+        );
+        for (let r = 0; r < rows + 2; r++) {
           lines.push({
             left: [
               seg(" ", "fg"),
@@ -715,9 +763,17 @@ export function fitLabels(models: readonly TopModel[], width: number): string[] 
   return cut(0);
 }
 
+/**
+ * A top model's cost, or for a model with no published price its tokens (`38.2M tok`,
+ * dimmed): a bare `unpriced` would hide how much it was used.
+ */
+function topCost(m: TopModel): { text: string; role: Role } {
+  return unpriced(m) ? { text: `${tokens(m.tokens)} tok`, role: "dim" } : costText(m);
+}
+
 /** Cells the top models' cost (or tokens) column takes: its widest text, at least 9. */
 function amountWidth(models: readonly TopModel[], costs: boolean): number {
-  const texts = models.map((m) => (costs ? costText(m).text : tokens(m.tokens)));
+  const texts = models.map((m) => (costs ? topCost(m).text : tokens(m.tokens)));
   return Math.max(9, ...texts.map((t) => textWidth(t)));
 }
 
@@ -740,8 +796,8 @@ function topColumns(costs: boolean, labels: readonly string[], rows: readonly To
           title: "cost",
           width: 9,
           align: "right",
-          role: (m) => costText(m).role,
-          text: (m) => costText(m).text,
+          role: (m) => topCost(m).role,
+          text: (m) => topCost(m).text,
         }
       : {
           title: "tokens",
@@ -755,7 +811,8 @@ function topColumns(costs: boolean, labels: readonly string[], rows: readonly To
       width: 4,
       align: "right",
       role: "mute",
-      text: (m) => percent(m.share, 0),
+      // No cost, so no share of it: "—", not a 0% that reads as no use.
+      text: (m) => (costs && unpriced(m) ? "—" : percent(m.share, 0)),
       drop: 2,
     },
     { title: "", width: 6, role: costs ? "cost" : "tokens", bar: (m) => m.share, drop: 3 },
