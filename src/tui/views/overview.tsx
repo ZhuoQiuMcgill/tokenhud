@@ -763,26 +763,49 @@ export function fitLabels(models: readonly TopModel[], width: number): string[] 
   return cut(0);
 }
 
-/**
- * A top model's cost, or for a model with no published price its tokens (`38.2M tok`,
- * dimmed): a bare `unpriced` would hide how much it was used.
- */
-function topCost(m: TopModel): { text: string; role: Role } {
-  return unpriced(m) ? { text: `${tokens(m.tokens)} tok`, role: "dim" } : costText(m);
-}
-
 /** Cells the top models' cost (or tokens) column takes: its widest text, at least 9. */
 function amountWidth(models: readonly TopModel[], costs: boolean): number {
-  const texts = models.map((m) => (costs ? topCost(m).text : tokens(m.tokens)));
+  const texts = models.map((m) => (costs ? costText(m).text : tokens(m.tokens)));
   return Math.max(9, ...texts.map((t) => textWidth(t)));
 }
 
+/** The cells the second amount takes: tokens beside a cost, a cost beside tokens, or none. */
+function secondWidth(costs: boolean, showCost: boolean): number {
+  return costs ? TOKENS_CELLS : showCost ? COST_CELLS : 0;
+}
+const TOKENS_CELLS = 6;
+const COST_CELLS = 9;
+
 /**
- * The top models' table: by cost, or by tokens when the chart shows tokens. The names keep
- * their width (`min`): the bar, then the share, go before a name is cut.
+ * The top models' table: ranked by cost with each model's tokens beside it, or by tokens
+ * (the chart shows tokens) with its cost beside them, unless costs are hidden. The share
+ * and its bar are of the ranking's amount. The names keep their width (`min`): the bar,
+ * then the share, then the second amount go before a name is cut.
  */
-function topColumns(costs: boolean, labels: readonly string[], rows: readonly TopModel[]) {
+function topColumns(
+  costs: boolean,
+  showCost: boolean,
+  labels: readonly string[],
+  rows: readonly TopModel[],
+) {
   const label = new Map(rows.map((m, i) => [m, labels[i] as string]));
+  const cost = (width: number, drop?: number): Column<TopModel> => ({
+    title: "cost",
+    width,
+    align: "right",
+    role: (m) => costText(m).role,
+    text: (m) => costText(m).text,
+    ...(drop === undefined ? {} : { drop }),
+  });
+  const tokenCount = (width: number, drop?: number): Column<TopModel> => ({
+    title: "tokens",
+    width,
+    align: "right",
+    role: "tokens",
+    text: (m) => tokens(m.tokens),
+    ...(drop === undefined ? {} : { drop }),
+  });
+  const second = secondWidth(costs, showCost);
   const columns: Column<TopModel>[] = [
     {
       title: "model",
@@ -791,21 +814,8 @@ function topColumns(costs: boolean, labels: readonly string[], rows: readonly To
       role: "fg",
       text: (m) => label.get(m) ?? m.name,
     },
-    costs
-      ? {
-          title: "cost",
-          width: 9,
-          align: "right",
-          role: (m) => topCost(m).role,
-          text: (m) => topCost(m).text,
-        }
-      : {
-          title: "tokens",
-          width: 9,
-          align: "right",
-          role: "tokens",
-          text: (m) => tokens(m.tokens),
-        },
+    costs ? cost(9) : tokenCount(9),
+    ...(second === 0 ? [] : [costs ? tokenCount(second, 1) : cost(second, 1)]),
     {
       title: "share",
       width: 4,
@@ -818,6 +828,46 @@ function topColumns(costs: boolean, labels: readonly string[], rows: readonly To
     { title: "", width: 6, role: costs ? "cost" : "tokens", bar: (m) => m.share, drop: 3 },
   ];
   return columns;
+}
+
+/**
+ * The top models' table at screen `width`: its first amount's cells, the cells it needs
+ * whole (margin, names, both amounts, share and bar, a gap between each), and the width of
+ * its panel when it sits beside the chart. Exported for the tests' number checks.
+ */
+export function topLayout(
+  models: readonly TopModel[],
+  costs: boolean,
+  showCost: boolean,
+  width: number,
+): { amountCells: number; needs: number; width: number } {
+  const amountCells = amountWidth(models, costs);
+  const widestName = Math.max(0, ...fitLabels(models, 999).map((l) => textWidth(l)));
+  const second = secondWidth(costs, showCost);
+  const needs = 1 + widestName + 1 + amountCells + (second === 0 ? 0 : 1 + second) + 1 + 4 + 1 + 6;
+  const panel = Math.max(
+    TOP_WIDTH,
+    Math.min(TOP_MAX_WIDTH, Math.max(needs, width - 2 - (CHART_LABEL_WIDTH + 1 + 96))),
+  );
+  return { amountCells, needs, width: panel };
+}
+
+/**
+ * The top models' panel beside the chart at screen `width`: the widest any window's list
+ * needs, so switching windows never moves the chart's edge. Exported for the tests.
+ */
+export function topPanelWidth(
+  vm: Pick<OverviewVM, "topModels">,
+  costs: boolean,
+  showCost: boolean,
+  width: number,
+): number {
+  return Math.max(
+    ...ACTIVITY_WINDOWS.map((w) => {
+      const ranked = vm.topModels[w];
+      return topLayout(costs ? ranked.byCost : ranked.byTokens, costs, showCost, width).width;
+    }),
+  );
 }
 
 /**
@@ -835,14 +885,9 @@ function activitySections(
   const ranked = vm.topModels[state.window];
   const models = costs ? ranked.byCost : ranked.byTokens;
   const beside = ctx.bp === "wide";
-  // Top models whole: margin, names, amount, share and bar, with a gap between each.
-  const amountCells = amountWidth(models, costs);
-  const widestName = Math.max(0, ...fitLabels(models, 999).map((l) => textWidth(l)));
-  const topNeeds = 1 + widestName + 1 + amountCells + 1 + 4 + 1 + 6;
-  const topWidth = Math.max(
-    TOP_WIDTH,
-    Math.min(TOP_MAX_WIDTH, Math.max(topNeeds, ctx.width - 2 - (CHART_LABEL_WIDTH + 1 + 96))),
-  );
+  // The panel's width from every window's models, so the chart keeps its width on `a`/`d`.
+  const { amountCells, needs: topNeeds } = topLayout(models, costs, ctx.showCost, ctx.width);
+  const topWidth = topPanelWidth(vm, costs, ctx.showCost, ctx.width);
   const chartWidth = beside ? ctx.width - topWidth - 2 : ctx.width;
   const plotted = fitBuckets(
     costs ? series.cost : series.tokens,
@@ -908,7 +953,7 @@ function activitySections(
           />
         ) : (
           <Table
-            columns={topColumns(costs, labels, models)}
+            columns={topColumns(costs, ctx.showCost, labels, models)}
             rows={models}
             theme={ctx.theme}
             header={false}

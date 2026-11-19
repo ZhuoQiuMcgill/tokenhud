@@ -344,7 +344,7 @@ const SHOTS: readonly Shot[] = [
             : s.tight(Screen.cols(s.section("activity"), split - 1, WIDTH));
         },
         name: "Top models",
-        text: "The five models with the most cost in the chart's window, its tab in the title (`TOP MODELS · 24h`): the cost, its share of the window's cost, and a bar of that share. `a`/`d` switch the window with the chart's, and `t` ranks by tokens. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows its token count in place of the cost, dimmed, with no share, and comes last. Under the list, when a row is free, `more windows: 3 Models`: the Models view (`3`) has today, this week, this month and more. Then the chart's tallest slot and when it started.",
+        text: "The five models with the most cost in the chart's window, its tab in the title (`TOP MODELS · 24h`): the cost, the tokens, the share of the window's cost, and a bar of that share. `a`/`d` switch the window with the chart's, and `t` ranks by tokens, with the cost beside them. A fast or priority tier gets its own row, marked `(fast)`. A model with no published price shows `unpriced`, its tokens, no share, and comes last. Under the list, when a row is free, `more windows: 3 Models`: the Models view (`3`) has today, this week, this month and more. Then the chart's tallest slot and when it started.",
       },
       {
         section: "events",
