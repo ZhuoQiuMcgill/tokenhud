@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-18
+
 ### Added
 
 - **Prices for OpenAI's GPT-6.2 Astra, GPT-6.2 Sol and GPT-6.1 Terra**, from OpenAI's
