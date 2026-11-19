@@ -323,7 +323,8 @@ describe("the activity chart fills its width (T24)", () => {
     // fixture spends in every window's last bucket, so its bar ends the plot.
     for (const [width, height, edge] of [
       [160, 50, 103],
-      [120, 45, 80],
+      // 120: the top models beside it show tokens as well as cost, so the chart is narrower.
+      [120, 45, 77],
       [105, 50, 105],
     ] as const) {
       const ends: Record<string, { bars: number; now: number }> = {};
@@ -500,18 +501,15 @@ describe("keys", () => {
           const at = { width, showCost, window };
           expect({ ...at, title: lines[0] }).toEqual({ ...at, title: ` TOP MODELS · ${window}` });
           models.forEach((m, i) => {
-            // By cost, a model with no price shows its tokens and no share.
-            const bare = showCost && unpriced(m);
-            const amount = bare
-              ? `${tokens(m.tokens)} tok`
-              : showCost
-                ? costText(m).text
-                : tokens(m.tokens);
-            const share = bare ? "—" : percent(m.share, 0);
+            // With costs: the cost, then the tokens. Without: the tokens alone. A model with
+            // no price has no share of the cost.
+            const cost = costText(m).text.replace("$", "\\$");
+            const amounts = showCost ? [cost, tokens(m.tokens)] : [tokens(m.tokens)];
+            const share = showCost && unpriced(m) ? "—" : percent(m.share, 0);
             expect({ ...at, row: lines[i + 1] }).toEqual({
               ...at,
               row: expect.stringMatching(
-                new RegExp(`^ ${m.name} +${amount.replace("$", "\\$")} +${share} `),
+                new RegExp(`^ ${m.name} +${amounts.join(" +")} +${share} `),
               ),
             });
           });

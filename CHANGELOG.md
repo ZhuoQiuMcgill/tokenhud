@@ -8,6 +8,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+### Changed
+
+- **Top models show every model's tokens beside its cost**, not only an unpriced model's.
+  Ranked by tokens (`t`), the cost goes beside the tokens. A model with no published price
+  shows `unpriced` again, with its tokens beside it. Wide, the list beside the chart is
+  sized for every window's models, so `a`/`d` never move the chart's edge.
+
 ## [0.1.7] - 2026-11-18
 
 ### Added

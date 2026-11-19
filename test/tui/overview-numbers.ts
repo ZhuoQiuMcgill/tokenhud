@@ -4,8 +4,8 @@ import { expect } from "bun:test";
 import type { Config } from "../../src/config.ts";
 import { countdownTo } from "../../src/limits/derive.ts";
 import { clock, countdown, money, tokens } from "../../src/tui/format.ts";
-import { costText, unpriced } from "../../src/tui/views/cells.ts";
-import { fitBuckets, listedEvents } from "../../src/tui/views/overview.tsx";
+import { costText } from "../../src/tui/views/cells.ts";
+import { fitBuckets, listedEvents, topPanelWidth } from "../../src/tui/views/overview.tsx";
 import type {
   ActivityWindow,
   LimitCard,
@@ -118,7 +118,7 @@ export function expectOverviewWhole(
   if (text.includes(" ACTIVITY")) {
     const series = vm.activity[window];
     const beside = width >= 120;
-    const top = Math.max(38, Math.min(56, width - 2 - 103));
+    const top = topPanelWidth(vm, show, show, width);
     const plot = (beside ? width - top - 2 : width) - 7;
     const { values, group } = fitBuckets(show ? series.cost : series.tokens, plot);
     const peak = values.indexOf(Math.max(...values));
@@ -133,10 +133,9 @@ export function expectOverviewWhole(
     for (const m of show ? ranked.byCost : ranked.byTokens) {
       // Each model's name whole, and its tier (critique M1).
       numbers.push(`${m.name}${m.tier === "fast" ? " (fast)" : ""}`);
-      // A model with no price shows its tokens instead.
-      if (show && unpriced(m)) numbers.push(`${tokens(m.tokens)} tok`);
-      else if (show) alternatives.push(costForms(m));
-      else numbers.push(tokens(m.tokens));
+      // Its tokens always; by cost, its cost too (`unpriced` when it has none).
+      numbers.push(tokens(m.tokens));
+      if (show) alternatives.push(costForms(m));
     }
   }
   if (text.includes(" LIMIT EVENTS")) {
