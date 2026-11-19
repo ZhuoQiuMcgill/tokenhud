@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); see
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-18
+
 ### Changed
 
 - **Top models show every model's tokens beside its cost**, not only an unpriced model's.
